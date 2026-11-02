@@ -1542,7 +1542,7 @@ class WolfMoonOpacService {
               const cId = `person-${encodeURIComponent(cName.slice(0, 30))}`;
               contributorsList.push({
                 id: cId,
-                uri: `https://moonlib.org/entity/person/${cId}`,
+                uri: getEntityIri('agent', cId),
                 canonicalMoonUri: `moon:person:${cId}`,
                 name: cName,
                 nameArabic: cName,
@@ -1571,7 +1571,7 @@ class WolfMoonOpacService {
             const cId = `person-${encodeURIComponent(agentLabel.trim().slice(0, 30))}`;
             contributorsList.push({
               id: cId,
-              uri: `https://moonlib.org/entity/person/${cId}`,
+              uri: getEntityIri('agent', cId),
               canonicalMoonUri: `moon:person:${cId}`,
               name: agentLabel.trim(),
               nameArabic: agentLabel.trim(),

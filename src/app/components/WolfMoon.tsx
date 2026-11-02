@@ -70,7 +70,7 @@ import {
 import {
   generateRecordId, mintUriSet, mintUri, mintAgentUri,
   mintContributionUri, mintProvisionUri, mintIdentifierUri,
-  mintTitleUri, UriSet
+  mintTitleUri, UriSet, BASE_URI
 } from "../../services/uriMintingService";
 import {
   BIBFRAME_CORE_CLASSES, BIBFRAME_PROPERTIES, ONTOLOGY_VERSION,
@@ -270,7 +270,7 @@ function getPropertyValue(data: any, uri: string): any {
   if (data[uri] !== undefined && data[uri] !== null && data[uri] !== '') return data[uri];
 
   if (uri.includes('classificationLcc')) return data['bf:classification'] || data['classification'] || '';
-  if (uri.includes('classificationDdc')) return data['classificationDdc'] || '181.07';
+  if (uri.includes('classificationDdc')) return data['classificationDdc'] || '';
   if (uri.includes('subject/topical')) return data['subjectTopical'] || data['bf:subject'] || data['subject'] || '';
   if (uri.includes('subject/geographic')) return data['subjectGeographic'] || data['geographicCoverage'] || '';
   if (uri.includes('subject/name')) return data['subjectName'] || data['creator'] || '';
@@ -392,13 +392,16 @@ export default function WolfMoon({
   const [activeTab, setActiveTab] = useState<OutputTab>("editor");
 
   // ===== URI MINTING =====
-  const [recordId] = useState(() => generateRecordId());
-  const [uriSet] = useState<UriSet>(() => {
-    const defaultSet = mintUriSet(recordId);
-    if (initialWork?.['@id']) defaultSet.work = initialWork['@id'];
-    if (initialInstance?.['@id']) defaultSet.instance = initialInstance['@id'];
-    return defaultSet;
+  // A record that already has a Moon URI keeps its id, and every entity URI derives from it. Any other
+  // id (the app's old http://example.org/... placeholders, or another library's URI on an imported
+  // record) is never taken over as this record's own URI.
+  const [recordId] = useState(() => {
+    const existing = typeof initialWork?.['@id'] === 'string' && initialWork['@id'].startsWith(`${BASE_URI}/work/`)
+      ? initialWork['@id'].slice(`${BASE_URI}/work/`.length)
+      : '';
+    return /^[A-Za-z0-9_-]+$/.test(existing) ? existing : generateRecordId();
   });
+  const [uriSet] = useState<UriSet>(() => mintUriSet(recordId));
 
   // ===== GRAPH STORE =====
   const [graphStore] = useState(new GraphStore());
@@ -453,7 +456,7 @@ export default function WolfMoon({
 
   const handleInsertIraqiAuthor = (author: any, targetType: 'author' | 'contributor' | 'subject' = 'author') => {
     const authorName = author.name || author.primaryName || author.preferredName || "Unknown Author";
-    const authorUri = author.moonUri || `http://moon.local/author/${encodeURIComponent(authorName)}`;
+    const authorUri: string | undefined = author.moonUri || undefined;
 
     if (targetType === 'subject') {
       const newSubject = {
@@ -733,7 +736,7 @@ export default function WolfMoon({
     graphStore.setNode(adminUri, {
       "@id": adminUri, "@type": "bf:AdminMetadata",
       "bf:creationDate": new Date().toISOString().split("T")[0],
-      "bf:source": { "@id": "https://moonlib.org", "rdfs:label": "Moon Library System — Blue Moon" },
+      "bf:source": { "@id": new URL(BASE_URI).origin, "rdfs:label": "Moon Library System — Blue Moon" },
       "bf:descriptionConventions": { "@id": "http://id.loc.gov/vocabulary/descriptionConventions/rda", "rdfs:label": "RDA" },
       "bf:descriptionLanguage": language === "ar"
         ? { "@id": "http://id.loc.gov/vocabulary/languages/ara", "rdfs:label": "العربية" }
@@ -765,7 +768,7 @@ export default function WolfMoon({
 
   useEffect(() => {
     if (initialWork) {
-      setWorkData(initialWork);
+      setWorkData({ ...initialWork, "@id": uriSet.work });
       const t = initialWork["bf:title"];
       if (t) {
         if (typeof t === "string") setRecordTitle(t);
@@ -779,7 +782,7 @@ export default function WolfMoon({
 
   useEffect(() => {
     if (initialInstance) {
-      setInstanceData(initialInstance);
+      setInstanceData({ ...initialInstance, "@id": uriSet.instance, "bf:instanceOf": { "@id": uriSet.work } });
     }
   }, [initialInstance]);
 
@@ -2119,7 +2122,7 @@ export default function WolfMoon({
             {mindmapView === "solar" ? (
               <SolarSystemMindMap workData={workData} instanceData={instanceData} theme={BM} />
             ) : (
-              <MindMapPreview workData={workData} instanceData={instanceData} theme={isLight ? "light" : "dark"} />
+              <MindMapPreview workData={workData} instanceData={instanceData} itemUri={uriSet.item} theme={isLight ? "light" : "dark"} />
             )}
           </BMCard>
         )}

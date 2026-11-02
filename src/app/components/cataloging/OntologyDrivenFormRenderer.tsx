@@ -25,7 +25,8 @@ import {
   searchAccessibilityContent,
   searchNotationTypes,
   searchGovernmentPub,
-  searchDescriptionAuth
+  searchDescriptionAuth,
+  searchLOCAuthorities
 } from '../../../services/authoritySearch';
 import {
   TitleEditorModal,
@@ -39,6 +40,10 @@ import {
   AcquisitionEditorModal,
   ImmediateAcquisitionEditorModal
 } from './BlankNodeEditors';
+
+// Links between this record's own entities (built by Moon) and links to other works/instances.
+const RECORD_LINK_FIELDS = new Set(['instanceOf', 'itemOf', 'expressionOf', 'hasInstance', 'hasExpression', 'hasItem']);
+const RELATED_RESOURCE_FIELDS = new Set(['relatedTo', 'hasPart', 'partOf', 'translationOf', 'translation', 'hasDerivative', 'derivativeOf', 'originalVersion', 'otherEdition', 'precededBy', 'succeededBy', 'hasSeries', 'seriesOf']);
 
 // i18n-aware label mapping for ontology properties and categories
 const CATEGORY_I18N_MAP: Record<string, string> = {
@@ -630,13 +635,36 @@ function SinglePropertyRenderer({
     if (property.controlledVocab === 'accessibilityContent') return searchAccessibilityContent;
     if (property.controlledVocab === 'notationTypes') return searchNotationTypes;
     if (property.controlledVocab === 'governmentPub') return searchGovernmentPub;
-    if (property.controlledVocab === 'descriptionAuth') return searchDescriptionAuth;
-    
-    // Default to general search
+    if (property.controlledVocab === 'descriptionAuth' || property.controlledVocab === 'descriptionAuthentication') return searchDescriptionAuth;
+    if (property.controlledVocab === 'governmentPublication') return searchGovernmentPub;
+    // Each remaining field searches the vocabulary its BIBFRAME property points to (it used to fall back
+    // to subject headings for all of them).
+    if (property.controlledVocab === 'contentTypes') return (q: string) => searchLOCAuthorities(q, 'contentTypes');
+    if (property.controlledVocab === 'genreForms') return (q: string) => searchAllAuthorities(q, 'genre');
+    if (property.controlledVocab === 'organizations') return (q: string) => searchAllAuthorities(q, 'holder');
+    const name = property.shortName.replace(/^bf:/, '');
+    if (name === 'agent') return (q: string) => searchAllAuthorities(q, 'person');
+    if (name === 'heldBy') return (q: string) => searchAllAuthorities(q, 'holder');
+    if (RELATED_RESOURCE_FIELDS.has(name)) return (q: string) => searchAllAuthorities(q, 'work');
+
     return (q: string) => searchAllAuthorities(q, 'subject');
   };
 
   const translateLabel = useTranslatedLabel();
+
+  // The links between this record's own Work, Instance and Item are made by Moon itself; editing them here
+  // had no effect on the record, and new records showed placeholder example.org links in them.
+  if (RECORD_LINK_FIELDS.has(property.shortName.replace(/^bf:/, ''))) {
+    return (
+      <div className="space-y-1">
+        <div className="text-sm font-semibold" style={{ color: textColor }}>{translateLabel(property.label)}</div>
+        <div className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg" style={{ background: inputBg, border: `1px solid ${inputBorder}`, color: textDimColor }}>
+          <LinkIcon className="h-3 w-3 shrink-0" />
+          {i18n.language === 'ar' ? 'يُربط تلقائياً بكيانات هذه التسجيلة' : 'Linked automatically within this record'}
+        </div>
+      </div>
+    );
+  }
 
   // Authority-based URI input
   if (property.rangeType === 'URI' || property.inputComponent === 'AuthoritySelect') {

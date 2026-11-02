@@ -359,7 +359,7 @@ export function AuthoritySelect({
                       onClick={() => {
                         onChange({
                           label: query,
-                          uri: `https://moonlib.org/authority/${encodeURIComponent(query)}`,
+                          uri: '', // a local entry is a labelled value, not a link to a page that does not exist
                           source: 'Local'
                         });
                         setQuery('');

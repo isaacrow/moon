@@ -9,162 +9,71 @@
  * - Classification schemes
  */
 
+import { searchAllAuthorities } from '../../services/authoritySearch';
+
 const LOC_BASE_URL = 'https://id.loc.gov';
+
+const ARABIC_SCRIPT = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+
+/** id.loc.gov suggest2 hits for one vocabulary; an empty list when LC cannot be reached. */
+async function locSuggest(path: string, query: string, searchtype: 'keyword' | 'leftanchored' = 'keyword'): Promise<any[]> {
+  try {
+    const params = new URLSearchParams({ q: query.trim(), count: '15', searchtype });
+    const response = await fetch(`${LOC_BASE_URL}/${path}/suggest2?${params}`, { headers: { 'Accept': 'application/json' } });
+    if (!response.ok) {
+      console.warn(`LOC ${path} returned`, response.status);
+      return [];
+    }
+    const data = await response.json();
+    return data.hits || [];
+  } catch (error) {
+    console.error(`Error searching LOC ${path}:`, error);
+    return [];
+  }
+}
+
+/**
+ * LC's index does not match Arabic script, so Arabic queries are answered from VIAF and Wikidata
+ * (which do), in the same { hits } shape as id.loc.gov.
+ */
+async function arabicHits(query: string, context: 'person' | 'subject' | 'place'): Promise<any[]> {
+  const results = await searchAllAuthorities(query, context);
+  return results.map(r => ({ uri: r.uri, aLabel: r.label, suggestLabel: r.label, source: r.source }));
+}
 
 /**
  * Search LOC Name Authority File (NAF)
  * For persons, organizations, families
  */
 export async function searchLocNames(query: string): Promise<any> {
-  try {
-    // Use the suggest2 endpoint which has better CORS support
-    const response = await fetch(
-      `${LOC_BASE_URL}/authorities/names/suggest2/?q=${encodeURIComponent(query)}`,
-      {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-      }
-    );
-    
-    if (!response.ok) {
-      console.warn('LOC Names API returned error:', response.status);
-      return { hits: getMockNames(query) };
-    }
-    
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error searching LOC Names:', error);
-    // Return mock data as fallback
-    return { hits: getMockNames(query) };
-  }
-}
-
-// Mock data for development/fallback
-function getMockNames(query: string): any[] {
-  const mockData = [
-    { uri: 'http://id.loc.gov/authorities/names/n79021164', suggestLabel: 'Shakespeare, William, 1564-1616', type: 'Person' },
-    { uri: 'http://id.loc.gov/authorities/names/n79046204', suggestLabel: 'Hemingway, Ernest, 1899-1961', type: 'Person' },
-    { uri: 'http://id.loc.gov/authorities/names/n79043203', suggestLabel: 'Austen, Jane, 1775-1817', type: 'Person' },
-    { uri: 'http://id.loc.gov/authorities/names/n79006779', suggestLabel: 'Dickens, Charles, 1812-1870', type: 'Person' },
-    { uri: 'http://id.loc.gov/authorities/names/n50034861', suggestLabel: 'García Márquez, Gabriel, 1927-2014', type: 'Person' },
-    { uri: 'http://id.loc.gov/authorities/names/n79144981', suggestLabel: 'Library of Congress', type: 'Organization' },
-    { uri: 'http://id.loc.gov/authorities/names/n79021846', suggestLabel: 'Oxford University Press', type: 'Organization' },
-  ];
-  
-  return mockData.filter(item => 
-    item.suggestLabel.toLowerCase().includes(query.toLowerCase())
-  );
+  if (!query || query.trim().length < 2) return { hits: [] };
+  if (ARABIC_SCRIPT.test(query)) return { hits: await arabicHits(query, 'person') };
+  return { hits: await locSuggest('authorities/names', query) };
 }
 
 /**
  * Search LOC Subject Headings (LCSH)
  */
 export async function searchLocSubjects(query: string): Promise<any> {
-  try {
-    const response = await fetch(
-      `${LOC_BASE_URL}/authorities/subjects/suggest2/?q=${encodeURIComponent(query)}`,
-      {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-      }
-    );
-    
-    if (!response.ok) {
-      console.warn('LOC Subjects API returned error:', response.status);
-      return { hits: getMockSubjects(query) };
-    }
-    
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error searching LOC Subjects:', error);
-    return { hits: getMockSubjects(query) };
-  }
-}
-
-function getMockSubjects(query: string): any[] {
-  const mockData = [
-    { uri: 'http://id.loc.gov/authorities/subjects/sh85076502', suggestLabel: 'Libraries', type: 'Topic' },
-    { uri: 'http://id.loc.gov/authorities/subjects/sh85043024', suggestLabel: 'English literature', type: 'Topic' },
-    { uri: 'http://id.loc.gov/authorities/subjects/sh85004379', suggestLabel: 'American literature', type: 'Topic' },
-    { uri: 'http://id.loc.gov/authorities/subjects/sh85009852', suggestLabel: 'Arabic literature', type: 'Topic' },
-    { uri: 'http://id.loc.gov/authorities/subjects/sh85118696', suggestLabel: 'Science', type: 'Topic' },
-    { uri: 'http://id.loc.gov/authorities/subjects/sh85082139', suggestLabel: 'Mathematics', type: 'Topic' },
-    { uri: 'http://id.loc.gov/authorities/subjects/sh85061212', suggestLabel: 'History', type: 'Topic' },
-  ];
-  
-  return mockData.filter(item => 
-    item.suggestLabel.toLowerCase().includes(query.toLowerCase())
-  );
+  if (!query || query.trim().length < 2) return { hits: [] };
+  if (ARABIC_SCRIPT.test(query)) return { hits: await arabicHits(query, 'subject') };
+  return { hits: await locSuggest('authorities/subjects', query) };
 }
 
 /**
- * Search LOC Geographic Names
+ * Search LOC places: MARC countries and geographic areas, then name authorities (cities such as
+ * "Baghdad (Iraq)" are LC name headings).
  */
 export async function searchLocPlaces(query: string): Promise<any> {
-  try {
-    // Try geographic areas first with suggest2
-    const response = await fetch(
-      `${LOC_BASE_URL}/vocabulary/geographicAreas/suggest2/?q=${encodeURIComponent(query)}`,
-      {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-      }
-    );
-    
-    if (response.ok) {
-      const data = await response.json();
-      if (data.hits && data.hits.length > 0) {
-        return data;
-      }
-    }
-    
-    // Try countries if no geographic areas found
-    const countriesResponse = await fetch(
-      `${LOC_BASE_URL}/vocabulary/countries/suggest2/?q=${encodeURIComponent(query)}`,
-      {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-      }
-    );
-    
-    if (countriesResponse.ok) {
-      return await countriesResponse.json();
-    }
-    
-    return { hits: getMockPlaces(query) };
-  } catch (error) {
-    console.error('Error searching LOC Places:', error);
-    return { hits: getMockPlaces(query) };
-  }
-}
-
-function getMockPlaces(query: string): any[] {
-  const mockData = [
-    { uri: 'http://id.loc.gov/vocabulary/countries/us', suggestLabel: 'United States', code: 'us' },
-    { uri: 'http://id.loc.gov/vocabulary/countries/uk', suggestLabel: 'United Kingdom', code: 'uk' },
-    { uri: 'http://id.loc.gov/vocabulary/countries/fr', suggestLabel: 'France', code: 'fr' },
-    { uri: 'http://id.loc.gov/vocabulary/countries/eg', suggestLabel: 'Egypt', code: 'eg' },
-    { uri: 'http://id.loc.gov/vocabulary/countries/sa', suggestLabel: 'Saudi Arabia', code: 'sa' },
-    { uri: 'http://id.loc.gov/vocabulary/countries/iq', suggestLabel: 'Iraq', code: 'iq' },
-    { uri: 'http://id.loc.gov/vocabulary/countries/jo', suggestLabel: 'Jordan', code: 'jo' },
-    { uri: 'http://id.loc.gov/vocabulary/countries/lb', suggestLabel: 'Lebanon', code: 'lb' },
-    { uri: 'http://id.loc.gov/vocabulary/countries/sy', suggestLabel: 'Syria', code: 'sy' },
-    { uri: 'http://id.loc.gov/vocabulary/countries/ma', suggestLabel: 'Morocco', code: 'ma' },
-  ];
-  
-  return mockData.filter(item => 
-    item.suggestLabel.toLowerCase().includes(query.toLowerCase())
-  );
+  if (!query || query.trim().length < 2) return { hits: [] };
+  if (ARABIC_SCRIPT.test(query)) return { hits: await arabicHits(query, 'place') };
+  const [countries, areas, names] = await Promise.all([
+    locSuggest('vocabulary/countries', query),
+    locSuggest('vocabulary/geographicAreas', query),
+    locSuggest('authorities/names', query, 'leftanchored')
+  ]);
+  const geographicNames = names.filter((h: any) => (h.more?.rdftypes || []).some((t: string) => /Geographic/i.test(t)));
+  return { hits: [...countries, ...areas, ...geographicNames] };
 }
 
 /**

@@ -118,7 +118,15 @@ export interface JsonLdValidationResult {
  * Guarantees proper WEMI graph links between Work, Expression, Instance, and Item.
  */
 export function buildW3CJsonLd(input: BuilderInput): W3CJsonLdDocument {
-  const { workData, instanceData, itemData, expressionData, adminData, uriSet, enableExpression } = input;
+  const { adminData, uriSet, enableExpression } = input;
+  // Values picked in the form's search boxes are stored as { label, uri, source }; read them as BIBFRAME links.
+  const picksIn = (entity: any) => entity && typeof entity === "object"
+    ? Object.fromEntries(Object.entries(entity).map(([k, v]) => [k, k.startsWith("@") ? v : fromFormShapes(k, fromSearchPicks(v))]))
+    : entity;
+  const workData = picksIn(input.workData);
+  const instanceData = picksIn(input.instanceData);
+  const itemData = picksIn(input.itemData);
+  const expressionData = picksIn(input.expressionData);
   const graph: W3CJsonLdNode[] = [];
   const misplaced: MisplacedProperty[] = [];
 
@@ -401,6 +409,69 @@ function buildItemNode(data: any, uriSet: any, misplaced?: MisplacedProperty[]):
 // =====================================================
 // VALUE HELPERS: normalize what the builder knows, keep everything else
 // =====================================================
+
+/** Placeholder IRIs that must never be published as links (old "local authority" picks, example domains). */
+const PLACEHOLDER_IRI = /^https?:\/\/(moonlib\.org\/authority\/|(www\.)?example\.(org|com)\/)/;
+
+/**
+ * Converts search picks ({ label, uri, source, type, description }) anywhere in the data into
+ * { "@id": uri, "rdfs:label": label }. A pick with no real URI (a local entry) keeps only its label.
+ */
+function fromSearchPicks(value: any): any {
+  if (Array.isArray(value)) return value.map(fromSearchPicks);
+  if (!value || typeof value !== "object" || value["@value"] !== undefined) return value;
+  const isPick = value["@id"] === undefined && typeof value.uri === "string" && (typeof value.label === "string" || typeof value.name === "string");
+  if (isPick) {
+    const label = value.label ?? value.name;
+    const uri = value.uri.trim();
+    return {
+      ...(uri && !PLACEHOLDER_IRI.test(uri) ? { "@id": uri } : {}),
+      ...(value["@type"] ? { "@type": value["@type"] } : {}),
+      ...(label ? { "rdfs:label": label } : {})
+    };
+  }
+  const out: any = {};
+  for (const [k, v] of Object.entries(value)) out[k] = k.startsWith("@") ? v : fromSearchPicks(v);
+  if (typeof out["@id"] === "string" && PLACEHOLDER_IRI.test(out["@id"])) delete out["@id"];
+  return out;
+}
+
+/** "PJ7846 .A46" -> class number "PJ7846", item portion (Cutter) ".A46", as LC records LCC call numbers. */
+function lccNode(callNumber: string): any {
+  const m = callNumber.trim().match(/^(\S+?)\s+(\.?[A-Z]\d.*)$/);
+  return {
+    "@type": "bf:ClassificationLcc",
+    "bf:classificationPortion": m ? m[1] : callNumber.trim(),
+    ...(m ? { "bf:itemPortion": m[2] } : {})
+  };
+}
+
+/**
+ * The standard (MARC-style) field components store a classification as { lcc, ddc } and identifiers as
+ * { isbn, lccn, issn }; these become proper bf:Classification / bf:Identifier nodes.
+ */
+function fromFormShapes(key: string, value: any): any {
+  const prop = key.replace(/^bf:/, "");
+  if (prop === "classification") {
+    return asList(value).flatMap((c: any) => {
+      if (!c || typeof c !== "object" || c["bf:classificationPortion"] || c["classificationPortion"]) return [c];
+      const lcc = typeof c.lcc === "string" ? c.lcc : typeof c.number === "string" && c["@type"] !== "bf:ClassificationDdc" ? c.number : "";
+      const ddc = typeof c.ddc === "string" ? c.ddc : "";
+      const out = [...(lcc.trim() ? [lccNode(lcc)] : []), ...(ddc.trim() ? [{ "@type": "bf:ClassificationDdc", "bf:classificationPortion": ddc.trim() }] : [])];
+      return out.length ? out : [c];
+    });
+  }
+  if (prop === "identifiedBy") {
+    const types: Record<string, string> = { isbn: "bf:Isbn", lccn: "bf:Lccn", issn: "bf:Issn" };
+    return asList(value).flatMap((id: any) => {
+      if (!id || typeof id !== "object" || id["rdf:value"] !== undefined || id["value"] !== undefined) return [id];
+      const out = Object.entries(types).filter(([k]) => typeof id[k] === "string" && id[k].trim())
+        .map(([k, type]) => ({ "@type": type, "rdf:value": id[k].trim() }));
+      return out.length ? out : [id];
+    });
+  }
+  return value;
+}
 
 const asList = (v: any): any[] => (v === undefined || v === null || v === "" ? [] : Array.isArray(v) ? v : [v]);
 

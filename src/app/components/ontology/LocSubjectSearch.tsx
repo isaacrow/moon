@@ -74,7 +74,7 @@ export function LocSubjectSearch({ property, value = [], onChange, language = 'e
     const subjectEntity = {
       '@type': 'bf:Topic',
       '@id': subject.uri,
-      'rdfs:label': subject.suggestLabel || subject.aLabel
+      'rdfs:label': subject.aLabel || subject.suggestLabel
     };
 
     onChange([...safeValue, subjectEntity]);
@@ -120,7 +120,7 @@ export function LocSubjectSearch({ property, value = [], onChange, language = 'e
               <div className="flex items-center gap-3">
                 <Tag className="h-4 w-4 text-green-600" />
                 <div>
-                  <div className="font-medium text-sm">{result.suggestLabel || result.aLabel}</div>
+                  <div className="font-medium text-sm">{result.aLabel || result.suggestLabel}</div>
                   {result.uri && (
                     <div className="text-xs text-gray-500 font-mono truncate max-w-md">
                       {result.uri}

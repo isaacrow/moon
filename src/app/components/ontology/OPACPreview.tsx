@@ -16,6 +16,7 @@ interface OPACPreviewProps {
   workData: any;
   instanceData: any;
   theme?: 'glass' | 'neon' | 'classic' | 'clean' | 'blur' | 'light' | any;
+  itemUri?: string;
 }
 
 // Robust helper to extract string or array values from various BIBFRAME shapes
@@ -42,7 +43,7 @@ function extractArray(val: any): any[] {
   return [val];
 }
 
-export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass' }: OPACPreviewProps) {
+export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass', itemUri = '' }: OPACPreviewProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'manuscript' | 'subjects' | 'toc' | 'linked-data'>('overview');
   const [copiedCitation, setCopiedCitation] = useState<string | null>(null);
   const [citationFormat, setCitationFormat] = useState<'chicago' | 'apa' | 'mla' | 'bibtex' | 'marc'>('chicago');
@@ -239,7 +240,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass' 
   };
 
   const handleCopyUri = () => {
-    const uri = workData['@id'] || 'http://example.org/records/al-qabasat-work';
+    const uri = workData['@id'] || '';
     navigator.clipboard.writeText(uri);
     setCopiedUri(true);
     setTimeout(() => setCopiedUri(false), 2000);
@@ -679,15 +680,15 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass' 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 space-y-1">
                   <div className="font-bold text-blue-400">bf:Work (العمل الفكري)</div>
-                  <div className="font-mono text-[11px] text-slate-300 truncate">{workData['@id'] || 'http://example.org/records/al-qabasat-work'}</div>
+                  <div className="font-mono text-[11px] text-slate-300 truncate">{workData['@id'] || '—'}</div>
                 </div>
                 <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-1">
                   <div className="font-bold text-emerald-400">bf:Instance (النسخة/التجسيد)</div>
-                  <div className="font-mono text-[11px] text-slate-300 truncate">{instanceData['@id'] || 'http://example.org/records/al-qabasat-instance'}</div>
+                  <div className="font-mono text-[11px] text-slate-300 truncate">{instanceData['@id'] || '—'}</div>
                 </div>
                 <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20 space-y-1">
                   <div className="font-bold text-purple-400">bf:Item (النسخة المادية/المقتنى)</div>
-                  <div className="font-mono text-[11px] text-slate-300 truncate">http://example.org/records/al-qabasat-item</div>
+                  <div className="font-mono text-[11px] text-slate-300 truncate">{itemUri || '—'}</div>
                 </div>
               </div>
 

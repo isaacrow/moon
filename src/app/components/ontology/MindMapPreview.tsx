@@ -16,6 +16,7 @@ interface MindMapPreviewProps {
   workData: any;
   instanceData: any;
   theme?: 'dark' | 'light' | any;
+  itemUri?: string;
 }
 
 interface GraphNode {
@@ -63,7 +64,7 @@ function extractArr(val: any): any[] {
   return [val];
 }
 
-export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark' }: MindMapPreviewProps) {
+export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark', itemUri = '' }: MindMapPreviewProps) {
   const isDark = theme !== 'light';
   const [zoom, setZoom] = useState(1);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -117,8 +118,8 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#3b82f6',
         icon: <BookOpen className="h-6 w-6" />,
         predicate: 'rdf:type bf:Work',
-        fullText: `Work Entity: ${titleVal} (http://example.org/records/al-qabasat-work)`,
-        uri: workData['@id'] || 'http://example.org/records/al-qabasat-work',
+        fullText: `Work Entity: ${titleVal}${workData['@id'] ? ` (${workData['@id']})` : ''}`,
+        uri: workData['@id'] || '',
       },
 
       // Instance Node
@@ -134,7 +135,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         icon: <Package className="h-6 w-6" />,
         predicate: 'bf:hasInstance',
         fullText: `Instance Manifestation: 1061 H / 1650 M (${carrierVal})`,
-        uri: instanceData['@id'] || 'http://example.org/records/al-qabasat-instance',
+        uri: instanceData['@id'] || '',
       },
 
       // Item Node
@@ -150,7 +151,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         icon: <Building2 className="h-5 w-5" />,
         predicate: 'bf:hasItem',
         fullText: 'Physical/Digital Item: خزانة المخطوطات، العتبة العباسية المقدسة (IQ-KaCCS) -- الباركود: b125923',
-        uri: 'http://example.org/records/al-qabasat-item',
+        uri: itemUri,
       },
 
       // Work Branches (Left & Top)

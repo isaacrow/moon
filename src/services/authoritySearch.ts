@@ -12,43 +12,48 @@ export interface AuthorityResult {
   description?: string;
 }
 
+export type LOCScheme =
+  | 'names' | 'subjects' | 'genreForms' | 'geographicAreas' | 'languages' | 'countries'
+  | 'organizations' | 'contentTypes' | 'carriers' | 'mediaTypes' | 'relators' | 'works' | 'instances';
+
+const LOC_SCHEME_PATHS: Record<LOCScheme, string> = {
+  names: 'authorities/names',
+  subjects: 'authorities/subjects',
+  genreForms: 'authorities/genreForms',
+  geographicAreas: 'vocabulary/geographicAreas',
+  languages: 'vocabulary/languages',
+  countries: 'vocabulary/countries',
+  organizations: 'vocabulary/organizations',
+  contentTypes: 'vocabulary/contentTypes',
+  carriers: 'vocabulary/carriers',
+  mediaTypes: 'vocabulary/mediaTypes',
+  relators: 'vocabulary/relators',
+  works: 'resources/works',
+  instances: 'resources/instances'
+};
+
+const ARABIC_SCRIPT = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+
 /**
- * Search LOC Authorities
+ * Search LOC authorities and vocabularies with id.loc.gov's suggest2 service.
+ * LC's index does not match Arabic script (it returns unrelated headings), so Arabic queries are left to
+ * VIAF and Wikidata, which do.
  */
-export async function searchLOCAuthorities(
-  query: string,
-  scheme: 'names' | 'subjects' | 'genreForms' | 'geographicAreas' | 'languages' | 'countries'
-): Promise<AuthorityResult[]> {
-  if (!query || query.length < 2) return [];
+export async function searchLOCAuthorities(query: string, scheme: LOCScheme): Promise<AuthorityResult[]> {
+  if (!query || query.trim().length < 2 || ARABIC_SCRIPT.test(query)) return [];
 
   try {
-    const schemeMap: Record<string, string> = {
-      names: 'http://id.loc.gov/authorities/names',
-      subjects: 'http://id.loc.gov/authorities/subjects',
-      genreForms: 'http://id.loc.gov/authorities/genreForms',
-      geographicAreas: 'http://id.loc.gov/vocabulary/geographicAreas',
-      languages: 'http://id.loc.gov/vocabulary/languages',
-      countries: 'http://id.loc.gov/vocabulary/countries'
-    };
-
-    const baseUrl = 'https://id.loc.gov/search/';
-    const params = new URLSearchParams({
-      q: `${query} cs:${schemeMap[scheme]}`,
-      format: 'json'
-    });
-
-    const response = await fetch(`${baseUrl}?${params}`);
+    const params = new URLSearchParams({ q: query.trim(), count: '15', searchtype: 'keyword' });
+    const response = await fetch(`https://id.loc.gov/${LOC_SCHEME_PATHS[scheme]}/suggest2?${params}`);
     if (!response.ok) throw new Error('LOC API error');
 
     const data = await response.json();
-    
-    // LOC search API may return items without URI — filter them out
-    return (Array.isArray(data) ? data : []).map((item: any) => ({
-      label: item.label || item.prefLabel || item.title || '',
-      uri: item.uri || item['@id'] || '',
+    return (data.hits || []).map((hit: any) => ({
+      label: hit.aLabel || hit.suggestLabel || '',
+      uri: hit.uri || '',
       source: 'LOC' as const,
-      type: item.type,
-      description: item.scopeNote
+      type: (hit.more?.rdftypes || [])[0],
+      description: hit.vLabel && hit.vLabel !== hit.aLabel ? hit.vLabel : undefined
     })).filter((r: AuthorityResult) => r.label && r.uri);
   } catch (error) {
     console.error('LOC search error:', error);
@@ -97,10 +102,13 @@ export async function searchWikidata(query: string, type?: string): Promise<Auth
 
   try {
     const url = `https://www.wikidata.org/w/api.php`;
+    // Arabic queries match and show Arabic labels; others English.
+    const lang = ARABIC_SCRIPT.test(query) ? 'ar' : 'en';
     const params = new URLSearchParams({
       action: 'wbsearchentities',
       search: query,
-      language: 'en',
+      language: lang,
+      uselang: lang,
       format: 'json',
       origin: '*'
     });
@@ -129,7 +137,7 @@ export async function searchWikidata(query: string, type?: string): Promise<Auth
  */
 export async function searchAllAuthorities(
   query: string,
-  context: 'person' | 'organization' | 'subject' | 'genre' | 'place' | 'language'
+  context: 'person' | 'organization' | 'subject' | 'genre' | 'place' | 'language' | 'holder' | 'work'
 ): Promise<AuthorityResult[]> {
   const results: AuthorityResult[] = [];
 
@@ -145,6 +153,13 @@ export async function searchAllAuthorities(
         searches.push(searchWikidata(query, 'item'));
         break;
 
+      case 'holder':
+        // Holding institutions: MARC organization codes first, then name authorities.
+        searches.push(searchLOCAuthorities(query, 'organizations'));
+        searches.push(searchLOCAuthorities(query, 'names'));
+        searches.push(searchWikidata(query, 'item'));
+        break;
+
       case 'subject':
         searches.push(searchLOCAuthorities(query, 'subjects'));
         searches.push(searchWikidata(query, 'item'));
@@ -152,9 +167,11 @@ export async function searchAllAuthorities(
 
       case 'genre':
         searches.push(searchLOCAuthorities(query, 'genreForms'));
+        searches.push(searchWikidata(query, 'item'));
         break;
 
       case 'place':
+        searches.push(searchLOCAuthorities(query, 'countries'));
         searches.push(searchLOCAuthorities(query, 'geographicAreas'));
         searches.push(searchWikidata(query, 'item'));
         break;
@@ -162,18 +179,26 @@ export async function searchAllAuthorities(
       case 'language':
         searches.push(searchLOCAuthorities(query, 'languages'));
         break;
+
+      case 'work':
+        // Related works and instances: LC's BIBFRAME resources, then Wikidata.
+        searches.push(searchLOCAuthorities(query, 'works'));
+        searches.push(searchWikidata(query, 'item'));
+        break;
     }
 
     const allResults = await Promise.all(searches);
     allResults.forEach(sourceResults => results.push(...sourceResults));
 
-    // Deduplicate by label
+    // Deduplicate by label and by URI (VIAF returns several name forms of one person)
     const seen = new Set<string>();
+    const seenUris = new Set<string>();
     return results.filter(r => {
       if (!r.label) return false;
       const labelLower = r.label.toLowerCase();
-      if (seen.has(labelLower)) return false;
+      if (seen.has(labelLower) || (r.uri && seenUris.has(r.uri))) return false;
       seen.add(labelLower);
+      if (r.uri) seenUris.add(r.uri);
       return true;
     });
   } catch (error) {
@@ -354,103 +379,77 @@ export async function lookupISBN(isbn: string): Promise<ISBNData | null> {
   }
 }
 
+// Every URI below was checked against id.loc.gov (each returns 200). Where LC publishes no vocabulary,
+// the option has no URI and is exported as a labelled node instead of a link to a page that does not exist.
+
+const filterOptions = (options: Array<{ label: string; labelAr?: string; uri: string }>, query: string, type: string): AuthorityResult[] => {
+  const q = (query || '').toLowerCase();
+  return options
+    .filter(opt => opt.label.toLowerCase().includes(q) || (opt.labelAr || '').includes(query || ''))
+    .map(opt => ({ label: opt.label, uri: opt.uri, type, source: (opt.uri ? 'LOC' : 'Local') as AuthorityResult['source'] }));
+};
+
 /**
- * Search for Accessibility Content features
+ * Search for Accessibility Content (bf:contentAccessibility). LC has no vocabulary for this, so values are labels.
  */
 export async function searchAccessibilityContent(query: string): Promise<AuthorityResult[]> {
-  const options = [
-    { id: 'large-print', label: 'Large print', uri: 'http://id.loc.gov/vocabulary/accessibility/largePrint' },
-    { id: 'braille', label: 'Braille', uri: 'http://id.loc.gov/vocabulary/accessibility/braille' },
-    { id: 'audio-desc', label: 'Audio description', uri: 'http://id.loc.gov/vocabulary/accessibility/audioDescription' },
-    { id: 'captions', label: 'Captions', uri: 'http://id.loc.gov/vocabulary/accessibility/captions' },
-    { id: 'sign-lang', label: 'Sign language', uri: 'http://id.loc.gov/vocabulary/accessibility/signLanguage' },
-    { id: 'tactile', label: 'Tactile graphics', uri: 'http://id.loc.gov/vocabulary/accessibility/tactileGraphics' },
-    { id: 'screen-reader', label: 'Screen reader compatible', uri: 'http://id.loc.gov/vocabulary/accessibility/screenReaderCompatible' },
-    { id: 'high-contrast', label: 'High contrast', uri: 'http://id.loc.gov/vocabulary/accessibility/highContrast' },
-    { id: 'accessible-pdf', label: 'Accessible PDF', uri: 'http://id.loc.gov/vocabulary/accessibility/accessiblePDF' }
-  ];
-
-  const filtered = options.filter(opt =>
-    opt.label.toLowerCase().includes(query.toLowerCase())
-  );
-
-  return filtered.map(opt => ({
-    label: opt.label,
-    uri: opt.uri,
-    type: 'accessibilityContent' as const,
-    source: 'LOC' as const
-  }));
+  return filterOptions([
+    { label: 'Large print', labelAr: 'طباعة بحروف كبيرة', uri: '' },
+    { label: 'Braille', labelAr: 'برايل', uri: '' },
+    { label: 'Audio description', labelAr: 'وصف صوتي', uri: '' },
+    { label: 'Captions', labelAr: 'ترجمة نصية', uri: '' },
+    { label: 'Sign language', labelAr: 'لغة الإشارة', uri: '' },
+    { label: 'Tactile graphics', labelAr: 'رسوم لمسية', uri: '' },
+    { label: 'Screen reader compatible', labelAr: 'متوافق مع قارئ الشاشة', uri: '' },
+    { label: 'High contrast', labelAr: 'تباين عالٍ', uri: '' },
+    { label: 'Accessible PDF', labelAr: 'PDF ميسّر', uri: '' }
+  ], query, 'accessibilityContent');
 }
 
 /**
- * Search for Notation Types
+ * Search for Notation (bf:notation): scripts (LC "mscript") and tactile notations (LC "mtactile").
  */
 export async function searchNotationTypes(query: string): Promise<AuthorityResult[]> {
-  const options = [
-    { id: 'braille', label: 'Braille code', uri: 'http://id.loc.gov/vocabulary/notationType/braille' },
-    { id: 'music', label: 'Music notation', uri: 'http://id.loc.gov/vocabulary/notationType/music' },
-    { id: 'mathematical', label: 'Mathematical notation', uri: 'http://id.loc.gov/vocabulary/notationType/mathematical' },
-    { id: 'movement', label: 'Movement notation', uri: 'http://id.loc.gov/vocabulary/notationType/movement' },
-    { id: 'tactile', label: 'Tactile notation', uri: 'http://id.loc.gov/vocabulary/notationType/tactile' }
-  ];
-
-  const filtered = options.filter(opt =>
-    opt.label.toLowerCase().includes(query.toLowerCase())
-  );
-
-  return filtered.map(opt => ({
-    label: opt.label,
-    uri: opt.uri,
-    type: 'notation' as const,
-    source: 'LOC' as const
-  }));
+  return filterOptions([
+    { label: 'Arabic script', labelAr: 'الخط العربي', uri: 'http://id.loc.gov/vocabulary/mscript/f' },
+    { label: 'Latin script', labelAr: 'الخط اللاتيني', uri: 'http://id.loc.gov/vocabulary/mscript/a' },
+    { label: 'Extended Latin script', labelAr: 'اللاتيني الموسع', uri: 'http://id.loc.gov/vocabulary/mscript/b' },
+    { label: 'Hebrew script', labelAr: 'الخط العبري', uri: 'http://id.loc.gov/vocabulary/mscript/h' },
+    { label: 'Cyrillic script', labelAr: 'الخط السيريلي', uri: 'http://id.loc.gov/vocabulary/mscript/c' },
+    { label: 'Greek script', labelAr: 'الخط اليوناني', uri: 'http://id.loc.gov/vocabulary/mscript/g' },
+    { label: 'Braille code', labelAr: 'رموز برايل', uri: 'http://id.loc.gov/vocabulary/mtactile/brail' },
+    { label: 'Mathematics braille code', labelAr: 'برايل للرياضيات', uri: 'http://id.loc.gov/vocabulary/mtactile/math' },
+    { label: 'Music braille code', labelAr: 'برايل للموسيقى', uri: 'http://id.loc.gov/vocabulary/mtactile/music' },
+    { label: 'Tactile graphic', labelAr: 'رسم لمسي', uri: 'http://id.loc.gov/vocabulary/mtactile/graph' },
+    { label: 'Moon code', labelAr: 'رموز مون', uri: 'http://id.loc.gov/vocabulary/mtactile/moon' }
+  ], query, 'notation');
 }
 
 /**
- * Search for Government Publication types
+ * Search for Government Publication types (LC "mgovtpubtype").
+ * "Not a government publication" has no code in MARC or LC; leave the field empty instead.
  */
 export async function searchGovernmentPub(query: string): Promise<AuthorityResult[]> {
-  const options = [
-    { id: 'federal', label: 'Federal/national', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/f' },
-    { id: 'multilocal', label: 'Multilocal', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/c' },
-    { id: 'state', label: 'State, provincial, territorial', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/s' },
-    { id: 'local', label: 'Local', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/l' },
-    { id: 'intergovernmental', label: 'Intergovernmental', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/i' },
-    { id: 'undetermined', label: 'Government publication-level undetermined', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/u' },
-    { id: 'not-govt', label: 'Not a government publication', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/n' }
-  ];
-
-  const filtered = options.filter(opt =>
-    opt.label.toLowerCase().includes(query.toLowerCase())
-  );
-
-  return filtered.map(opt => ({
-    label: opt.label,
-    uri: opt.uri,
-    type: 'governmentPublication' as const,
-    source: 'LOC' as const
-  }));
+  return filterOptions([
+    { label: 'Federal/national', labelAr: 'وطني / اتحادي', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/f' },
+    { label: 'State, provincial, territorial', labelAr: 'محافظة / إقليم', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/s' },
+    { label: 'Multistate', labelAr: 'عدة محافظات', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/m' },
+    { label: 'Local', labelAr: 'محلي', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/l' },
+    { label: 'Multilocal', labelAr: 'عدة جهات محلية', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/c' },
+    { label: 'Autonomous', labelAr: 'ذاتي الحكم', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/a' },
+    { label: 'International intergovernmental', labelAr: 'دولي حكومي', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/i' },
+    { label: 'Government (level undetermined)', labelAr: 'حكومي (المستوى غير محدد)', uri: 'http://id.loc.gov/vocabulary/mgovtpubtype/g' }
+  ], query, 'governmentPublication');
 }
 
 /**
- * Search for Description Authentication codes
+ * Search for Description Authentication codes (LC "marcauthen").
  */
 export async function searchDescriptionAuth(query: string): Promise<AuthorityResult[]> {
-  const options = [
-    { id: 'pcc', label: 'PCC (Program for Cooperative Cataloging)', uri: 'http://id.loc.gov/vocabulary/descriptionAuthentication/pcc' },
-    { id: 'nsdp', label: 'NSDP (National Serials Data Program)', uri: 'http://id.loc.gov/vocabulary/descriptionAuthentication/nsdp' },
-    { id: 'authenticated', label: 'Authenticated', uri: 'http://id.loc.gov/vocabulary/descriptionAuthentication/auth' },
-    { id: 'non-auth', label: 'Non-authenticated', uri: 'http://id.loc.gov/vocabulary/descriptionAuthentication/nonAuth' }
-  ];
-
-  const filtered = options.filter(opt =>
-    opt.label.toLowerCase().includes(query.toLowerCase())
-  );
-
-  return filtered.map(opt => ({
-    label: opt.label,
-    uri: opt.uri,
-    type: 'authentication' as const,
-    source: 'LOC' as const
-  }));
+  return filterOptions([
+    { label: 'PCC (Program for Cooperative Cataloging)', uri: 'http://id.loc.gov/vocabulary/marcauthen/pcc' },
+    { label: 'NSDP (National Serials Data Program)', uri: 'http://id.loc.gov/vocabulary/marcauthen/nsdp' },
+    { label: 'LC (Library of Congress)', uri: 'http://id.loc.gov/vocabulary/marcauthen/lc' },
+    { label: 'MSC (Monographic Series Control)', uri: 'http://id.loc.gov/vocabulary/marcauthen/msc' }
+  ], query, 'authentication');
 }

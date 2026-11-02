@@ -110,7 +110,7 @@ export function LocNameSearch({ property, value = [], onChange, language = 'en' 
       '@type': 'bf:Contribution',
       'bf:agent': {
         '@id': agent.uri,
-        'rdfs:label': agent.suggestLabel || agent.aLabel,
+        'rdfs:label': agent.aLabel || agent.suggestLabel,
         '@type': agent.type || 'bf:Agent'
       },
       'bf:role': {
@@ -179,7 +179,7 @@ export function LocNameSearch({ property, value = [], onChange, language = 'en' 
                   <Building2 className="h-4 w-4 text-purple-600" />
                 )}
                 <div>
-                  <div className="font-medium text-sm">{result.suggestLabel || result.aLabel}</div>
+                  <div className="font-medium text-sm">{result.aLabel || result.suggestLabel}</div>
                   {result.uri && (
                     <div className="text-xs text-gray-500 font-mono truncate max-w-md">
                       {result.uri}

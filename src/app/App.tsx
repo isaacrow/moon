@@ -66,6 +66,7 @@ import { Moon27Dashboard } from './components/Moon27Dashboard';
 import Moon27Studio from './components/Moon27Studio';
 import AuthorFinder from './components/AuthorFinder';
 import { toBibframeJsonLdString } from '../services/bibframeNormalizer';
+import { BASE_URI } from '../services/uriMintingService';
 const MoonFaleh = React.lazy(() => import('./components/MoonFaleh'));
 const MoonOshin = React.lazy(() => import('./components/MoonOshin'));
 const MoonOshinEnterprise = React.lazy(() => import('./components/MoonOshinEnterprise'));
@@ -120,12 +121,12 @@ function CatalogApp() {
   // Fresh, clean BIBFRAME record with no pre-entered data
   const [work, setWork] = useState<Partial<BIBFRAMEWork>>(() => ({
     '@type': 'bf:Work',
-    '@id': `http://example.org/work/${Date.now()}`,
+    '@id': `${BASE_URI}/work/${Date.now()}`,
   }));
 
   const [instance, setInstance] = useState<Partial<BIBFRAMEInstance>>(() => ({
     '@type': 'bf:Instance',
-    '@id': `http://example.org/instance/${Date.now()}`,
+    '@id': `${BASE_URI}/instance/${Date.now()}`,
   }));
 
   // Current record starts null (fresh draft)
@@ -193,11 +194,11 @@ function CatalogApp() {
   const handleLoadExample = () => {
     setWork({
       ...exampleWork,
-      '@id': `http://example.org/work/${Date.now()}`,
+      '@id': `${BASE_URI}/work/${Date.now()}`,
     });
     setInstance({
       ...exampleInstance,
-      '@id': `http://example.org/instance/${Date.now()}`,
+      '@id': `${BASE_URI}/instance/${Date.now()}`,
     });
     toast.success(t('loadExample') + ' - ' + 'Loaded successfully!');
   };
@@ -237,14 +238,14 @@ function CatalogApp() {
   };
 
   const handleReset = () => {
-    const newWorkId = `http://example.org/work/${Date.now()}`;
+    const newWorkId = `${BASE_URI}/work/${Date.now()}`;
     setWork({
       '@type': 'bf:Work',
       '@id': newWorkId,
     });
     setInstance({
       '@type': 'bf:Instance',
-      '@id': `http://example.org/instance/${Date.now()}`,
+      '@id': `${BASE_URI}/instance/${Date.now()}`,
       'bf:instanceOf': {
         '@id': newWorkId,
       },
@@ -447,19 +448,19 @@ function CatalogApp() {
     
     workData = workData || {
       '@type': 'bf:Work',
-      '@id': `http://example.org/work/${Date.now()}`,
+      '@id': `${BASE_URI}/work/${Date.now()}`,
     };
     instanceData = instanceData || {
       '@type': 'bf:Instance',
-      '@id': `http://example.org/instance/${Date.now()}`,
+      '@id': `${BASE_URI}/instance/${Date.now()}`,
     };
     
     // Ensure @id exists on both
     if (!workData['@id']) {
-      workData['@id'] = `http://example.org/work/${Date.now()}`;
+      workData['@id'] = `${BASE_URI}/work/${Date.now()}`;
     }
     if (!instanceData['@id']) {
-      instanceData['@id'] = `http://example.org/instance/${Date.now()}`;
+      instanceData['@id'] = `${BASE_URI}/instance/${Date.now()}`;
     }
     
     setWork(workData);
@@ -494,8 +495,8 @@ function CatalogApp() {
   };
 
   const handleNewRecord = () => {
-    const newWorkId = `http://example.org/work/${Date.now()}`;
-    const newInstanceId = `http://example.org/instance/${Date.now()}`;
+    const newWorkId = `${BASE_URI}/work/${Date.now()}`;
+    const newInstanceId = `${BASE_URI}/instance/${Date.now()}`;
     setWork({
       '@type': 'bf:Work',
       '@id': newWorkId,

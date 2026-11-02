@@ -56,7 +56,7 @@ export function LocPlaceSearch({ property, value, onChange, language = 'en' }: L
     const placeEntity = {
       '@type': 'bf:Place',
       '@id': place.uri,
-      'rdfs:label': place.suggestLabel || place.aLabel
+      'rdfs:label': place.aLabel || place.suggestLabel
     };
 
     if (isRepeatable) {
@@ -111,7 +111,7 @@ export function LocPlaceSearch({ property, value, onChange, language = 'en' }: L
               <div className="flex items-center gap-3">
                 <MapPin className="h-4 w-4 text-purple-600" />
                 <div>
-                  <div className="font-medium text-sm">{result.suggestLabel || result.aLabel}</div>
+                  <div className="font-medium text-sm">{result.aLabel || result.suggestLabel}</div>
                   {result.uri && (
                     <div className="text-xs text-gray-500 font-mono truncate max-w-md">
                       {result.uri}

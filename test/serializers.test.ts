@@ -710,3 +710,38 @@ test('26. Import: a Moon export re-imports to the same record in every format', 
     assert.deepStrictEqual(norm(await parseTurtle(jsonLdToTurtle(again))), before, `round trip through ${format}`);
   }
 });
+
+test('27. Values picked in search boxes keep their LC URIs; placeholder URIs are never published', async () => {
+  const pick = (label: string, uri: string) => ({ label, uri, source: 'LOC' });
+  const doc = auditRecord({
+    'bf:title': 'x',
+    'bf:language': pick('Arabic', 'http://id.loc.gov/vocabulary/languages/ara'),
+    'bf:subject': [pick('Islamic philosophy', 'http://id.loc.gov/authorities/subjects/sh85100934'), pick('فلسفة محلية', '')],
+    'bf:genreForm': pick('Old local entry', 'https://moonlib.org/authority/Old%20local%20entry')
+  }, { 'bf:instanceOf': { '@id': 'http://example.org/work/1793661440246' } }, { 'bf:heldBy': pick('Library of Congress', 'http://id.loc.gov/vocabulary/organizations/dlc') });
+  const ttl = jsonLdToTurtle(doc);
+  const quads = await parseTurtle(ttl);
+  const link = (p: string, o: string) => quads.some(q => q.predicate.value === `${BF}${p}` && q.object.value === o);
+  assert.ok(link('language', 'http://id.loc.gov/vocabulary/languages/ara'));
+  assert.ok(link('subject', 'http://id.loc.gov/authorities/subjects/sh85100934'));
+  assert.ok(link('heldBy', 'http://id.loc.gov/vocabulary/organizations/dlc'));
+  assert.ok(quads.some(q => q.object.value === 'فلسفة محلية'), 'a local entry keeps its label');
+  assert.ok(!/example\.org|moonlib\.org\/authority/.test(ttl), 'placeholder URIs never appear');
+  assert.ok(link('instanceOf', AUDIT_URIS.work), 'the Instance always points to this record\'s Work');
+});
+
+test('28. Standard-field shapes ({ lcc, ddc }, { isbn, lccn }) become BIBFRAME classification and identifiers', async () => {
+  const doc = auditRecord(
+    { 'bf:title': 'x', 'bf:classification': { lcc: 'PJ7846 .A46', ddc: '892.7', '@type': 'bf:ClassificationLcc' } },
+    { 'bf:identifiedBy': { isbn: '9789953000000', lccn: '2024123456', '@type': 'bf:Isbn' } }
+  );
+  const quads = await parseTurtle(jsonLdToTurtle(doc));
+  const typed = (t: string, p: string, v: string) => quads.some(q => q.predicate.value === p && q.object.value === v &&
+    quads.some(r => r.subject.equals(q.subject) && r.predicate.value === RDF_TYPE && r.object.value === `${BF}${t}`));
+  assert.ok(typed('ClassificationLcc', `${BF}classificationPortion`, 'PJ7846'));
+  assert.ok(typed('ClassificationLcc', `${BF}itemPortion`, '.A46'));
+  assert.ok(typed('ClassificationDdc', `${BF}classificationPortion`, '892.7'));
+  assert.ok(typed('Isbn', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#value', '9789953000000'));
+  assert.ok(typed('Lccn', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#value', '2024123456'));
+  assert.ok(!quads.some(q => /moonext|\/lcc$|\/isbn$/.test(q.predicate.value)), 'no leftover form keys');
+});
