@@ -27,7 +27,8 @@ const RESERVED_USERNAMES = new Set([SUPER_ADMIN_USERNAME, "admin", "tester"]);
 const VIP_CODES = new Set(["wolfmoonalqamiisaac", "moon2026", "vip"]);
 
 // Set MOON_ADMIN_PASSWORD in the Supabase function secrets to change it.
-const ADMIN_PASSWORD = Deno.env.get("MOON_ADMIN_PASSWORD") || "Eshak1996";
+// Trimmed so a space or line break pasted into the dashboard doesn't lock the admin out.
+const ADMIN_PASSWORD = (Deno.env.get("MOON_ADMIN_PASSWORD") || "").trim() || "Eshak1996";
 
 type AccountStatus = "pending" | "approved" | "rejected";
 
