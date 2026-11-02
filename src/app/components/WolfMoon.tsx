@@ -1020,9 +1020,12 @@ export default function WolfMoon({
     setSaveStatus("saved");
     toast.success("Loaded Real LOC Example", { description: "Complete bibliographic record with proper authority URIs.", duration: 4000 });
   };
-  const handleImport = (importedWorkData: any, importedInstanceData: any) => {
+  const handleImport = (importedWorkData: any, importedInstanceData: any, importedItemData?: any) => {
     setWorkData({ ...importedWorkData, "@id": uriSet.work });
     setInstanceData({ ...importedInstanceData, "@id": uriSet.instance, "bf:instanceOf": { "@id": uriSet.work } });
+    if (importedItemData) {
+      graphStore.setNode(uriSet.item, { ...importedItemData, "@id": uriSet.item, "@type": "bf:Item", "bf:itemOf": { "@id": uriSet.instance } });
+    }
     setSaveStatus("unsaved");
     toast.success("Record imported!");
   };

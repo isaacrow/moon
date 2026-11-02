@@ -6,6 +6,7 @@ import { buildW3CJsonLd, validateW3CJsonLd, jsonLdToTurtle, jsonLdToNTriples, BI
 import { realLocExamples } from '../src/app/utils/realLocExamples';
 import { FOLIOApiClient, FOLIO_PRESETS } from '../src/app/services/folioApiClient';
 import { VuFindApiClient, VUFIND_PRESETS } from '../src/app/services/vufindApiClient';
+import { toBibframeJsonLdString } from '../src/services/bibframeNormalizer';
 
 // Helper to parse Turtle with N3 parser to guarantee syntactic validity
 function parseTurtle(turtleStr: string): Promise<any[]> {
@@ -629,4 +630,83 @@ test('23. Editor session defaults never override the record; exports follow LC c
   assert.ok(quads.some(q => q.object.value === 'القبسات' && q.object.language === 'ar-arab'), 'Arabic script is language-tagged');
   const inMemory = doc['@graph'].find((n: any) => n['@type'] === 'bf:Work');
   assert.strictEqual(typeof inMemory['bf:title'][0]['bf:mainTitle'][0]['@value'], 'string', 'editors reading the builder output keep plain values');
+});
+
+test('24. OPAC exports: one BIBFRAME producer, no made-up holdings', async () => {
+  // The OPAC service loads the live catalog on import; keep this test offline.
+  const store: Record<string, string> = {};
+  (globalThis as any).localStorage ??= { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; }, removeItem: (k: string) => { delete store[k]; } };
+  const realFetch = globalThis.fetch;
+  (globalThis as any).fetch = async () => ({ ok: false, status: 503, json: async () => ({}), text: async () => '' });
+  try {
+    const { wolfMoonOpacService } = await import('../src/services/wolfMoonOpacService');
+    const work: any = {
+      id: 'w1', uri: 'https://moonlib.org/work/w1', title: 'القبسات', language: 'ara', subjects: [],
+      primaryCreator: { nameArabic: 'الميرداماد', uri: undefined },
+      instances: [{
+        id: 'i1', uri: 'https://moonlib.org/instance/i1', title: 'القبسات',
+        items: [{ id: 'it1', uri: 'https://moonlib.org/item/i1-1', heldBy: 'المكتبة المركزية', shelfMark: 'PJ7862 .A1', barcode: '31924000000001', synthetic: true }]
+      }]
+    };
+    const ttl = wolfMoonOpacService.generateTurtleRdf(work);
+    const quads = await parseTurtle(ttl);
+    assert.ok(!ttl.includes('PJ7862') && !ttl.includes('31924000000001'), 'placeholder copies are never exported');
+    assert.ok(!ttl.includes('undefined'));
+    assert.ok(!ttl.includes('bflc:PrimaryContribution'));
+    assert.ok(quads.some(q => q.predicate.value === `${BF}instanceOf` && q.object.value === 'https://moonlib.org/work/w1'));
+
+    const saved: any = { ...work, document: { work: { 'bf:title': { 'bf:mainTitle': 'القبسات' } }, instance: {}, metadata: { uriSet: AUDIT_URIS } } };
+    const fromRecord = await parseTurtle(wolfMoonOpacService.generateTurtleRdf(saved));
+    const fromEditor = await parseTurtle(jsonLdToTurtle(auditRecord({ 'bf:title': { 'bf:mainTitle': 'القبسات' } }, {})));
+    const norm = (qs: any[]) => qs.filter(q => !/(creation|change)Date/.test(q.predicate.value)).map(q => `${q.subject.termType === 'BlankNode' ? '_' : q.subject.value} ${q.predicate.value} ${q.object.termType === 'BlankNode' ? '_' : q.object.value}`).sort();
+    assert.deepStrictEqual(norm(fromRecord), norm(fromEditor), 'a saved record exports from the OPAC exactly as from the editor');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('25. Import: LC-style expanded JSON-LD keeps parallel scripts, exact identifiers and Work classes', async () => {
+  const { importBibframe } = await import('../src/services/bibframeImport');
+  const B = 'http://id.loc.gov/ontologies/bibframe/';
+  const lc = [
+    { '@id': 'http://id.loc.gov/resources/works/1', '@type': [`${B}Work`, `${B}Text`, `${B}Manuscript`],
+      [`${B}title`]: [{ '@id': '_:t1' }], [`${B}hasInstance`]: [{ '@id': 'http://id.loc.gov/resources/instances/1' }],
+      [`${B}classification`]: [{ '@id': '_:c1' }] },
+    { '@id': '_:t1', '@type': [`${B}Title`], [`${B}mainTitle`]: [{ '@value': 'al-Qabasāt' }, { '@value': 'القبسات', '@language': 'ar-arab' }] },
+    { '@id': '_:c1', '@type': [`${B}ClassificationLcc`], [`${B}classificationPortion`]: [{ '@value': 'B753.D363' }],
+      [`${B}assigner`]: [{ '@id': 'http://id.loc.gov/vocabulary/organizations/dlc' }] },
+    { '@id': 'http://id.loc.gov/resources/instances/1', '@type': [`${B}Instance`], [`${B}instanceOf`]: [{ '@id': 'http://id.loc.gov/resources/works/1' }],
+      [`${B}identifiedBy`]: [{ '@id': '_:i1' }],
+      [`${B}responsibilityStatement`]: [{ '@value': 'Mīr Dāmād' }, { '@value': 'الميرداماد', '@language': 'ar-arab' }],
+      [`${B}provisionActivity`]: [{ '@id': '_:p1' }] },
+    { '@id': '_:i1', '@type': [`${B}Lccn`], 'http://www.w3.org/1999/02/22-rdf-syntax-ns#value': [{ '@value': ' 2016496993' }] },
+    { '@id': '_:p1', '@type': [`${B}Production`], 'http://id.loc.gov/ontologies/bflc/simpleDate': [{ '@value': '[17th century?]' }] }
+  ];
+  const rec = await importBibframe(JSON.stringify(lc), 'jsonld');
+  const quads = await parseTurtle(jsonLdToTurtle(buildW3CJsonLd({ workData: rec!.work, instanceData: rec!.instance, uriSet: AUDIT_URIS })));
+  const lit = (v: string, lang?: string) => quads.some(q => q.object.value === v && (lang === undefined || q.object.language === lang));
+  assert.ok(lit('al-Qabasāt') && lit('القبسات', 'ar-arab'), 'both scripts of the title survive');
+  assert.ok(lit('Mīr Dāmād') && lit('الميرداماد', 'ar-arab'), 'both scripts of the responsibility statement survive');
+  assert.ok(lit(' 2016496993'), 'identifiers are kept exactly');
+  assert.ok(lit('[17th century?]'), 'bflc:simpleDate is kept');
+  assert.ok(quads.some(q => q.object.value === 'http://id.loc.gov/vocabulary/organizations/dlc'), 'classification assigner is kept');
+  assert.ok(quads.some(q => q.predicate.value === RDF_TYPE && q.object.value === `${B}Manuscript`), 'more specific Work classes are kept');
+});
+
+test('26. Import: a Moon export re-imports to the same record in every format', async () => {
+  const { importBibframe } = await import('../src/services/bibframeImport');
+  const doc = auditRecord({
+    'bf:title': { 'bf:mainTitle': 'Pride and prejudice' }, 'bf:language': 'eng', 'bf:content': 'txt',
+    'bf:contribution': [{ 'bf:agent': { '@id': AUSTEN, '@type': 'bf:Person', 'rdfs:label': 'Austen, Jane, 1775-1817' }, 'bf:role': { '@id': 'http://id.loc.gov/vocabulary/relators/aut' } }],
+    'bf:classification': { '@type': 'bf:ClassificationLcc', 'bf:classificationPortion': 'PR4034', 'bf:itemPortion': '.P7 2003' }
+  }, { 'bf:carrier': { '@id': 'http://id.loc.gov/vocabulary/carriers/nc', 'rdfs:label': 'volume' }, 'bf:extent': '480 p.', 'bf:identifiedBy': { '@type': 'bf:Isbn', 'rdf:value': '9780141439518' } },
+  { 'bf:shelfMark': 'PR4034 .P7 2003', 'bf:heldBy': 'Main Library' });
+  const norm = (qs: any[]) => qs.filter(q => !/(creation|change)Date$/.test(q.predicate.value))
+    .map(q => `${q.subject.termType === 'BlankNode' ? '_' : q.subject.value} ${q.predicate.value} ${q.object.termType === 'BlankNode' ? '_' : q.object.value}`).sort();
+  const before = norm(await parseTurtle(jsonLdToTurtle(doc)));
+  for (const [format, text] of [['jsonld', toBibframeJsonLdString(doc)], ['turtle', jsonLdToTurtle(doc)], ['ntriples', jsonLdToNTriples(doc)]] as const) {
+    const rec = await importBibframe(text, format);
+    const again = buildW3CJsonLd({ workData: rec!.work, instanceData: rec!.instance, itemData: rec!.item, uriSet: AUDIT_URIS });
+    assert.deepStrictEqual(norm(await parseTurtle(jsonLdToTurtle(again))), before, `round trip through ${format}`);
+  }
 });

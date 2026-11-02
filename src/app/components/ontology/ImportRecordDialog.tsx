@@ -6,11 +6,12 @@
 
 import React, { useState } from 'react';
 import { Upload, FileJson, FileCode, FileText, X } from 'lucide-react';
+import { importBibframe, ImportFormat } from '../../../services/bibframeImport';
 
 interface ImportRecordDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (workData: any, instanceData: any) => void;
+  onImport: (workData: any, instanceData: any, itemData?: any) => void;
 }
 
 export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDialogProps) {
@@ -34,10 +35,10 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
       setFileType('jsonld');
     } else if (extension === 'xml' || extension === 'rdf' || extension === 'marcxml') {
       setFileType('xml');
-    } else if (extension === 'ttl' || extension === 'n3') {
+    } else if (extension === 'ttl' || extension === 'n3' || extension === 'nt') {
       setFileType('rdf');
     } else {
-      setError('Unsupported file type. Please use JSON-LD, XML, or RDF files.');
+      setError('Unsupported file type. Please use JSON-LD, Turtle or N-Triples.');
       return;
     }
 
@@ -53,51 +54,20 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
     reader.readAsText(file);
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     try {
-      let workData: any = {};
-      let instanceData: any = {};
-
-      if (fileType === 'jsonld') {
-        const parsed = JSON.parse(fileContent);
-        
-        // Handle different JSON-LD structures
-        if (parsed['@graph']) {
-          const graph = parsed['@graph'];
-          workData = graph.find((item: any) => 
-            item['@type']?.includes('bf:Work') || item['@type'] === 'bf:Work'
-          ) || {};
-          instanceData = graph.find((item: any) => 
-            item['@type']?.includes('bf:Instance') || item['@type'] === 'bf:Instance'
-          ) || {};
-        } else if (parsed.work && parsed.instance) {
-          workData = parsed.work;
-          instanceData = parsed.instance;
-        } else if (parsed['@type']?.includes('bf:Work') || parsed['@type'] === 'bf:Work') {
-          workData = parsed;
-        } else if (parsed['@type']?.includes('bf:Instance') || parsed['@type'] === 'bf:Instance') {
-          instanceData = parsed;
-        } else {
-          workData = parsed.work || parsed.Work || {};
-          instanceData = parsed.instance || parsed.Instance || {};
-        }
-      } else if (fileType === 'xml') {
-        setError('XML import is not yet implemented. Please use JSON-LD format.');
-        return;
-      } else if (fileType === 'rdf') {
-        setError('Turtle/RDF import is not yet implemented. Please use JSON-LD format.');
+      if (fileType === 'xml') {
+        setError('RDF/XML and MARCXML import is not available yet. Please export the record as JSON-LD, Turtle or N-Triples.');
         return;
       }
-
-      if (Object.keys(workData).length === 0 && Object.keys(instanceData).length === 0) {
-        setError('No valid BIBFRAME data found in file');
+      // Any BIBFRAME description: LC's id.loc.gov records, Moon exports, Turtle or N-Triples.
+      const format: ImportFormat = fileType === 'jsonld' ? 'jsonld' : selectedFile?.name.toLowerCase().endsWith('.nt') ? 'ntriples' : 'turtle';
+      const record = await importBibframe(fileContent, format);
+      if (!record || (Object.keys(record.work).length <= 1 && Object.keys(record.instance).length <= 1)) {
+        setError('No BIBFRAME Work or Instance found in file');
         return;
       }
-
-      if (!workData['@type']) workData['@type'] = 'bf:Work';
-      if (!instanceData['@type']) instanceData['@type'] = 'bf:Instance';
-
-      onImport(workData, instanceData);
+      onImport(record.work, record.instance, record.item);
       onClose();
     } catch (err) {
       setError(`Error parsing file: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -132,7 +102,7 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
         {/* Content */}
         <div className="p-6 space-y-5">
           <p className="text-sm text-white/80">
-            Import a BIBFRAME record from JSON-LD, XML, or RDF file into MOON.
+            Import a BIBFRAME record (JSON-LD, Turtle or N-Triples — including id.loc.gov records) into MOON.
           </p>
 
           {/* File Upload Drop Area */}
@@ -146,7 +116,7 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
               type="file"
               id="file-upload"
               className="hidden"
-              accept=".json,.jsonld,.xml,.rdf,.ttl,.n3,.marcxml"
+              accept=".json,.jsonld,.ttl,.n3,.nt,.xml,.rdf,.marcxml"
               onChange={handleFileSelect}
             />
             <label

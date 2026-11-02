@@ -18,7 +18,7 @@
 import { toTurtle, resolvePropertyUri, KNOWN_NAMESPACES, hoistNamedNodes } from './rdfGraphBuilder';
 import { normalizeBibframe, finishForExport } from './bibframeNormalizer';
 import { BASE_URI } from './uriMintingService';
-import { BF_PROPERTY_DOMAINS, BF_DATATYPE_PROPERTIES } from './bibframeTerms.generated';
+import { BF_PROPERTY_DOMAINS, BF_DATATYPE_PROPERTIES, BF_CLASSES } from './bibframeTerms.generated';
 
 // =====================================================
 // CANONICAL BIBFRAME & LINKED DATA @context
@@ -173,7 +173,7 @@ export function buildW3CJsonLd(input: BuilderInput): W3CJsonLdDocument {
 function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean, misplaced?: MisplacedProperty[]): W3CJsonLdNode {
   const node: W3CJsonLdNode = {
     "@id": uriSet.work,
-    "@type": "bf:Work",
+    "@type": entityTypes("bf:Work", data),
     "bf:hasInstance": [{ "@id": uriSet.instance }]
   };
 
@@ -181,23 +181,10 @@ function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean, mispl
     node["bf:hasExpression"] = [{ "@id": uriSet.expression }];
   }
 
-  // Title
-  const title = extractTitle(data);
+  // Titles: every title and every script of it (LC gives romanized and Arabic-script mainTitles).
   // No placeholder titles: an untitled Work is left untitled (validation reports it) or borrows the Instance's.
-  const mainTitleText = title.mainTitle?.trim() || (typeof data["rdfs:label"] === "string" ? data["rdfs:label"].trim() : "") || (typeof data.label === "string" ? data.label.trim() : "");
-  if (mainTitleText) {
-    const titleObj: any = {
-      "@type": "bf:Title",
-      "bf:mainTitle": [{ "@value": mainTitleText }]
-    };
-    if (title.subtitle) titleObj["bf:subtitle"] = [{ "@value": title.subtitle }];
-    if (title.partNumber) titleObj["bf:partNumber"] = [{ "@value": title.partNumber }];
-    if (title.partName) titleObj["bf:partName"] = [{ "@value": title.partName }];
-    if (title.nonSortNum !== undefined && title.nonSortNum !== '') {
-      titleObj["bflc:nonSortNum"] = [{ "@value": String(title.nonSortNum) }];
-    }
-    node["bf:title"] = [titleObj];
-  }
+  const titles = buildTitles(data);
+  if (titles.length > 0) node["bf:title"] = titles;
 
   // Contributions
   const contributions = extractContributions(data, uriSet.work);
@@ -208,91 +195,53 @@ function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean, mispl
   // Language
   const lang = extractProperty(data, "bf:language", "language");
   if (lang) {
-    const ref = vocabRef(lang, "languages", "bf:Language");
-    if (ref) node["bf:language"] = [ref];
+    const refs = asList(lang).map(l => vocabRef(l, "languages", "bf:Language")).filter(Boolean);
+    if (refs.length) node["bf:language"] = refs;
   }
 
-  // Subjects
+  // Subjects and genre/form: authority links keep their IRI; whatever else describes them is kept.
   const subjects = extractArrayProperty(data, "bf:subject", "subject");
-  if (subjects.length > 0) {
-    node["bf:subject"] = subjects.map(s => {
-      if (typeof s === "object" && s !== null) {
-        if (s["@id"]) {
-          const res: any = { "@id": s["@id"], "@type": s["@type"] || "bf:Topic" };
-          if (s["rdfs:label"]) res["rdfs:label"] = s["rdfs:label"];
-          return res;
-        }
-        if (s["rdfs:label"]) return { "@type": s["@type"] || "bf:Topic", "rdfs:label": s["rdfs:label"] };
-      }
-      return { "@type": "bf:Topic", "rdfs:label": String(s) };
-    });
-  }
-
-  // Genre/Form
+  if (subjects.length > 0) node["bf:subject"] = subjects.map(s => describedNode(s, "bf:Topic")).filter(Boolean);
   const genres = extractArrayProperty(data, "bf:genreForm", "genreForm");
-  if (genres.length > 0) {
-    node["bf:genreForm"] = genres.map(g => {
-      if (typeof g === "object" && g !== null) {
-        if (g["@id"]) return { "@id": g["@id"], "@type": g["@type"] || "bf:GenreForm", ...(g["rdfs:label"] ? { "rdfs:label": g["rdfs:label"] } : {}) };
-        if (g["rdfs:label"]) return { "@type": "bf:GenreForm", "rdfs:label": g["rdfs:label"] };
-      }
-      return { "@type": "bf:GenreForm", "rdfs:label": String(g) };
-    });
-  }
+  if (genres.length > 0) node["bf:genreForm"] = genres.map(g => describedNode(g, "bf:GenreForm")).filter(Boolean);
 
   // Classification
   const classifications = extractArrayProperty(data, "bf:classification", "classification");
   if (classifications.length > 0) {
     node["bf:classification"] = classifications.map(c => {
-      if (typeof c === "object" && c !== null) {
-        const portion = c["bf:classificationPortion"] || c["classificationPortion"];
-        const itemPortion = c["bf:itemPortion"] || c["itemPortion"];
-        return {
-          "@type": c["@type"] || "bf:Classification",
-          ...(portion ? { "bf:classificationPortion": [{ "@value": String(portion) }] } : {}),
-          ...(itemPortion ? { "bf:itemPortion": [{ "@value": String(itemPortion) }] } : {}),
-          ...(c["bf:source"] ? { "bf:source": [{ "@id": typeof c["bf:source"] === "object" ? c["bf:source"]["@id"] : c["bf:source"] }] } : {}),
-          ...(c["bf:edition"] ? { "bf:edition": [{ "@value": String(c["bf:edition"]) }] } : {})
-        };
+      if (c && typeof c === "object" && c["@value"] === undefined) {
+        const out: any = { "@type": c["@type"] || "bf:Classification" };
+        const portion = texts(c["bf:classificationPortion"] ?? c["classificationPortion"]);
+        const itemPortion = texts(c["bf:itemPortion"] ?? c["itemPortion"]);
+        if (portion.length) out["bf:classificationPortion"] = portion;
+        if (itemPortion.length) out["bf:itemPortion"] = itemPortion;
+        if (c["bf:edition"]) out["bf:edition"] = texts(c["bf:edition"]);
+        if (typeof c["bf:source"] === "string") out["bf:source"] = [{ "@id": c["bf:source"] }];
+        keepRest(c, out, ["bf:classificationPortion", "bf:itemPortion", "bf:edition", "rdfs:label", ...(typeof c["bf:source"] === "string" ? ["bf:source"] : [])]);
+        return out;
       }
-      return {
-        "@type": "bf:Classification",
-        "bf:classificationPortion": [{ "@value": String(c) }]
-      };
-    });
+      return { "@type": "bf:Classification", "bf:classificationPortion": texts(c) };
+    }).filter(c => c["bf:classificationPortion"]?.length || c["bf:itemPortion"]?.length || Object.keys(c).length > 1);
   }
 
   // Summary
-  const summary = extractProperty(data, "bf:summary", "summary");
-  if (summary) {
-    const label = typeof summary === "object" ? (summary["rdfs:label"] || summary["@value"] || "") : String(summary);
-    if (label) {
-      node["bf:summary"] = [{ "@type": "bf:Summary", "rdfs:label": label }];
-    }
-  }
+  const summaries = extractArrayProperty(data, "bf:summary", "summary").map(s => labelledNode(s, "bf:Summary")).filter(Boolean);
+  if (summaries.length) node["bf:summary"] = summaries;
 
   // Content type
   const content = extractProperty(data, "bf:content", "content");
   if (content) {
-    const ref = vocabRef(content, "contentTypes", "bf:Content");
-    if (ref) node["bf:content"] = [ref];
+    const refs = asList(content).map(c => vocabRef(c, "contentTypes", "bf:Content")).filter(Boolean);
+    if (refs.length) node["bf:content"] = refs;
   }
 
   // Origin date
-  const originDate = extractProperty(data, "bf:originDate", "originDate");
-  if (originDate) {
-    const dateStr = String(typeof originDate === "object" ? originDate["@value"] || originDate.value || originDate : originDate);
-    node["bf:originDate"] = [dateLiteral(dateStr)];
-  }
+  const originDates = texts(extractProperty(data, "bf:originDate", "originDate")).map(t => dateLiteral(t["@value"]));
+  if (originDates.length) node["bf:originDate"] = originDates;
 
   // Notes
-  const notes = extractArrayProperty(data, "bf:note", "note");
-  if (notes.length > 0) {
-    node["bf:note"] = notes.map(n => ({
-      "@type": "bf:Note",
-      "rdfs:label": typeof n === "object" ? (n["rdfs:label"] || n["@value"] || JSON.stringify(n)) : String(n)
-    }));
-  }
+  const notes = extractArrayProperty(data, "bf:note", "note").map(n => labelledNode(n, "bf:Note")).filter(Boolean);
+  if (notes.length) node["bf:note"] = notes;
 
   // Preserve other custom properties in workData
   preserveCustomProperties(data, node, [
@@ -318,15 +267,13 @@ function buildExpressionNode(data: any, uriSet: any, workNode: any, misplaced?: 
   };
 
   // An expression is a Work too, and Works carry a title; it shares its Work's title unless given its own.
-  const ownTitle = extractTitle(data).mainTitle.trim();
-  node["bf:title"] = ownTitle
-    ? [{ "@type": "bf:Title", "bf:mainTitle": [{ "@value": ownTitle }] }]
-    : JSON.parse(JSON.stringify(workNode["bf:title"] || []));
+  const ownTitles = buildTitles(data);
+  node["bf:title"] = ownTitles.length ? ownTitles : JSON.parse(JSON.stringify(workNode["bf:title"] || []));
 
   const lang = extractProperty(data, "bf:language", "language");
   if (lang) {
-    const ref = vocabRef(lang, "languages", "bf:Language");
-    if (ref) node["bf:language"] = [ref];
+    const refs = asList(lang).map(l => vocabRef(l, "languages", "bf:Language")).filter(Boolean);
+    if (refs.length) node["bf:language"] = refs;
   }
 
   preserveCustomProperties(data, node, [
@@ -340,130 +287,68 @@ function buildExpressionNode(data: any, uriSet: any, workNode: any, misplaced?: 
 function buildInstanceNode(data: any, uriSet: any, hasExpression?: boolean, misplaced?: MisplacedProperty[]): W3CJsonLdNode {
   const node: W3CJsonLdNode = {
     "@id": uriSet.instance,
-    "@type": "bf:Instance",
+    "@type": entityTypes("bf:Instance", data),
     "bf:instanceOf": { "@id": hasExpression ? uriSet.expression : uriSet.work },
     "bf:hasItem": [{ "@id": uriSet.item }]
   };
 
-  // Title
-  const title = extractTitle(data);
-  const instMain = title.mainTitle?.trim();
-  if (instMain) {
-    const titleObj: any = {
-      "@type": "bf:Title",
-      "bf:mainTitle": [{ "@value": instMain }]
-    };
-    if (title.subtitle) titleObj["bf:subtitle"] = [{ "@value": title.subtitle }];
-    if (title.partNumber) titleObj["bf:partNumber"] = [{ "@value": title.partNumber }];
-    if (title.partName) titleObj["bf:partName"] = [{ "@value": title.partName }];
-    node["bf:title"] = [titleObj];
+  const titles = buildTitles(data);
+  if (titles.length > 0) node["bf:title"] = titles;
+
+  // Transcribed statements keep every value and script.
+  for (const [prefixed, short] of [
+    ["bf:editionStatement", "editionStatement"], ["bf:responsibilityStatement", "responsibilityStatement"],
+    ["bf:dimensions", "dimensions"], ["bf:seriesStatement", "seriesStatement"]
+  ]) {
+    const values = texts(extractProperty(data, prefixed, short));
+    if (values.length) node[prefixed] = values;
   }
-
-  // Edition statement
-  const edition = extractProperty(data, "bf:editionStatement", "editionStatement");
-  if (edition) node["bf:editionStatement"] = [{ "@value": String(edition) }];
-
-  // Responsibility statement
-  const resp = extractProperty(data, "bf:responsibilityStatement", "responsibilityStatement");
-  if (resp) node["bf:responsibilityStatement"] = [{ "@value": String(resp) }];
 
   // Identifiers
-  const identifiers = extractArrayProperty(data, "bf:identifiedBy", "identifiedBy");
-  if (identifiers.length > 0) {
-    node["bf:identifiedBy"] = identifiers.map(id => {
-      const idType = id["@type"] || "bf:Identifier";
-      const idValue = id["rdf:value"] || id["value"] || id;
-      return {
-        "@type": idType,
-        "rdf:value": [{ "@value": typeof idValue === "object" ? (idValue["@value"] || JSON.stringify(idValue)) : String(idValue) }]
-      };
-    });
-  }
+  const identifiers = extractArrayProperty(data, "bf:identifiedBy", "identifiedBy").map(id => identifierNode(id, "bf:Identifier")).filter(Boolean);
+  if (identifiers.length > 0) node["bf:identifiedBy"] = identifiers;
 
   // Provision activity (Publication/Distribution/Manufacture)
   const provisions = extractArrayProperty(data, "bf:provisionActivity", "provisionActivity");
   if (provisions.length > 0) {
-    node["bf:provisionActivity"] = provisions.map(p => {
-      const prov: any = {
-        "@type": p["@type"] || "bf:Publication"
-      };
+    node["bf:provisionActivity"] = provisions.filter(p => p && typeof p === "object").map(p => {
+      const prov: any = { "@type": p["@type"] || "bf:Publication" };
 
-      const agent = p["bf:agent"] || p["agent"];
-      if (agent) {
-        prov["bf:agent"] = {
-          "@id": agent["@id"] || `${BASE_URI}/agent/${simpleHash(agent["rdfs:label"] || "unknown")}`,
-          "@type": agent["@type"] || "bf:Agent",
-          "rdfs:label": agent["rdfs:label"] || ""
-        };
-      }
+      const agents = asList(p["bf:agent"] ?? p["agent"]).map(a => namedNode(a, "bf:Agent", "agent")).filter(Boolean);
+      if (agents.length) prov["bf:agent"] = agents;
 
-      const place = p["bf:place"] || p["place"];
-      if (place) {
-        prov["bf:place"] = {
-          "@id": place["@id"] || `${BASE_URI}/place/${simpleHash(place["rdfs:label"] || "unknown")}`,
-          "@type": "bf:Place",
-          "rdfs:label": place["rdfs:label"] || ""
-        };
-      }
+      const places = asList(p["bf:place"] ?? p["place"]).map(pl => namedNode(pl, "bf:Place", "place")).filter(Boolean);
+      if (places.length) prov["bf:place"] = places;
 
-      const date = p["bf:date"] || p["date"];
-      if (date) {
-        const dateStr = typeof date === "object" ? (date["@value"] || date.value || String(date)) : String(date);
-        prov["bf:date"] = [dateLiteral(dateStr)];
-      }
+      const dates = texts(p["bf:date"] ?? p["date"]).map(t => dateLiteral(t["@value"]));
+      if (dates.length) prov["bf:date"] = dates;
 
+      keepRest(p, prov, ["bf:agent", "bf:place", "bf:date"]);
       return prov;
     });
   }
 
   // Extent
-  const extent = extractProperty(data, "bf:extent", "extent");
-  if (extent) {
-    const extVal = typeof extent === "object" ? (extent["value"] || extent["rdfs:label"] || extent["@value"] || "") : String(extent);
-    if (extVal) node["bf:extent"] = [{ "@type": "bf:Extent", "rdfs:label": extVal }];
+  const extents = extractArrayProperty(data, "bf:extent", "extent").map(e => labelledNode(e, "bf:Extent")).filter(Boolean);
+  if (extents.length) node["bf:extent"] = extents;
+
+  // Carrier, media, issuance
+  for (const [prefixed, short, vocab, type] of [
+    ["bf:carrier", "carrier", "carriers", "bf:Carrier"], ["bf:media", "media", "mediaTypes", "bf:Media"],
+    ["bf:issuance", "issuance", "issuance", "bf:Issuance"]
+  ]) {
+    const v = extractProperty(data, prefixed, short);
+    const refs = v ? asList(v).map(x => vocabRef(x, vocab, type)).filter(Boolean) : [];
+    if (refs.length) node[prefixed] = refs;
   }
-
-  // Dimensions
-  const dimensions = extractProperty(data, "bf:dimensions", "dimensions");
-  if (dimensions) node["bf:dimensions"] = [{ "@value": String(dimensions) }];
-
-  // Carrier
-  const carrier = extractProperty(data, "bf:carrier", "carrier");
-  if (carrier) {
-    const ref = vocabRef(carrier, "carriers", "bf:Carrier");
-    if (ref) node["bf:carrier"] = [ref];
-  }
-
-  // Media
-  const media = extractProperty(data, "bf:media", "media");
-  if (media) {
-    const ref = vocabRef(media, "mediaTypes", "bf:Media");
-    if (ref) node["bf:media"] = [ref];
-  }
-
-  // Issuance
-  const issuance = extractProperty(data, "bf:issuance", "issuance");
-  if (issuance) {
-    const ref = vocabRef(issuance, "issuance", "bf:Issuance");
-    if (ref) node["bf:issuance"] = [ref];
-  }
-
-  // Series statement
-  const series = extractProperty(data, "bf:seriesStatement", "seriesStatement");
-  if (series) node["bf:seriesStatement"] = [{ "@value": String(series) }];
 
   // Copyright date
-  const copyright = extractProperty(data, "bf:copyrightDate", "copyrightDate");
-  if (copyright) node["bf:copyrightDate"] = [dateLiteral(String(copyright))];
+  const copyright = texts(extractProperty(data, "bf:copyrightDate", "copyrightDate")).map(t => dateLiteral(t["@value"]));
+  if (copyright.length) node["bf:copyrightDate"] = copyright;
 
   // Notes
-  const notes = extractArrayProperty(data, "bf:note", "note");
-  if (notes.length > 0) {
-    node["bf:note"] = notes.map(n => ({
-      "@type": "bf:Note",
-      "rdfs:label": typeof n === "object" ? (n["rdfs:label"] || n["@value"] || JSON.stringify(n)) : String(n)
-    }));
-  }
+  const notes = extractArrayProperty(data, "bf:note", "note").map(n => labelledNode(n, "bf:Note")).filter(Boolean);
+  if (notes.length) node["bf:note"] = notes;
 
   // Preserve other custom properties
   preserveCustomProperties(data, node, [
@@ -484,34 +369,26 @@ function buildItemNode(data: any, uriSet: any, misplaced?: MisplacedProperty[]):
     "bf:itemOf": { "@id": uriSet.instance }
   };
 
-  // Held by
-  const heldBy = extractProperty(data, "bf:heldBy", "heldBy");
-  if (heldBy) {
-    node["bf:heldBy"] = typeof heldBy === "object" && heldBy["@id"]
-      ? { "@id": heldBy["@id"], "@type": heldBy["@type"] || "bf:Agent", "rdfs:label": heldBy["rdfs:label"] || "" }
-      : { "@id": `${BASE_URI}/org/${simpleHash(String(heldBy))}`, "@type": "bf:Organization", "rdfs:label": String(heldBy) };
-  }
+  // Held by: a typed library name gets a stable Moon URI so the same library is the same agent everywhere.
+  const heldBy = asList(extractProperty(data, "bf:heldBy", "heldBy")).map(h => {
+    if (h && typeof h === "object" && h["@value"] === undefined) return namedNode(h, "bf:Organization", "org");
+    const label = text(h);
+    return label ? { "@id": `${BASE_URI}/org/${simpleHash(label)}`, "@type": "bf:Organization", "rdfs:label": label } : null;
+  }).filter(Boolean);
+  if (heldBy.length) node["bf:heldBy"] = heldBy.length === 1 ? heldBy[0] : heldBy;
 
   // Shelf mark
-  const shelf = extractProperty(data, "bf:shelfMark", "shelfMark");
-  if (shelf) {
-    node["bf:shelfMark"] = [{ "@type": "bf:ShelfMark", "rdfs:label": String(shelf) }];
-  }
+  const shelfMarks = extractArrayProperty(data, "bf:shelfMark", "shelfMark").map(s => labelledNode(s, "bf:ShelfMark")).filter(Boolean);
+  if (shelfMarks.length) node["bf:shelfMark"] = shelfMarks;
 
   // Electronic locator
-  const eloc = extractProperty(data, "bf:electronicLocator", "electronicLocator");
-  if (eloc) {
-    node["bf:electronicLocator"] = [{ "@id": String(eloc) }];
-  }
+  const elocs = asList(extractProperty(data, "bf:electronicLocator", "electronicLocator"))
+    .map(e => (e && typeof e === "object" && e["@id"]) ? { "@id": e["@id"] } : (text(e) ? { "@id": text(e) } : null)).filter(Boolean);
+  if (elocs.length) node["bf:electronicLocator"] = elocs;
 
   // Identifiers / Barcodes
-  const identifiers = extractArrayProperty(data, "bf:identifiedBy", "identifiedBy");
-  if (identifiers.length > 0) {
-    node["bf:identifiedBy"] = identifiers.map(id => ({
-      "@type": id["@type"] || "bf:Barcode",
-      "rdf:value": [{ "@value": typeof id === "object" ? (id["rdf:value"] || id["value"] || "") : String(id) }]
-    }));
-  }
+  const identifiers = extractArrayProperty(data, "bf:identifiedBy", "identifiedBy").map(id => identifierNode(id, "bf:Barcode")).filter(Boolean);
+  if (identifiers.length > 0) node["bf:identifiedBy"] = identifiers;
 
   preserveCustomProperties(data, node, [
     "heldBy", "bf:heldBy", "shelfMark", "bf:shelfMark", "electronicLocator", "bf:electronicLocator",
@@ -519,6 +396,142 @@ function buildItemNode(data: any, uriSet: any, misplaced?: MisplacedProperty[]):
   ], "Item", misplaced);
 
   return cleanNode(node);
+}
+
+// =====================================================
+// VALUE HELPERS: normalize what the builder knows, keep everything else
+// =====================================================
+
+const asList = (v: any): any[] => (v === undefined || v === null || v === "" ? [] : Array.isArray(v) ? v : [v]);
+
+/** All literal values in v as { "@value" } objects, keeping language tags and datatypes (deduplicated). */
+function texts(v: any): any[] {
+  const out: any[] = [];
+  const seen = new Set<string>();
+  const add = (lit: any) => {
+    const key = JSON.stringify(lit);
+    if (String(lit["@value"]).trim() && !seen.has(key)) { seen.add(key); out.push(lit); }
+  };
+  const walk = (x: any) => {
+    if (x === undefined || x === null || x === "") return;
+    if (Array.isArray(x)) return x.forEach(walk);
+    if (typeof x === "object") {
+      if (x["@value"] !== undefined) return add({ ...x, "@value": String(x["@value"]) });
+      if (x["@id"] && Object.keys(x).length === 1) return;
+      return walk(x["rdfs:label"] ?? x["label"] ?? x["rdf:value"] ?? x["value"] ?? x["bf:mainTitle"]);
+    }
+    add({ "@value": String(x) }); // kept exactly: LC writes LCCNs as " 2016496993"
+  };
+  walk(v);
+  return out;
+}
+
+/** The first literal in v as plain text. */
+const text = (v: any): string => texts(v)[0]?.["@value"] || "";
+
+const INTERNAL_FIELDS = new Set(["id", "uri", "created", "updated", "_type", "_raw", "value", "label"]);
+
+/** Copies the properties of src that the builder did not handle itself (bare keys only when no prefixed twin). */
+function keepRest(src: any, out: any, handled: string[]) {
+  if (!src || typeof src !== "object") return;
+  const skip = new Set(handled.map(h => resolvePropertyUri(h, BIBFRAME_JSONLD_CONTEXT).tag));
+  const entries = Object.entries(src).sort(([a], [b]) => Number(!a.includes(":")) - Number(!b.includes(":")));
+  for (const [k, v] of entries) {
+    if (k.startsWith("@") || INTERNAL_FIELDS.has(k) || v === null || v === undefined || v === "") continue;
+    const tag = resolvePropertyUri(k, BIBFRAME_JSONLD_CONTEXT).tag;
+    if (skip.has(tag) || out[tag] !== undefined) continue;
+    out[tag] = v;
+  }
+}
+
+/** Labels as stored: one plain label stays a string, several (or language-tagged) stay literal objects. */
+const labelValue = (labels: any[]) => (labels.length === 1 && !labels[0]["@language"] && !labels[0]["@type"] ? labels[0]["@value"] : labels);
+
+/** A described node (subject, genre...): its IRI if any, a default type, its labels, and anything else it says. */
+function describedNode(v: any, defaultType: string): any {
+  if (v === undefined || v === null || v === "") return null;
+  if (typeof v !== "object" || v["@value"] !== undefined) {
+    const labels = texts(v);
+    return labels.length ? { "@type": defaultType, "rdfs:label": labelValue(labels) } : null;
+  }
+  const out: any = {};
+  if (v["@id"]) out["@id"] = v["@id"];
+  out["@type"] = v["@type"] || defaultType;
+  const labels = texts(v["rdfs:label"] ?? v["label"]);
+  if (labels.length) out["rdfs:label"] = labelValue(labels);
+  keepRest(v, out, ["rdfs:label"]);
+  return out["@id"] || out["rdfs:label"] || Object.keys(out).length > 1 ? out : null;
+}
+
+/** A node whose content is its label (note, summary, extent, shelf mark): plain text becomes the label. */
+function labelledNode(v: any, type: string): any {
+  if (v === undefined || v === null || v === "") return null;
+  if (typeof v === "object" && v["@value"] === undefined && !Array.isArray(v)) {
+    const out: any = { "@type": v["@type"] || type };
+    if (v["@id"]) out["@id"] = v["@id"];
+    const labels = texts(v["rdfs:label"] ?? v["label"] ?? v["value"]);
+    if (labels.length) out["rdfs:label"] = labelValue(labels);
+    keepRest(v, out, ["rdfs:label"]);
+    return out["rdfs:label"] || out["@id"] || Object.keys(out).length > 1 ? out : null;
+  }
+  const labels = texts(v);
+  return labels.length ? { "@type": type, "rdfs:label": labelValue(labels) } : null;
+}
+
+/** An agent or place: keeps its IRI, or gets a stable Moon URI from its label. */
+function namedNode(v: any, defaultType: string, kind: string): any {
+  const isObj = v && typeof v === "object" && v["@value"] === undefined;
+  const labels = texts(isObj ? (v["rdfs:label"] ?? v["label"]) : v);
+  if (!labels.length && !(isObj && v["@id"])) return null;
+  const out: any = {
+    "@id": isObj && v["@id"] ? v["@id"] : `${BASE_URI}/${kind}/${simpleHash(labels[0]?.["@value"] || "unknown")}`,
+    "@type": (isObj && v["@type"]) || defaultType
+  };
+  if (labels.length) out["rdfs:label"] = labelValue(labels);
+  if (isObj) keepRest(v, out, ["rdfs:label"]);
+  return out;
+}
+
+/** An identifier node (ISBN, LCCN, barcode...) with its value(s) as rdf:value. */
+function identifierNode(id: any, defaultType: string): any {
+  if (id === undefined || id === null || id === "") return null;
+  const isObj = typeof id === "object" && id["@value"] === undefined;
+  const values = texts(isObj ? (id["rdf:value"] ?? id["value"]) : id);
+  if (!values.length && !(isObj && id["@id"])) return null;
+  const out: any = { "@type": (isObj && id["@type"]) || defaultType };
+  if (isObj && id["@id"]) out["@id"] = id["@id"];
+  if (values.length) out["rdf:value"] = values;
+  if (isObj) keepRest(id, out, ["rdf:value"]);
+  return out;
+}
+
+/** Every title of the entity, each with all its scripts; plain text becomes a bf:Title. */
+function buildTitles(data: any): any[] {
+  const raw = data["bf:title"] ?? data["title"];
+  const source = raw === undefined || raw === null || raw === "" ? (data["rdfs:label"] ?? data["label"]) : raw;
+  return asList(source).map(t => {
+    if (t === undefined || t === null || t === "") return null;
+    if (typeof t !== "object" || t["@value"] !== undefined) {
+      const main = texts(t);
+      return main.length ? { "@type": "bf:Title", "bf:mainTitle": main } : null;
+    }
+    const main = texts(t["bf:mainTitle"] ?? t["mainTitle"] ?? t["rdfs:label"] ?? t["label"]);
+    if (!main.length) return null;
+    const out: any = { "@type": t["@type"] || "bf:Title", "bf:mainTitle": main };
+    for (const [prefixed, short] of [["bf:subtitle", "subtitle"], ["bf:partNumber", "partNumber"], ["bf:partName", "partName"], ["bflc:nonSortNum", "nonSortNum"]]) {
+      const v = texts(t[prefixed] ?? t[short]);
+      if (v.length) out[prefixed] = v;
+    }
+    keepRest(t, out, ["bf:mainTitle", "bf:subtitle", "bf:partNumber", "bf:partName", "bflc:nonSortNum", "rdfs:label", "mainTitle", "subtitle", "partNumber", "partName", "nonSortNum"]);
+    return out;
+  }).filter(Boolean);
+}
+
+/** The entity's class plus any more specific official class it was given (bf:Text, bf:Manuscript, bf:Print...). */
+function entityTypes(base: string, data: any): string | string[] {
+  const extra = asList(data?.["@type"]).map((t: any) => resolvePropertyUri(String(t), BIBFRAME_JSONLD_CONTEXT).tag)
+    .filter((t: string) => t !== base && t.startsWith("bf:") && BF_CLASSES.has(t.slice(3)) && !["Work", "Instance", "Item"].includes(t.slice(3)));
+  return extra.length ? [base, ...new Set(extra)] : base;
 }
 
 function buildAdminNode(data: any, recordAdmin: any, uriSet: any): W3CJsonLdNode {
@@ -698,27 +711,33 @@ function extractContributions(data: any, workUri: string): any[] {
   return arr.map((contrib, idx) => {
     const isPrimary = marked(contrib) || idx === fallbackPrimary;
 
-    const agent = contrib["bf:agent"] || contrib["agent"] || {};
-    const rawRole = contrib["bf:role"] || contrib["role"] || {};
-    const role = Array.isArray(rawRole) ? rawRole[0] || {} : rawRole;
+    const rawAgent = contrib["bf:agent"] || contrib["agent"] || {};
+    const agent = (Array.isArray(rawAgent) ? rawAgent[0] : rawAgent) || {};
+    const agentObj = typeof agent === "object" && agent["@value"] === undefined ? agent : { "rdfs:label": agent };
+    const hasIri = typeof agentObj["@id"] === "string" && VALID_IRI.test(agentObj["@id"]);
+    const labels = texts(agentObj["rdfs:label"] ?? agentObj["label"]);
+    if (!hasIri && !labels.length) return null; // nothing to say about this contributor
 
-    const agentUri = typeof agent["@id"] === "string" && VALID_IRI.test(agent["@id"]) ? agent["@id"] : `${workUri}/agent/${idx}`;
-    const agentLabel = agent["rdfs:label"] || agent["label"] || "Unknown";
-    const agentType = agent["@type"] || "bf:Person";
-    const roleUri = role["@id"] || "http://id.loc.gov/vocabulary/relators/ctb";
+    const agentOut: any = { "@id": hasIri ? agentObj["@id"] : `${workUri}/agent/${idx}`, "@type": agentObj["@type"] || "bf:Person" };
+    if (labels.length) agentOut["rdfs:label"] = labelValue(labels);
+    keepRest(agentObj, agentOut, ["rdfs:label"]);
 
-    return {
+    // Roles: relator IRIs, relator codes ("aut"), or a labelled role; "contributor" only when none is given.
+    const roles = asList(contrib["bf:role"] ?? contrib["role"]).map((r: any) => {
+      if (r && typeof r === "object" && r["@id"]) return { "@id": r["@id"] };
+      const t = text(r);
+      if (/^[a-z]{3}$/.test(t)) return { "@id": `http://id.loc.gov/vocabulary/relators/${t}` };
+      return t ? { "@type": "bf:Role", "rdfs:label": t } : null;
+    }).filter(Boolean);
+
+    const out: any = {
       "@type": isPrimary ? ["bf:Contribution", "bf:PrimaryContribution"] : "bf:Contribution",
-      "bf:agent": {
-        "@id": agentUri,
-        "@type": agentType,
-        "rdfs:label": agentLabel
-      },
-      "bf:role": [{
-        "@id": roleUri
-      }]
+      "bf:agent": agentOut,
+      "bf:role": roles.length ? roles : [{ "@id": "http://id.loc.gov/vocabulary/relators/ctb" }]
     };
-  });
+    keepRest(contrib, out, ["bf:agent", "bf:role"]);
+    return out;
+  }).filter(Boolean);
 }
 
 /**
@@ -729,9 +748,13 @@ function vocabRef(value: any, vocab: string, type: string): any {
   const v = Array.isArray(value) ? value[0] : value;
   if (!v) return null;
   if (typeof v === "object") {
-    if (v["@id"]) return { "@id": v["@id"] };
-    const label = v["rdfs:label"] || v["label"] || v["@value"];
-    return label ? { "@type": v["@type"] || type, "rdfs:label": String(label) } : null;
+    if (v["@value"] !== undefined) return vocabRef(String(v["@value"]), vocab, type);
+    const labels = texts(v["rdfs:label"] ?? v["label"]);
+    if (v["@id"]) {
+      // Keep what the record says about the term (e.g. carriers/nc "volume"), as LC's own records do.
+      return { "@id": v["@id"], ...(v["@type"] ? { "@type": v["@type"] } : {}), ...(labels.length ? { "rdfs:label": labelValue(labels) } : {}) };
+    }
+    return labels.length ? { "@type": v["@type"] || type, "rdfs:label": labelValue(labels) } : null;
   }
   const s = String(v).trim();
   if (!s) return null;

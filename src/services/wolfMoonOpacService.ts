@@ -20,6 +20,10 @@ import { AISuggestionProfile, saveAuthorityProfileToMoonSystem } from './authorF
 import { VERIFIED_IRAQI_AUTHORS } from './iraqiAuthorAIService';
 import { getAllRecords, getDeletedRecordIds } from '../app/utils/recordStorageBackend';
 import { realLocExamples } from '../app/utils/realLocExamples';
+import { buildW3CJsonLd, BIBFRAME_JSONLD_CONTEXT } from './w3cJsonLdBuilder';
+import { finishForExport } from './bibframeNormalizer';
+import { toTurtle } from './rdfGraphBuilder';
+import { mintUriSet } from './uriMintingService';
 
 // Curated library of high-resolution cultural & manuscript imagery for OPAC entities
 export const CURATED_COVERS = [
@@ -193,6 +197,8 @@ export interface OpacHoldingItem {
   dueDate?: string;
   patronName?: string;
   accessUrl?: string;
+  /** Placeholder copy the OPAC made up for display because the record has no holdings; never exported. */
+  synthetic?: boolean;
 }
 
 export interface OpacWorkEntity {
@@ -1398,6 +1404,7 @@ class WolfMoonOpacService {
             shelfMark: inst.callNumber || w.classificationLcc || 'PJ7862 .A1',
             barcode: `31924${String(Math.abs(w.id.split('').reduce((a, b) => a + b.charCodeAt(0), 0))).padStart(9, '0')}`,
             copyNumber: 'c.1',
+            synthetic: true,
             status: inst.holdingStatus === 'reference_only' ? 'reference_only' : 'available'
           };
           inst.items = [autoItem];
@@ -2806,201 +2813,78 @@ class WolfMoonOpacService {
   // =========================================================================
 
   /**
-   * Generates Framed W3C JSON-LD matching Libris & Share-VDE standard
+   * The work as BIBFRAME JSON-LD. A record catalogued in Moon is exported exactly as the editor exports it
+   * (one producer, validated against the LC ontology); other OPAC entries are described from the OPAC model
+   * and go through the same normalizer. Placeholder copies made up for display are never included.
    */
   public generateFramedJsonLd(work: OpacWorkEntity): any {
+    const saved = work.document?.work && work.document?.instance ? work.document : null;
+    if (saved) {
+      const recordId = saved.metadata?.recordId || work.id;
+      const uriSet = saved.metadata?.uriSet || mintUriSet(recordId);
+      return finishForExport(buildW3CJsonLd({ workData: saved.work, instanceData: saved.instance, itemData: saved.item || {}, uriSet }));
+    }
+    return finishForExport(this.describeOpacWork(work));
+  }
+
+  /** The same graph as generateFramedJsonLd, written as Turtle. */
+  public generateTurtleRdf(work: OpacWorkEntity): string {
+    return toTurtle(this.generateFramedJsonLd(work));
+  }
+
+  private describeOpacWork(work: OpacWorkEntity): any {
     const creator = work.primaryCreator;
-    const workGraphNode: any = {
+    const iri = (u?: string) => (u && /^https?:\/\/\S+$/.test(u) ? u : undefined);
+    const agentIri = iri(creator?.locUri) || iri(creator?.viafUri) || iri(creator?.uri);
+    const workNode: any = {
       "@id": work.uri,
-      "@type": ["bf:Work", "bf:Text"],
-      "bf:adminMetadata": {
-        "@type": "bf:AdminMetadata",
-        "bf:status": { "@type": "bf:Status", "rdfs:label": "Validated Linked Data" },
-        "bf:creationDate": work.createdAt,
-        "bflc:catalogingInterface": work.catalogingInterface || "Wolf Moon OPAC"
-      },
-      "bf:title": {
-        "@type": "bf:Title",
-        "bf:mainTitle": work.title,
-        ...(work.subtitle ? { "bf:subtitle": work.subtitle } : {})
-      },
-      "bf:contribution": {
-        "@type": ["bf:Contribution", "bflc:PrimaryContribution"],
-        "bf:role": {
-          "@id": "http://id.loc.gov/vocabulary/relators/aut",
-          "rdfs:label": creator.role || "author"
-        },
-        "bf:agent": {
-          "@id": creator.uri,
-          "@type": "bf:Person",
-          "rdfs:label": creator.nameArabic || creator.name,
-          "bf:identifiedBy": [
-            creator.viafUri && { "@id": creator.viafUri, "@type": "bf:Identifier", "rdfs:label": "VIAF" },
-            creator.locUri && { "@id": creator.locUri, "@type": "bf:Identifier", "rdfs:label": "LOC" }
-          ].filter(Boolean)
+      "@type": "bf:Work",
+      "bf:title": { "@type": "bf:Title", "bf:mainTitle": work.title, ...(work.subtitle ? { "bf:subtitle": work.subtitle } : {}) },
+      ...(creator && (creator.nameArabic || creator.name) ? {
+        "bf:contribution": {
+          "@type": ["bf:Contribution", "bf:PrimaryContribution"],
+          "bf:role": { "@id": "http://id.loc.gov/vocabulary/relators/aut" },
+          "bf:agent": { ...(agentIri ? { "@id": agentIri } : {}), "@type": "bf:Person", "rdfs:label": creator.nameArabic || creator.name }
         }
-      },
+      } : {}),
       ...(work.originDate ? { "bf:originDate": work.originDate } : {}),
-      "bf:language": {
-        "@id": `http://id.loc.gov/vocabulary/languages/${work.language || 'ara'}`,
-        "rdfs:label": work.languageLabel || work.language
-      },
-      "bf:subject": work.subjects.map(s => ({
-        "@id": s.uri,
-        "@type": "bf:Topic",
-        "rdfs:label": s.label,
-        "madsrdf:authoritativeLabel": s.label
-      })),
-      "bf:hasInstance": work.instances.map(inst => ({
+      ...(work.language ? { "bf:language": { "@id": `http://id.loc.gov/vocabulary/languages/${work.language}` } } : {}),
+      ...(work.classificationLcc ? { "bf:classification": { "@type": "bf:ClassificationLcc", "bf:classificationPortion": work.classificationLcc } } : {}),
+      ...(work.summaryArabic ? { "bf:summary": { "@type": "bf:Summary", "rdfs:label": work.summaryArabic } } : {}),
+      "bf:subject": (work.subjects || []).map(s => ({ ...(iri(s.uri) ? { "@id": s.uri } : {}), "@type": "bf:Topic", "rdfs:label": s.label })),
+      "bf:hasInstance": work.instances.map(inst => ({ "@id": inst.uri }))
+    };
+    const instanceNodes = work.instances.map(inst => {
+      const items = (inst.items || []).filter(it => !it.synthetic);
+      return {
         "@id": inst.uri,
         "@type": "bf:Instance",
-        "bf:title": {
-          "@type": "bf:Title",
-          "bf:mainTitle": inst.title,
-          ...(inst.subtitle ? { "bf:subtitle": inst.subtitle } : {})
-        },
+        "bf:instanceOf": { "@id": work.uri },
+        "bf:title": { "@type": "bf:Title", "bf:mainTitle": inst.title || work.title, ...(inst.subtitle ? { "bf:subtitle": inst.subtitle } : {}) },
         ...(inst.publisher || inst.publicationYear || inst.publicationPlace ? {
           "bf:provisionActivity": {
-            "@type": "bf:ProvisionActivity",
-            ...(inst.publicationPlace ? { "bf:place": { "rdfs:label": inst.publicationPlace } } : {}),
-            ...(inst.publisher ? { "bf:agent": { "rdfs:label": inst.publisher } } : {}),
+            "@type": "bf:Publication",
+            ...(inst.publicationPlace ? { "bf:place": { "@type": "bf:Place", "rdfs:label": inst.publicationPlace } } : {}),
+            ...(inst.publisher ? { "bf:agent": { "@type": "bf:Agent", "rdfs:label": inst.publisher } } : {}),
             ...(inst.publicationYear ? { "bf:date": inst.publicationYear } : {})
           }
         } : {}),
-        ...(inst.extent ? { "bf:extent": { "rdfs:label": inst.extent } } : {}),
-        ...(inst.carrierType ? { "bf:carrier": { "rdfs:label": inst.carrierType } } : {}),
+        ...(inst.extent ? { "bf:extent": { "@type": "bf:Extent", "rdfs:label": inst.extent } } : {}),
+        ...(inst.carrierType ? { "bf:carrier": { "@type": "bf:Carrier", "rdfs:label": inst.carrierType } } : {}),
         ...(inst.isbn ? { "bf:identifiedBy": { "@type": "bf:Isbn", "rdf:value": inst.isbn } } : {}),
-        ...(inst.items && inst.items.length > 0 ? {
-          "bf:hasItem": inst.items.map(it => ({
-            "@id": it.uri,
-            "@type": "bf:Item",
-            ...(it.heldBy ? { "bf:heldBy": { "rdfs:label": it.heldBy } } : {}),
-            ...(it.shelfMark ? { "bf:shelfMark": it.shelfMark } : {}),
-            ...(it.barcode ? { "bf:barcode": it.barcode } : {}),
-            ...(it.accessUrl ? { "bf:electronicLocator": it.accessUrl } : {})
-          }))
-        } : {})
-      }))
-    };
-
-    return {
-      "@context": {
-        "bf": "http://id.loc.gov/ontologies/bibframe/",
-        "bflc": "http://id.loc.gov/ontologies/bflc/",
-        "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
-        "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-        "madsrdf": "http://www.loc.gov/mads/rdf/v1#",
-        "moon": "https://moonlib.org/entity/"
-      },
-      "@graph": [workGraphNode]
-    };
-  }
-
-  /**
-   * Generates official Turtle RDF syntax (SVDE & Libris standard)
-   */
-  public generateTurtleRdf(work: OpacWorkEntity): string {
-    const creator = work.primaryCreator;
-    const esc = (s: string) => (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-
-    const lines = [
-      `@prefix bf: <http://id.loc.gov/ontologies/bibframe/> .`,
-      `@prefix bflc: <http://id.loc.gov/ontologies/bflc/> .`,
-      `@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .`,
-      `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .`,
-      `@prefix moon: <https://moonlib.org/entity/> .`,
-      ``,
-      `# WORK ENTITY: ${work.title}`,
-      `<${work.uri}> a bf:Work, bf:Text ;`,
-      `    bf:title [`,
-      `        a bf:Title ;`,
-      `        bf:mainTitle "${esc(work.title)}" ;`,
-      work.subtitle ? `        bf:subtitle "${esc(work.subtitle)}" ;` : ``,
-      `    ] ;`,
-      `    bf:contribution [`,
-      `        a bf:Contribution, bflc:PrimaryContribution ;`,
-      `        bf:agent <${creator.uri}> ;`,
-      `        bf:role <http://id.loc.gov/vocabulary/relators/aut> ;`,
-      `    ] ;`
-    ].filter(Boolean);
-
-    if (work.originDate) {
-      lines.push(`    bf:originDate "${esc(work.originDate)}" ;`);
-    }
-
-    if (work.language) {
-      lines.push(`    bf:language <http://id.loc.gov/vocabulary/languages/${work.language}> ;`);
-    }
-
-    if (work.classificationLcc) {
-      lines.push(`    bf:classification [ a bf:ClassificationLcc ; rdfs:label "${esc(work.classificationLcc)}" ] ;`);
-    }
-
-    work.subjects.forEach(s => {
-      lines.push(`    bf:subject <${s.uri}> ;`);
+        ...(items.length ? { "bf:hasItem": items.map(it => ({ "@id": it.uri })) } : {})
+      };
     });
-
-    work.instances.forEach(inst => {
-      lines.push(`    bf:hasInstance <${inst.uri}> ;`);
-    });
-
-    if (work.summaryArabic) {
-      lines.push(`    rdfs:comment "${esc(work.summaryArabic.slice(0, 140))}..." .`);
-    } else {
-      lines[lines.length - 1] = lines[lines.length - 1].replace(/ ;$/, ' .');
-    }
-    lines.push(``);
-
-    // Instances block
-    work.instances.forEach(inst => {
-      lines.push(`# INSTANCE ENTITY: ${inst.title}`);
-      lines.push(`<${inst.uri}> a bf:Instance ;`);
-      lines.push(`    bf:instanceOf <${work.uri}> ;`);
-      lines.push(`    bf:title [ a bf:Title ; bf:mainTitle "${esc(inst.title)}" ] ;`);
-      if (inst.publisher || inst.publicationYear || inst.publicationPlace) {
-        lines.push(`    bf:provisionActivity [`);
-        lines.push(`        a bf:ProvisionActivity ;`);
-        if (inst.publisher) lines.push(`        bf:agent [ a bf:Agent ; rdfs:label "${esc(inst.publisher)}" ] ;`);
-        if (inst.publicationPlace) lines.push(`        bf:place [ a bf:Place ; rdfs:label "${esc(inst.publicationPlace)}" ] ;`);
-        if (inst.publicationYear) lines.push(`        bf:date "${esc(inst.publicationYear)}" ;`);
-        lines.push(`    ] ;`);
-      }
-      if (inst.extent) lines.push(`    bf:extent [ a bf:Extent ; rdfs:label "${esc(inst.extent)}" ] ;`);
-      if (inst.carrierType) lines.push(`    bf:carrier [ a bf:Carrier ; rdfs:label "${esc(inst.carrierType)}" ] ;`);
-      if (inst.isbn) lines.push(`    bf:identifiedBy [ a bf:Isbn ; rdf:value "${esc(inst.isbn)}" ] ;`);
-
-      (inst.items || []).forEach(it => {
-        lines.push(`    bf:hasItem <${it.uri}> ;`);
-      });
-
-      lines[lines.length - 1] = lines[lines.length - 1].replace(/ ;$/, ' .');
-      lines.push(``);
-
-      // Items block
-      (inst.items || []).forEach(it => {
-        lines.push(`# ITEM HOLDING ENTITY: ${it.shelfMark || it.id}`);
-        lines.push(`<${it.uri}> a bf:Item ;`);
-        lines.push(`    bf:itemOf <${inst.uri}> ;`);
-        if (it.heldBy) lines.push(`    bf:heldBy [ a bf:Agent ; rdfs:label "${esc(it.heldBy)}" ] ;`);
-        if (it.shelfMark) lines.push(`    bf:shelfMark "${esc(it.shelfMark)}" ;`);
-        if (it.barcode) lines.push(`    bf:barcode "${esc(it.barcode)}" ;`);
-        if (it.accessUrl) lines.push(`    bf:electronicLocator <${it.accessUrl}> ;`);
-        lines[lines.length - 1] = lines[lines.length - 1].replace(/ ;$/, ' .');
-        lines.push(``);
-      });
-    });
-
-    // Person Entity Block
-    lines.push(`# AGENT / PERSON ENTITY: ${creator.nameArabic}`);
-    lines.push(`<${creator.uri}> a bf:Person ;`);
-    lines.push(`    rdfs:label "${esc(creator.nameArabic)}" ;`);
-    if (creator.nameEnglish) lines.push(`    bflc:name00MatchKey "${esc(creator.nameEnglish)}" ;`);
-    if (creator.lifespan) lines.push(`    bf:date "${esc(creator.lifespan)}" ;`);
-    if (creator.viafUri) lines.push(`    rdfs:seeAlso <${creator.viafUri}> ;`);
-    if (creator.locUri) lines.push(`    rdfs:seeAlso <${creator.locUri}> ;`);
-    lines[lines.length - 1] = lines[lines.length - 1].replace(/ ;$/, ' .');
-
-    return lines.join('\n');
+    const itemNodes = work.instances.flatMap(inst => (inst.items || []).filter(it => !it.synthetic && it.uri).map(it => ({
+      "@id": it.uri,
+      "@type": "bf:Item",
+      "bf:itemOf": { "@id": inst.uri },
+      ...(it.heldBy ? { "bf:heldBy": { "@type": "bf:Agent", "rdfs:label": it.heldBy } } : {}),
+      ...(it.shelfMark ? { "bf:shelfMark": { "@type": "bf:ShelfMark", "rdfs:label": it.shelfMark } } : {}),
+      ...(it.barcode ? { "bf:identifiedBy": { "@type": "bf:Barcode", "rdf:value": it.barcode } } : {}),
+      ...(iri(it.accessUrl) ? { "bf:electronicLocator": { "@id": it.accessUrl } } : {})
+    })));
+    return { "@context": { ...BIBFRAME_JSONLD_CONTEXT }, "@graph": [workNode, ...instanceNodes, ...itemNodes] };
   }
 
   /**
