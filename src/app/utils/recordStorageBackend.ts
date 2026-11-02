@@ -792,6 +792,27 @@ export async function getRecordById(id: string): Promise<SavedRecord | null> {
 }
 
 export async function deleteRecord(id: string): Promise<void> {
+  // Ask the server first: it refuses deletes by anyone but the Super Admin or the record's cataloger.
+  let response: Response | null = null;
+  try {
+    response = await fetch(`${API_BASE}/records/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: moonHeaders(),
+    });
+  } catch (error) {
+    // Offline: fall through and hide it locally; the server copy is untouched.
+    console.error('Error deleting record from Supabase:', error);
+  }
+  if (response && (response.status === 401 || response.status === 403)) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data?.error || 'You are not allowed to delete this record.');
+  }
+  if (response && !response.ok) {
+    console.warn(`Server responded with ${response.status} when deleting record ${id}`);
+  } else if (response) {
+    console.log(`✅ Deleted record ${id} from Supabase`);
+  }
+
   markRecordDeleted(id);
 
   // Directly clean localStorage cache without re-seeding
@@ -808,21 +829,6 @@ export async function deleteRecord(id: string): Promise<void> {
     } catch (e) {
       console.error('Error updating localStorage on delete:', e);
     }
-  }
-
-  try {
-    const response = await fetch(`${API_BASE}/records/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: moonHeaders(),
-    });
-
-    if (!response.ok) {
-      console.warn(`Server responded with ${response.status} when deleting record ${id}`);
-    } else {
-      console.log(`✅ Deleted record ${id} from Supabase`);
-    }
-  } catch (error) {
-    console.error('Error deleting record from Supabase:', error);
   }
 }
 

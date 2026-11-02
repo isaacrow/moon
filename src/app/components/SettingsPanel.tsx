@@ -43,7 +43,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [validateOnSave, setValidateOnSave] = useState(true);
   const [requireWorkBeforeInstance, setRequireWorkBeforeInstance] = useState(true);
   
-  // Authority Settings  const [preferredAuthority, setPreferredAuthority] = useState('naf');
+  // Authority Settings
+  const [preferredAuthority, setPreferredAuthority] = useState('naf');
   const [autoLink, setAutoLink] = useState(true);
   const [showURIs, setShowURIs] = useState(true);
   

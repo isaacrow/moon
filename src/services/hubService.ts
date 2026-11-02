@@ -6,6 +6,7 @@
  * - Hub Stub creation directly from Work
  * - Hub Expression linking
  */
+import { BASE_URI } from './uriMintingService';
 
 export interface BibframeHub {
   id: string;

@@ -187,7 +187,9 @@ export function ActivityLog({ onClose, onSelectRecord }: ActivityLogProps) {
       loadActivities();
     } catch (err) {
       console.error('Failed to delete record:', err);
-      toast.error('Failed to delete record');
+      toast.error('Failed to delete record', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   };
 

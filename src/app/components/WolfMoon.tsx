@@ -30,7 +30,8 @@ import {
   Building, MapPin, Tag, Newspaper, Archive, Shield, Hash, Activity,
   Copy, ExternalLink, Zap, Settings, RefreshCw, Plus, X, Info, Home,
   Moon, Star, Orbit, Waves, Fingerprint, Terminal, Languages, Scissors, Sun, Brain,
-  Sliders, ArrowRightLeft, QrCode, UserCheck, Replace, Columns, Maximize2, LayoutGrid, List, Lock, Box
+  Sliders, ArrowRightLeft, QrCode, UserCheck, Replace, Columns, Maximize2, LayoutGrid, List, Lock, Box,
+  Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import moonLogoWhite from "../../assets/white.png";
@@ -860,7 +861,7 @@ export default function WolfMoon({
         setW3cValidation(w3cVal);
         try { setW3cTurtle(jsonLdToTurtle(w3cDoc)); } catch { setW3cTurtle(""); }
         try { setW3cNTriples(jsonLdToNTriples(w3cDoc)); } catch { setW3cNTriples(""); }
-        try { setGraphRdfXml(toRdfXml(w3cDoc || jsonld)); } catch { setGraphRdfXml(""); }
+        try { setGraphRdfXml(toRdfXml(w3cDoc)); } catch { setGraphRdfXml(""); }
       } catch (e) { console.error("W3C JSON-LD build error:", e); }
     } catch (error) { console.error("Graph RDF generation error:", error); }
   };

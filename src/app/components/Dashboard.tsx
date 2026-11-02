@@ -163,7 +163,9 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
       await loadRecords();
     } catch (err) {
       console.error('Failed to delete record:', err);
-      toast.error('Failed to delete record');
+      toast.error('Failed to delete record', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   };
 
@@ -289,12 +291,6 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
     if (onLoadRecord) {
       onLoadRecord(record);
     }
-  };
-
-  const toggleFavorite = (id: string) => {
-    const newFavorites = favoriteIds.includes(id) ? favoriteIds.filter(favId => favId !== id) : [...favoriteIds, id];
-    setFavoriteIds(newFavorites);
-    saveFavoritesToBackend(newFavorites);
   };
 
   const isFavorite = (id: string) => favoriteIds.includes(id);

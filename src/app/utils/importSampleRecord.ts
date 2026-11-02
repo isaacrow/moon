@@ -3,6 +3,7 @@
  * This function imports a specific BIBFRAME record into the database
  */
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { moonHeaders } from './moonApi';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-49c0e13c`;
 
@@ -86,6 +87,7 @@ export async function importAliRecord() {
     const response = await fetch(`${API_BASE}/records/save`, {
       method: 'POST',
       headers: {
+        ...moonHeaders(),
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${publicAnonKey}`,
       },
