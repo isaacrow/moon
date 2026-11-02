@@ -40,7 +40,7 @@ jobs:
           cp -r supabase/functions/server supabase/functions/make-server-49c0e13c
           # The CLI expects an index.ts entrypoint; the server's is index.tsx.
           echo 'import "./index.tsx";' > supabase/functions/make-server-49c0e13c/index.ts
-          supabase functions deploy make-server-49c0e13c --project-ref "$SUPABASE_PROJECT_ID" --use-api
+          supabase functions deploy make-server-49c0e13c --project-ref "$SUPABASE_PROJECT_ID" --use-api --yes
 
       - name: Skipped (no SUPABASE_ACCESS_TOKEN secret)
         if: env.SUPABASE_ACCESS_TOKEN == ''
