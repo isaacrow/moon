@@ -843,12 +843,12 @@ select:focus-visible {
 
 /* Liquid Glass Bubble Pill — Top bar & control pills */
 .glass-bubble-pill {
-  border-radius: 9999px;
+  border-radius: 120px;
   background: rgba(255, 255, 255, 0.21);
-  backdrop-filter: blur(4.5px) blur(9px) saturate(1.5) brightness(1.1);
+  backdrop-filter: blur(4.5px) url(#lg-filter) blur(9px) saturate(1.5) brightness(1.1);
   -webkit-backdrop-filter: blur(36px) saturate(1.8) brightness(1.15) contrast(1.05);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.15),
     inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5),
     inset 0 0 12px rgba(255, 255, 255, 0.2),
     0 8px 32px rgba(0, 0, 0, 0.2);
@@ -865,4 +865,34 @@ select:focus-visible {
     inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.7),
     inset 0 0 12px rgba(255, 255, 255, 0.3),
     0 8px 32px rgba(0, 0, 0, 0.28);
+}
+
+/* Liquid Glass Dynamic Island / Top Notch */
+.liquid-glass-notch {
+  border-radius: 0 0 32px 32px;
+  background: rgba(255, 255, 255, 0.21);
+  backdrop-filter: blur(4.5px) url(#lg-filter) blur(9px) saturate(1.5) brightness(1.1);
+  -webkit-backdrop-filter: blur(36px) saturate(1.8) brightness(1.15) contrast(1.05);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+    inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5),
+    inset 0 0 12px rgba(255, 255, 255, 0.2),
+    0 8px 32px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-top: none;
+}
+
+/* Liquid Glass Card — Viewer panels */
+.liquid-glass-card {
+  border-radius: 36px;
+  background: rgba(255, 255, 255, 0.21);
+  backdrop-filter: blur(4.5px) url(#lg-filter) blur(9px) saturate(1.5) brightness(1.1);
+  -webkit-backdrop-filter: blur(36px) saturate(1.8) brightness(1.15) contrast(1.05);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+    inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5),
+    inset 0 0 12px rgba(255, 255, 255, 0.2),
+    0 8px 32px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #ffffff;
 }

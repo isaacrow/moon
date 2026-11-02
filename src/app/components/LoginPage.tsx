@@ -427,7 +427,7 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                             value={identifier}
                             onChange={(e) => setIdentifier(e.target.value)}
                             className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-11 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-400 transition-all rounded-xl`}
-                            placeholder={isAr ? "اسم المستخدم أو البريد (مثل isaac أو tester)" : "Username or email (e.g. isaac or tester)"}
+                            placeholder={isAr ? "اسم المستخدم أو البريد الإلكتروني" : "Username or email"}
                             disabled={loading}
                             dir={isAr ? "rtl" : "ltr"}
                           />
@@ -609,7 +609,7 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                             value={regInviteCode}
                             onChange={(e) => setRegInviteCode(e.target.value)}
                             className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-10 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded-xl text-sm`}
-                            placeholder={isAr ? "أدخل الرمز إن كان متوفراً من إسحاق (wolfmoonalqamiisaac)" : "Enter VIP code (wolfmoonalqamiisaac)"}
+                            placeholder={isAr ? "أدخل الرمز إن كان متوفراً لديك" : "Enter approval code if available"}
                             disabled={loading}
                             dir={isAr ? "rtl" : "ltr"}
                           />

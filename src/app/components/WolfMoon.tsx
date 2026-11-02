@@ -30,8 +30,8 @@ import {
   Building, MapPin, Tag, Newspaper, Archive, Shield, Hash, Activity,
   Copy, ExternalLink, Zap, Settings, RefreshCw, Plus, X, Info, Home,
   Moon, Star, Orbit, Waves, Fingerprint, Terminal, Languages, Scissors, Sun, Brain,
-  Sliders, ArrowRightLeft, QrCode, UserCheck, Replace, Columns, Maximize2, LayoutGrid, List,
-  Lock, Trash2
+  Sliders, ArrowRightLeft, QrCode, UserCheck, Replace, Columns, Maximize2, LayoutGrid, List, Lock, Box,
+  Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import moonLogoWhite from "../../assets/white.png";
@@ -339,6 +339,37 @@ export default function WolfMoon({
   const [language, setLanguage] = useState<"en" | "ar">(i18n.language as "en" | "ar");
 
   // ===== GLASS THEME =====
+  // ===== 3D BACKGROUND TOGGLE =====
+  type StudioBgColor = "black" | "gray";
+  const [show3dBackground, setShow3dBackground] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem("moon_wolf_3d_bg");
+      return stored !== null ? stored === "true" : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [studioBgColor, setStudioBgColor] = useState<StudioBgColor>(() => {
+    try {
+      const stored = localStorage.getItem("moon_wolf_bg_color") as StudioBgColor;
+      if (stored === "black" || stored === "gray") return stored;
+      return "black";
+    } catch {
+      return "black";
+    }
+  });
+
+  const toggle3dBackground = () => {
+    setShow3dBackground(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem("moon_wolf_3d_bg", String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   const [glassTheme, setGlassTheme] = useState<GlassTheme>("dark");
   const BM = glassTheme === "legacy" ? BM_LEGACY : glassTheme === "classic" ? BM_CLASSIC : BM_DARK;
   const gradientClass = glassTheme === "legacy" ? "animated-gradient-bg" : glassTheme === "classic" ? "" : "animated-gradient-bg-blue";
@@ -1180,301 +1211,321 @@ export default function WolfMoon({
       }}
     >
       {/* ===== 1. INTERACTIVE 3D SPLINE SCENE BACKGROUND ===== */}
-      <div
-        className="fixed inset-0 z-0 overflow-hidden pointer-events-auto"
-        style={{ top: '-10%', height: '120%' }}
-      >
-        <iframe
-          src="https://my.spline.design/3ddesigntextcopycopy-ICjwUjRH9s8O1NCNqRAWjo5g-5OJ/"
-          frameBorder="0"
-          width="100%"
-          height="100%"
-          className="w-full h-full"
-          title="Spline 3D Scene"
-          allow="fullscreen; autoplay"
+      {show3dBackground && (
+        <div
+          className="fixed inset-0 z-0 overflow-hidden pointer-events-auto"
+          style={{ top: '-10%', height: '120%' }}
+        >
+          <iframe
+            src="https://my.spline.design/3ddesigntextcopycopy-ICjwUjRH9s8O1NCNqRAWjo5g-5OJ/"
+            frameBorder="0"
+            width="100%"
+            height="100%"
+            className="w-full h-full"
+            title="Spline 3D Scene"
+            allow="fullscreen; autoplay"
+            style={{
+              pointerEvents: 'auto',
+              border: 'none',
+              background: 'transparent'
+            }}
+          />
+        </div>
+      )}
+
+      {/* ===== 2. FROSTED GLASS / SLEEK STUDIO BACKDROP OVERLAY ===== */}
+      {show3dBackground ? (
+        <div
+          className="fixed inset-0 z-0 pointer-events-none"
           style={{
-            pointerEvents: 'auto',
-            border: 'none',
-            background: 'transparent'
+            background: 'rgba(255, 255, 255, 0.40)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
           }}
         />
-      </div>
-
-      {/* ===== 2. FROSTED GLASS BACKDROP OVERLAY ===== */}
-      <div
-        className="fixed inset-0 z-0 pointer-events-none"
-        style={{
-          background: 'rgba(255, 255, 255, 0.40)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-        }}
-      />
+      ) : (
+        <div
+          className="fixed inset-0 z-0 pointer-events-none transition-colors duration-300"
+          style={{
+            background: studioBgColor === "gray"
+              ? "#666666"
+              : "#000000",
+          }}
+        />
+      )}
 
       <Toaster position={language === "ar" ? "top-left" : "top-right"} />
 
       {/* ===== HERO NAVBAR ===== */}
       <header
-        className="relative z-20 px-6 py-4 glass-luxury-panel m-3 mb-0 rounded-2xl"
+        className="relative z-20 px-6 pt-3 pb-4 glass-luxury-panel m-3 mb-0 rounded-2xl"
       >
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+        {/* ===== ROW 1: BRANDING (LEFT) — DYNAMIC NOTCH (CENTER) — FINDER & CONTROLS (RIGHT) ===== */}
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] items-center gap-2.5 -mt-3 mb-2.5">
+          {/* Left: Back Button & MOON Studio Logo */}
+          <div className="flex items-center justify-start gap-2.5 shrink-0">
             {onBack && (
               <button
                 type="button"
                 onClick={onBack}
-                className="hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-4 py-2 text-xs font-bold text-white cursor-pointer shadow-xl"
-                style={{
-                  background: 'rgba(255, 255, 255, 0.21)',
-                  backdropFilter: 'blur(9px) saturate(1.5) brightness(1.1)',
-                  WebkitBackdropFilter: 'blur(36px) saturate(1.8) brightness(1.15) contrast(1.05)',
-                  borderRadius: '120px',
-                  boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.15), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5), inset 0 0 12px rgba(255, 255, 255, 0.2), 0 8px 32px rgba(0, 0, 0, 0.2)',
-                  border: '1px solid rgba(255, 255, 255, 0.4)',
-                }}
+                className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white cursor-pointer shadow-xl shrink-0"
                 title="Return to Dashboard"
               >
-                <Home className="h-4 w-4 text-white drop-shadow" />
+                <Home className="h-3.5 w-3.5 text-white drop-shadow" />
                 <span className="text-xs font-bold">{t("back") || "Dashboard"}</span>
               </button>
             )}
-            <div className="flex items-center gap-3.5">
+            <div className="flex items-center gap-2 shrink-0">
               <div className="relative flex items-center justify-center">
-                <img src={isLight ? moonLogoBlack : moonLogoWhite} alt="Moon Logo" className="h-10 w-auto object-contain drop-shadow-lg" />
+                <img src={moonLogoWhite} alt="Moon Logo" className="h-7 w-auto object-contain drop-shadow-lg" />
               </div>
-              <div>
-                <h1 className="text-xl font-black tracking-tight flex items-center gap-2 text-white">
-                  <span>MOON</span>
-                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-white/20 border border-white/30 text-white font-bold uppercase tracking-wider">
-                    Studio
+              <h1 className="text-base font-black tracking-tight flex items-center gap-1.5 text-white">
+                <span>MOON</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 border border-white/30 text-white font-bold uppercase tracking-wider">
+                  Studio
+                </span>
+              </h1>
+            </div>
+          </div>
+
+          {/* Center: The Dynamic Notch (True Centered in Column 2, will NEVER collide) */}
+          <div className="flex justify-center shrink-0">
+            <div
+              className="liquid-glass-notch flex items-center gap-2 px-3 py-1 transition-all shadow-2xl"
+            >
+              {/* Institutional Score Badge */}
+              {institutionalValidation && (
+                <div
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black transition-all shrink-0"
+                  style={{
+                    background: institutionalValidation.score >= 85 ? "rgba(52, 211, 153, 0.22)" : institutionalValidation.score >= 50 ? "rgba(251, 191, 36, 0.22)" : "rgba(248, 113, 113, 0.22)",
+                    color: institutionalValidation.score >= 85 ? "#34d399" : institutionalValidation.score >= 50 ? "#fbbf24" : "#f87171",
+                    border: `1px solid ${institutionalValidation.score >= 85 ? "rgba(52, 211, 153, 0.45)" : institutionalValidation.score >= 50 ? "rgba(251, 191, 36, 0.45)" : "rgba(248, 113, 113, 0.45)"}`,
+                  }}
+                >
+                  <Shield className="h-3 w-3 animate-pulse" />
+                  <span>{getValidationBadge(institutionalValidation)} ({institutionalValidation.score}/100)</span>
+                </div>
+              )}
+
+              {/* Vertical Divider */}
+              <div className="h-3 w-px bg-white/25 shrink-0" />
+
+              {/* Live Graph Metrics */}
+              <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+                {[
+                  { icon: <Database className="h-3 w-3 text-cyan-300" />, label: `${graphStats.nodeCount} ${t("nodes")}` },
+                  { icon: <Network className="h-3 w-3 text-purple-300" />, label: `${tripleCount} ${t("triples")}` },
+                  { icon: <Activity className="h-3 w-3 text-emerald-300" />, label: `${completionScore}%` },
+                  {
+                    icon: connectivity.connected ? <CheckCircle2 className="h-3 w-3 text-emerald-300" /> : <AlertTriangle className="h-3 w-3 text-amber-300" />,
+                    label: connectivity.connected ? t("connectedLabel") : `${connectivity.orphans.length} ${t("orphans")}`,
+                    alert: !connectivity.connected
+                  },
+                ].map((stat, i) => (
+                  <span
+                    key={i}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold transition-all shrink-0"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.12)',
+                      border: '1px solid rgba(255, 255, 255, 0.22)',
+                      color: stat.alert ? '#fbbf24' : '#ffffff',
+                    }}
+                  >
+                    {stat.icon}
+                    <span>{stat.label}</span>
                   </span>
-                </h1>
+                ))}
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap justify-end">
-            {/* Language Toggle */}
+          {/* Right: Iraqi Authority Finder + 3D Toggle + Background Toggle (Black/Gray only) + Language Toggle */}
+          <div className="flex items-center justify-end gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowIraqiAuthorityModal(true)}
+              className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 px-3 py-1.5 text-xs font-black text-white cursor-pointer shadow-xl shrink-0"
+            >
+              <img src={moonLogoWhite} alt="Moon Logo" className="h-3.5 w-auto object-contain drop-shadow" />
+              <span>IQ Authority Finder</span>
+            </button>
+            <button
+              type="button"
+              onClick={toggle3dBackground}
+              className={`glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold cursor-pointer shrink-0 ${show3dBackground ? 'text-cyan-300' : 'text-white/60'}`}
+              title={show3dBackground ? (language === "ar" ? "إيقاف الخلفية ثلاثية الأبعاد (3D)" : "Turn 3D background OFF") : (language === "ar" ? "تشغيل الخلفية ثلاثية الأبعاد (3D)" : "Turn 3D background ON")}
+            >
+              <Box className={`h-3.5 w-3.5 ${show3dBackground ? 'text-cyan-300' : 'text-white/40'}`} />
+              <span>{show3dBackground ? (language === "ar" ? "3D مفعّل" : "3D ON") : (language === "ar" ? "3D معطّل" : "3D OFF")}</span>
+            </button>
+
+            {/* Background Color Toggle (When 3D is OFF: Only Black #000000 & Gray #666666, White Removed) */}
+            {!show3dBackground && (
+              <button
+                type="button"
+                onClick={() => {
+                  const next = studioBgColor === "black" ? "gray" : "black";
+                  setStudioBgColor(next);
+                  try { localStorage.setItem("moon_wolf_bg_color", next); } catch {}
+                }}
+                className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold cursor-pointer shrink-0 shadow-lg"
+                title={language === "ar" ? `التبديل إلى ${studioBgColor === "black" ? "الرمادي" : "الأسود"}` : `Switch to ${studioBgColor === "black" ? "Gray" : "Black"}`}
+              >
+                <div
+                  className="w-3 h-3 rounded-full border border-white/50 shadow-xs shrink-0"
+                  style={{ backgroundColor: studioBgColor === "black" ? "#000000" : "#666666" }}
+                />
+                <span>{studioBgColor === "black" ? (language === "ar" ? "أسود" : "Black") : (language === "ar" ? "رمادي" : "Gray")}</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={toggleLanguage}
-              className="glass-bubble-pill flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold cursor-pointer"
+              className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold cursor-pointer shrink-0"
             >
               <Globe className="h-3.5 w-3.5 text-cyan-300" />
               <span>{language === "en" ? "عربي" : "EN"}</span>
             </button>
+          </div>
+        </div>
 
-            {/* Field Manager (Restricted to Super Admin Isaac) */}
-            <button
-              type="button"
-              onClick={() => {
-                if (!isSuperAdmin) {
-                  toast.error(
-                    language === "ar"
-                      ? "عذراً، تخصيص القوالب مقتصر على المشرف العام (إسحاق) فقط."
-                      : "Access restricted: Custom templates are only accessible by Super Admin (Isaac)."
-                  );
-                  return;
-                }
-                setShowFieldManager(!showFieldManager);
-              }}
-              className="glass-bubble-pill flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold cursor-pointer transition-all"
-              style={{
-                borderColor: hiddenFields.size > 0 ? "rgba(251,191,36,0.8)" : undefined,
-                color: hiddenFields.size > 0 ? "#fbbf24" : undefined,
-                opacity: isSuperAdmin ? 1 : 0.85,
-              }}
-              title={!isSuperAdmin ? (language === "ar" ? "مخصص للمشرف العام إسحاق فقط" : "Super Admin Isaac only") : undefined}
-            >
-              <Settings className="h-3.5 w-3.5" />
-              <span>{hiddenFields.size > 0 ? `${hiddenFields.size} ${t("fieldsHidden")}` : t("customTemplates")}</span>
-              {!isSuperAdmin && <Lock className="h-2.5 w-2.5 text-white/50" />}
-            </button>
-
-            
-
-            {/* Institutional Score Badge */}
-            {institutionalValidation && (
-              <div
-                className="glass-bubble-pill flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold"
-                style={{
-                  color: institutionalValidation.score >= 85 ? "#34d399" : institutionalValidation.score >= 50 ? "#fbbf24" : "#f87171",
-                }}
+        {/* ===== ROW 2: TEMPLATES & RECORD CONTROLS (UNIFIED ON A SINGLE LINE WITH DIVIDER) ===== */}
+        <div className="max-w-7xl mx-auto flex items-center justify-center gap-1.5 flex-nowrap overflow-x-auto scrollbar-none pt-2 pb-1.5 border-t border-white/10">
+          <span className="text-[11px] font-bold text-white/60 uppercase tracking-wider mr-1 shrink-0">
+            Templates:
+          </span>
+          {getAllTemplates().map(tmpl => {
+            const isSelected = selectedTemplate === tmpl.id;
+            return (
+              <button
+                type="button"
+                key={tmpl.id}
+                onClick={() => setSelectedTemplate(tmpl.id)}
+                className={`glass-bubble-pill flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all duration-200 cursor-pointer shrink-0 ${
+                  isSelected
+                    ? "bg-white/35 border-white text-white shadow-xl scale-[1.02] ring-1 ring-white/50"
+                    : "text-white/85 hover:text-white hover:bg-white/20 border-white/20"
+                }`}
               >
-                <Shield className="h-3.5 w-3.5" />
-                <span>{getValidationBadge(institutionalValidation)} ({institutionalValidation.score}/100)</span>
-              </div>
-            )}
+                {TEMPLATE_ICONS[tmpl.id]}
+                <span>{tmpl.name}</span>
+              </button>
+            );
+          })}
 
+          {/* Divider Line (The "line between them") */}
+          <div className="h-5 w-px bg-white/30 mx-1.5 shrink-0" />
+
+          {/* Record Title input with Save Status indicator */}
+          <div className="flex items-center gap-1.5 glass-bubble-pill px-2.5 py-1 text-xs shrink-0">
             <BMSaveStatus status={saveStatus} />
             <input
               type="text"
               value={recordTitle}
               onChange={(e) => { setRecordTitle(e.target.value); setSaveStatus("unsaved"); }}
-              className="glass-bubble-pill px-4 py-1.5 text-xs font-semibold focus:outline-none placeholder-white/50 text-white"
-              style={{ width: "190px" }}
+              className="bg-transparent text-xs font-bold focus:outline-none placeholder-white/50 text-white w-28 sm:w-32"
               placeholder={t("recordTitle")}
             />
           </div>
-        </div>
 
-        {/* Template Bar & Quick Stats */}
-        <div className="max-w-7xl mx-auto mt-3 pt-3 border-t border-white/15 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            {getAllTemplates().map(tmpl => (
-              <button
-                type="button"
-                key={tmpl.id}
-                onClick={() => setSelectedTemplate(tmpl.id)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${selectedTemplate === tmpl.id ? "glass-bubble-pill bg-white/30 text-white shadow-md" : "glass-card text-white/80 hover:text-white"}`}
-              >
-                {TEMPLATE_ICONS[tmpl.id]}
-                <span>{tmpl.name}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {[
-              { icon: <Database className="h-3.5 w-3.5" />, label: `${graphStats.nodeCount} ${t("nodes")}`, color: "#38bdf8" },
-              { icon: <Network className="h-3.5 w-3.5" />, label: `${tripleCount} ${t("triples")}`, color: "#c084fc" },
-              { icon: <Activity className="h-3.5 w-3.5" />, label: `${completionScore}%`, color: "#34d399" },
-              {
-                icon: connectivity.connected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />,
-                label: connectivity.connected ? t("connectedLabel") : `${connectivity.orphans.length} ${t("orphans")}`,
-                color: connectivity.connected ? "#34d399" : "#fbbf24"
-              },
-            ].map((stat, i) => (
-              <span
-                key={i}
-                className="glass-bubble-pill flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-white"
-              >
-                {stat.icon}
-                <span>{stat.label}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Action Buttons Toolbar */}
-        <div className="max-w-7xl mx-auto mt-3 flex items-center gap-2 flex-wrap">
-          {/* Glass Save Button */}
+          {/* Save Button */}
           <button
             type="button"
             onClick={handleSave}
-            className="hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-5 py-2 text-xs font-black text-white cursor-pointer shadow-xl"
-            style={{
-              background: 'rgba(255, 255, 255, 0.21)',
-              backdropFilter: 'blur(9px) saturate(1.5) brightness(1.1)',
-              WebkitBackdropFilter: 'blur(36px) saturate(1.8) brightness(1.15) contrast(1.05)',
-              borderRadius: '120px',
-              boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.15), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5), inset 0 0 12px rgba(255, 255, 255, 0.2), 0 8px 32px rgba(0, 0, 0, 0.2)',
-              border: '1px solid rgba(255, 255, 255, 0.4)',
-            }}
+            className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-3 py-1 text-xs font-black text-white cursor-pointer shadow-xl shrink-0"
           >
-            <Save className="h-3.5 w-3.5 text-white drop-shadow" />
+            <Save className="h-3 w-3 text-emerald-300 drop-shadow" />
             <span>{t("save")}</span>
           </button>
 
-          {/* Iraqi Authority Finder Button */}
+          {/* Reset Button */}
           <button
             type="button"
-            onClick={() => setShowIraqiAuthorityModal(true)}
-            className="hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-5 py-2 text-xs font-black text-white cursor-pointer shadow-xl"
-            style={{
-              background: 'rgba(255, 255, 255, 0.21)',
-              backdropFilter: 'blur(9px) saturate(1.5) brightness(1.1)',
-              WebkitBackdropFilter: 'blur(36px) saturate(1.8) brightness(1.15) contrast(1.05)',
-              borderRadius: '120px',
-              boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.15), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5), inset 0 0 12px rgba(255, 255, 255, 0.2), 0 8px 32px rgba(0, 0, 0, 0.2)',
-              border: '1px solid rgba(255, 255, 255, 0.4)',
+            onClick={handleResetAll}
+            className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-2.5 py-1 text-xs font-bold cursor-pointer text-rose-300 border-rose-400/30 hover:border-rose-400 shrink-0"
+          >
+            <RefreshCw className="h-3 w-3 text-rose-400" />
+            <span>{t("reset") || "Reset"}</span>
+          </button>
+
+          {/* Import Button */}
+          <button
+            type="button"
+            onClick={() => setShowImportDialog(true)}
+            className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-2.5 py-1 text-xs font-bold cursor-pointer text-white shrink-0"
+          >
+            <Upload className="h-3 w-3 text-cyan-300" />
+            <span>{t("import")}</span>
+          </button>
+
+          {/* Field Manager (Restricted to Super Admin Isaac) */}
+          <button
+            type="button"
+            onClick={() => {
+              if (!isSuperAdmin) {
+                toast.error(
+                  language === "ar"
+                    ? "عذراً، تخصيص القوالب مقتصر على المشرف العام (إسحاق) فقط."
+                    : "Access restricted: Custom templates are only accessible by Super Admin (Isaac)."
+                );
+                return;
+              }
+              setShowFieldManager(!showFieldManager);
             }}
+            className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-2.5 py-1 text-xs font-bold cursor-pointer shrink-0"
+            style={{
+              borderColor: hiddenFields.size > 0 ? "rgba(251,191,36,0.8)" : undefined,
+              color: hiddenFields.size > 0 ? "#fbbf24" : undefined,
+              opacity: isSuperAdmin ? 1 : 0.85,
+            }}
+            title={!isSuperAdmin ? (language === "ar" ? "مخصص للمشرف العام إسحاق فقط" : "Super Admin Isaac only") : undefined}
           >
-            <Sparkles className="h-3.5 w-3.5 text-amber-300 drop-shadow" />
-            <span>🇮🇶 Iraqi Authority Finder</span>
+            <Settings className="h-3 w-3" />
+            <span>{hiddenFields.size > 0 ? `${hiddenFields.size} ${t("fieldsHidden")}` : t("customTemplates")}</span>
+            {!isSuperAdmin && <Lock className="h-2.5 w-2.5 text-white/50" />}
           </button>
-
-
-          {[
-            { onClick: handleResetAll, icon: <RefreshCw className="h-3.5 w-3.5" />, label: t("reset") || "Reset", danger: true },
-            { onClick: () => setShowImportDialog(true), icon: <Upload className="h-3.5 w-3.5" />, label: t("import") },
-            { onClick: () => downloadFile(toBibframeJsonLdString(w3cJsonLd || graphJsonld || graph), `${recordId}-w3c.jsonld`, "application/ld+json"), icon: <Download className="h-3.5 w-3.5" />, label: t("w3cJsonLd") },
-          ].map((btn, i) => (
-            <button
-              type="button"
-              key={i}
-              onClick={btn.onClick}
-              className="glass-bubble-pill flex items-center gap-1.5 px-4 py-2 text-xs font-bold transition-all cursor-pointer text-white"
-              style={btn.danger ? { borderColor: 'rgba(248,113,113,0.5)', color: '#fca5a5' } : undefined}
-            >
-              {btn.icon}
-              <span>{btn.label}</span>
-            </button>
-          ))}
-          
-          <button
-            type="button"
-            onClick={() => downloadFile(graphRdfXml || toRdfXml({ "@graph": [workData, instanceData] }), `${recordId}.rdf`, "application/rdf+xml")}
-            className="glass-bubble-pill flex items-center gap-1.5 px-4 py-2 text-xs font-bold cursor-pointer text-emerald-300 border-emerald-500/30 hover:border-emerald-400"
-          >
-            <Download className="h-3.5 w-3.5 text-emerald-400" />
-            <span>RDF/XML</span>
-          </button>
-
-          {w3cTurtle && (
-            <button
-              type="button"
-              onClick={() => downloadFile(w3cTurtle, `${recordId}.ttl`, "text/turtle")}
-              className="glass-bubble-pill flex items-center gap-1.5 px-4 py-2 text-xs font-bold cursor-pointer text-white"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>{t("turtle")}</span>
-            </button>
-          )}
-          {w3cNTriples && (
-            <button
-              type="button"
-              onClick={() => downloadFile(w3cNTriples, `${recordId}.nt`, "application/n-triples")}
-              className="glass-bubble-pill flex items-center gap-1.5 px-4 py-2 text-xs font-bold cursor-pointer text-white"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>{t("nTriples")}</span>
-            </button>
-          )}
         </div>
+      </header>
 
-        </header>
-
-      {/* ===== SEGMENTED OUTPUT TABS (Frosted Pill System) ===== */}
+      {/* ===== SEGMENTED OUTPUT TABS (Frosted Glass Bubble Pills - Sharp & Clear) ===== */}
       <nav
         className="relative z-10 px-6 py-2"
       >
-        <div className="max-w-7xl mx-auto flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+        <div className="max-w-7xl mx-auto flex items-center justify-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
           {([
             { key: "editor" as OutputTab, icon: <Layers className="h-3.5 w-3.5" />, label: t("bibframeEditor"), color: "#38bdf8" },
             { key: "w3c-jsonld" as OutputTab, icon: <Shield className="h-3.5 w-3.5" />, label: `${t("w3cJsonLd")} ${w3cValidation?.valid ? "✓" : ""}`, color: "#34d399" },
             { key: "jsonld" as OutputTab, icon: <Braces className="h-3.5 w-3.5" />, label: t("rawJsonLd"), color: "#22d3ee" },
-            
             { key: "rdf-xml" as OutputTab, icon: <Code className="h-3.5 w-3.5" />, label: "RDF/XML", color: "#10b981" },
             { key: "turtle" as OutputTab, icon: <Code className="h-3.5 w-3.5" />, label: t("turtle"), color: "#a78bfa" },
             { key: "ntriples" as OutputTab, icon: <FileText className="h-3.5 w-3.5" />, label: t("nTriples"), color: "#fb923c" },
             { key: "marc21-viewer" as OutputTab, icon: <BookOpen className="h-3.5 w-3.5" />, label: "MARC 21 View", color: "#f43f5e" }
-          ] as const).map(tab => (
-            <button
-              type="button"
-              key={tab.key}
-              onClick={() => {
-                if (tab.key === "opac") {
-                  window.location.href = "/opac.html";
-                  return;
-                }
-                setActiveTab(tab.key);
-              }}
-              className={`glass-bubble-pill cursor-pointer px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 shrink-0 ${activeTab === tab.key ? "bg-white/30 border-white text-white shadow-lg" : "text-white/70 hover:text-white"}`}
-            >
-              <span style={{ color: tab.color }}>{tab.icon}</span>
-              <span>{tab.label}</span>
-            </button>
-          ))}
+          ] as const).map(tab => {
+            const isSelected = activeTab === tab.key;
+            return (
+              <button
+                type="button"
+                key={tab.key}
+                onClick={() => {
+                  if (tab.key === "opac") {
+                    window.location.href = "/opac.html";
+                    return;
+                  }
+                  setActiveTab(tab.key);
+                }}
+                className={`glass-bubble-pill cursor-pointer px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all duration-200 ${
+                  isSelected
+                    ? "bg-white/35 border-white text-white shadow-xl scale-[1.03] ring-1 ring-white/60"
+                    : "text-white/85 hover:text-white hover:bg-white/20 border-white/25 hover:scale-105"
+                }`}
+              >
+                <span style={{ color: isSelected ? "#ffffff" : tab.color }}>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
@@ -1633,10 +1684,10 @@ export default function WolfMoon({
                       ? 'bg-blue-600 text-white shadow-lg scale-105'
                       : 'text-white/70 hover:text-white hover:bg-white/10'
                   }`}
-                  title="عرض بطاقات الحقول المصنفة"
+                  title="عرض تسجيلات الحقول المصنفة"
                 >
                   <LayoutGrid className="h-3.5 w-3.5" />
-                  <span>{language === "ar" ? "أقسام البطاقات" : "Category Cards"}</span>
+                  <span>{language === "ar" ? "أقسام التسجيلات" : "Category Cards"}</span>
                 </button>
 
                 <button
@@ -1820,8 +1871,8 @@ export default function WolfMoon({
                   <BMSmallBtn onClick={() => downloadFile(toBibframeJsonLdString(w3cJsonLd), `${recordId}-w3c.jsonld`, "application/ld+json")} icon={<Download className="h-3.5 w-3.5" />} label="Download" />
                 </div>
               </div>
-              <pre className="p-5 rounded-xl overflow-auto text-sm max-h-[calc(100vh-420px)] font-mono leading-relaxed"
-                style={{ background: "#1e1e2e", border: "1px solid rgba(120,130,180,0.12)", color: "#a3e635" }}>
+              <pre className="p-5 rounded-2xl overflow-auto text-sm max-h-[calc(100vh-380px)] font-mono leading-relaxed shadow-inner"
+                style={{ background: "rgba(15, 23, 42, 0.88)", backdropFilter: "blur(16px)", border: "1px solid rgba(255, 255, 255, 0.12)", color: "#a3e635" }}>
                 {w3cJsonLd ? JSON.stringify(w3cJsonLd, null, 2) : "Fill in the form to generate W3C-compliant JSON-LD..."}
               </pre>
             </BMCard>
@@ -1843,8 +1894,8 @@ export default function WolfMoon({
             <div className="mb-3 p-3 rounded-lg text-xs flex items-center gap-2" style={{ background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.15)", color: BM.warning }}>
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Raw GraphStore output. For W3C-compliant JSON-LD, use the <strong className="ml-1">W3C JSON-LD</strong> tab.
             </div>
-            <pre className="p-5 rounded-xl overflow-auto text-sm max-h-[calc(100vh-400px)] font-mono leading-relaxed"
-              style={{ background: "#1e1e2e", border: "1px solid rgba(120,130,180,0.12)", color: "#67e8f9" }}>
+            <pre className="p-5 rounded-2xl overflow-auto text-sm max-h-[calc(100vh-380px)] font-mono leading-relaxed shadow-inner"
+              style={{ background: "rgba(15, 23, 42, 0.88)", backdropFilter: "blur(16px)", border: "1px solid rgba(255, 255, 255, 0.12)", color: "#67e8f9" }}>
               {JSON.stringify(graphJsonld || graph, null, 2)}
             </pre>
           </BMCard>
@@ -1887,7 +1938,7 @@ export default function WolfMoon({
                 </button>
               </div>
             </div>
-            <pre className="p-4 rounded-2xl bg-black/60 border border-white/10 text-xs font-mono text-emerald-300/90 overflow-x-auto max-h-[600px] overflow-y-auto whitespace-pre select-all">
+            <pre className="p-5 rounded-2xl overflow-auto text-xs max-h-[calc(100vh-380px)] font-mono leading-relaxed shadow-inner" style={{ background: "rgba(15, 23, 42, 0.88)", backdropFilter: "blur(16px)", border: "1px solid rgba(255, 255, 255, 0.12)", color: "#6ee7b7" }}>
               {graphRdfXml || toRdfXml({ "@graph": [workData, instanceData] })}
             </pre>
           </BMCard>
@@ -1905,8 +1956,8 @@ export default function WolfMoon({
                 {w3cTurtle && <BMSmallBtn onClick={() => downloadFile(w3cTurtle, `${recordId}.ttl`, "text/turtle")} icon={<Download className="h-3.5 w-3.5" />} label=".ttl" />}
               </div>
             </div>
-            <pre className="p-5 rounded-xl overflow-auto text-sm max-h-[calc(100vh-350px)] font-mono leading-relaxed"
-              style={{ background: "#1e1e2e", border: "1px solid rgba(120,130,180,0.12)", color: "#c4b5fd" }}>
+            <pre className="p-5 rounded-2xl overflow-auto text-sm max-h-[calc(100vh-380px)] font-mono leading-relaxed shadow-inner"
+              style={{ background: "rgba(15, 23, 42, 0.88)", backdropFilter: "blur(16px)", border: "1px solid rgba(255, 255, 255, 0.12)", color: "#c4b5fd" }}>
               {w3cTurtle || "Fill in the form to generate Turtle RDF..."}
             </pre>
           </BMCard>
@@ -1927,8 +1978,8 @@ export default function WolfMoon({
             <div className="mb-3 p-3 rounded-lg text-xs flex items-center gap-2" style={{ background: "rgba(0,122,255,0.05)", border: `1px solid rgba(0,122,255,0.12)`, color: BM.accent }}>
               <Info className="h-3.5 w-3.5 shrink-0" /> Directly loadable into Apache Jena/Fuseki, Blazegraph, GraphDB, Virtuoso, or any SPARQL endpoint.
             </div>
-            <pre className="p-5 rounded-xl overflow-auto text-xs max-h-[calc(100vh-400px)] font-mono leading-relaxed"
-              style={{ background: "#1e1e2e", border: "1px solid rgba(120,130,180,0.12)", color: "#fdba74" }}>
+            <pre className="p-5 rounded-2xl overflow-auto text-xs max-h-[calc(100vh-380px)] font-mono leading-relaxed shadow-inner"
+              style={{ background: "rgba(15, 23, 42, 0.88)", backdropFilter: "blur(16px)", border: "1px solid rgba(255, 255, 255, 0.12)", color: "#fdba74" }}>
               {w3cNTriples || "Fill in the form to generate N-Triples..."}
             </pre>
             {w3cNTriples && <div className="mt-2 text-xs font-mono" style={{ color: BM.textDim }}>{w3cNTriples.split("\n").filter(Boolean).length} triples</div>}
@@ -3192,11 +3243,9 @@ function ScriptShifterPanel({ theme, isLegacy, isClassic = false }: { theme: typ
   );
 }
 
-function BMCard({ children }: { children: React.ReactNode }) {
-  const t = useBMTheme();
-  const isClassic = t === BM_CLASSIC;
+function BMCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={isClassic ? "rounded-2xl p-6 bg-white border border-gray-200 shadow-sm" : "glass-card p-6"}>
+    <div className={`liquid-glass-card p-6 shadow-2xl transition-all ${className}`}>
       {children}
     </div>
   );
@@ -3301,33 +3350,22 @@ function BMSaveStatus({ status }: { status: SaveStatus }) {
 }
 
 function BMSmallBtn({ onClick, icon, label }: { onClick: () => void; icon: React.ReactNode; label: string }) {
-  const t = useBMTheme();
   return (
-    <button onClick={onClick}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:shadow-md"
-      style={{ background: "rgba(59,130,246,0.12)", border: `1px solid ${t.accentBorder}`, color: t.accentDim }}>
-      {icon} {label}
+    <button
+      type="button"
+      onClick={onClick}
+      className="glass-bubble-pill flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white cursor-pointer hover:scale-105 active:scale-95 shadow-md transition-all"
+    >
+      {icon} <span>{label}</span>
     </button>
   );
 }
 
 function BMValidationBanner({ validation }: { validation: JsonLdValidationResult }) {
   const t = useBMTheme();
-  const isLegacy = t === BM_LEGACY;
-  const isClassicVal = t === BM_CLASSIC;
   return (
-    <div className="rounded-2xl p-5" style={{
-      background: isClassicVal
-        ? (validation.valid ? "#f0fdf4" : "#fef2f2")
-        : (validation.valid ? "rgba(52,199,89,0.04)" : "rgba(255,59,48,0.04)"),
-      border: `1px solid ${validation.valid ? "rgba(52,199,89,0.12)" : "rgba(255,59,48,0.12)"}`,
-      borderLeft: `3px solid ${validation.valid ? t.success : t.danger}`,
-      backdropFilter: isClassicVal ? undefined : "blur(30px) saturate(180%)",
-      boxShadow: isClassicVal
-        ? "0 1px 3px rgba(0,0,0,0.08)"
-        : isLegacy
-        ? "0 8px 32px rgba(31,38,135,0.15), inset 0 1px 0 rgba(255,255,255,0.6)"
-        : "0 2px 8px rgba(0,0,0,0.2), 0 8px 24px rgba(59,130,246,0.06), inset 0 1px 0 rgba(255,255,255,0.03)",
+    <div className="liquid-glass-card p-5 mb-4 shadow-2xl" style={{
+      borderLeft: `4px solid ${validation.valid ? "#34d399" : "#f87171"}`,
     }}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3 font-black" style={{ color: validation.valid ? t.success : t.danger }}>
@@ -3363,14 +3401,12 @@ function BMValidationBanner({ validation }: { validation: JsonLdValidationResult
       <div className="mt-3 flex gap-2">
         <a href={`https://json-ld.org/playground/#startTab=tab-expanded&json-ld=${encodeURIComponent(JSON.stringify(validation))}`}
           target="_blank" rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all"
-          style={{ background: "rgba(59,130,246,0.12)", border: `1px solid ${t.accentBorder}`, color: t.accentDim }}>
-          <ExternalLink className="h-3 w-3" /> JSON-LD Playground
+          className="glass-bubble-pill flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-sm">
+          <ExternalLink className="h-3 w-3 text-cyan-300" /> JSON-LD Playground
         </a>
         <a href="https://www.w3.org/RDF/Validator/" target="_blank" rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all"
-          style={{ background: "rgba(59,130,246,0.12)", border: `1px solid ${t.accentBorder}`, color: t.accentDim }}>
-          <ExternalLink className="h-3 w-3" /> W3C RDF Validator
+          className="glass-bubble-pill flex items-center gap-1.5 px-3.5 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-sm">
+          <ExternalLink className="h-3 w-3 text-cyan-300" /> W3C RDF Validator
         </a>
       </div>
     </div>

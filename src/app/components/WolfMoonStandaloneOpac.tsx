@@ -2364,7 +2364,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                       }`}
                     >
                       <FileText className="w-3.5 h-3.5 text-blue-600" />
-                      <span>بطاقة الفهرسة الكاملة (Details)</span>
+                      <span>تسجيلة الفهرسة الكاملة (Details)</span>
                     </button>
 
                     <button
@@ -3154,7 +3154,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                       recordFormatMode === 'full' ? 'bg-blue-50 text-blue-900 font-black' : 'hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
-                    • بطاقة الفهرسة الكاملة (Details)
+                    • تسجيلة الفهرسة الكاملة (Details)
                   </button>
                   <button
                     onClick={() => setRecordFormatMode('relations')}
@@ -3224,7 +3224,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                   className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200 transition-all"
                 >
                   <Printer className="w-3.5 h-3.5 text-slate-600" />
-                  <span>طباعة بطاقة الفهرسة</span>
+                  <span>طباعة تسجيلة الفهرسة</span>
                 </button>
               </div>
             </div>
@@ -3627,7 +3627,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                   <Bookmark className="w-10 h-10 text-amber-500 mx-auto" />
                   <div className="font-black text-base text-slate-900">حقيبة الباحث فارغة حالياً</div>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    اضغط على أيقونة الحفظ (Bookmark) على أي بطاقة عمل في نتائج البحث لإضافتها إلى مصفوفة المقارنة الببليوغرافية والتصدير المجمع.
+                    اضغط على أيقونة الحفظ (Bookmark) على أي تسجيلة عمل في نتائج البحث لإضافتها إلى مصفوفة المقارنة الببليوغرافية والتصدير المجمع.
                   </p>
                 </div>
               ) : (
@@ -4326,7 +4326,7 @@ function WorkCardComponent({
           onClick={onSelectWork}
           className="font-bold text-slate-800 hover:text-blue-600 flex items-center gap-1 cursor-pointer group-hover:translate-x-0.5 transition-all"
         >
-          <span>بطاقة العمل الكاملة</span>
+          <span>تسجيلة العمل الكاملة</span>
           <ChevronLeft className="w-3.5 h-3.5 text-blue-600" />
         </button>
 

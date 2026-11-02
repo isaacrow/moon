@@ -295,7 +295,7 @@ export function WolfMoonVuFindPortal({
               viewMode === 'cards' ? 'bg-teal-500 text-white shadow' : 'text-gray-400 hover:text-white'
             }`}
           >
-            بطاقات الاكتشاف
+            تسجيلات الاكتشاف
           </button>
           <button
             type="button"
