@@ -1031,7 +1031,7 @@ export async function approveRecord(id: string, approverName: string = 'Super Ad
     if (!ok || !data?.success) {
       throw new Error(
         status === 403
-          ? 'Your Super Admin session has expired. Please sign out and sign in again.'
+          ? 'Only the Super Admin can approve records. If you are isaac, sign out and sign in again.'
           : data?.error || `Server returned ${status}`
       );
     }
