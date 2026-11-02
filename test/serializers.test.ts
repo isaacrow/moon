@@ -487,3 +487,98 @@ test('15. FOLIO Live Cataloging - Auto-Sync payload mapping & roundtrip preserva
   assert.strictEqual(syncedFolioPayload.publication?.[0]?.publisher, 'مؤسسة النشر الإسلامي');
   assert.strictEqual(syncedFolioPayload.identifiers?.[0]?.value, '964-6012-00-1');
 });
+
+// ---------------------------------------------------------------------------
+// Export correctness: every format must carry the same BIBFRAME graph
+// ---------------------------------------------------------------------------
+
+const AUDIT_URIS = {
+  work: 'https://moonlib.org/work/a1',
+  expression: 'https://moonlib.org/expression/a1-1',
+  instance: 'https://moonlib.org/instance/a1',
+  item: 'https://moonlib.org/item/a1-1',
+  admin: 'https://moonlib.org/admin/a1'
+};
+const AUSTEN = 'http://id.loc.gov/authorities/names/n79032879';
+const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+const RDFS_LABEL = 'http://www.w3.org/2000/01/rdf-schema#label';
+const BF = 'http://id.loc.gov/ontologies/bibframe/';
+
+function auditRecord(work: any, instance: any, item: any = {}) {
+  return buildW3CJsonLd({ workData: work, instanceData: instance, itemData: item, uriSet: AUDIT_URIS });
+}
+
+test('16. Turtle and N-Triples keep authority IRIs together with their labels', async () => {
+  const doc = auditRecord({
+    'bf:title': { 'bf:mainTitle': 'Pride and prejudice' },
+    'bf:contribution': [{ 'bf:agent': { '@id': AUSTEN, '@type': 'bf:Person', 'rdfs:label': 'Austen, Jane, 1775-1817' } }]
+  }, { 'bf:title': { 'bf:mainTitle': 'Pride and prejudice' } });
+
+  for (const quads of [await parseTurtle(jsonLdToTurtle(doc)), new N3Parser({ format: 'N-Triples' }).parse(jsonLdToNTriples(doc))]) {
+    assert.ok(quads.some(q => q.predicate.value === `${BF}agent` && q.object.value === AUSTEN), 'contribution must link to the LC name IRI');
+    assert.ok(quads.some(q => q.subject.value === AUSTEN && q.predicate.value === RDFS_LABEL && q.object.value === 'Austen, Jane, 1775-1817'), 'the IRI keeps its label');
+    assert.ok(quads.some(q => q.subject.value === AUSTEN && q.predicate.value === RDF_TYPE && q.object.value === `${BF}Person`), 'the IRI keeps its type');
+  }
+});
+
+test('17. Vocabulary fields: codes become id.loc.gov IRIs, free text becomes a labelled node', () => {
+  const doc = auditRecord({ 'bf:language': 'English' }, {
+    'bf:issuance': 'مخطوط وحيد / أحادي (Single unit)',
+    'bf:carrier': 'nc',
+    'bf:media': { 'rdfs:label': 'unmediated' }
+  });
+  const nt = jsonLdToNTriples(doc);
+  assert.doesNotThrow(() => new N3Parser({ format: 'N-Triples' }).parse(nt), 'N-Triples must stay parseable');
+  assert.ok(nt.includes('<http://id.loc.gov/vocabulary/carriers/nc>'));
+  assert.ok(!/vocabulary\/[A-Za-z]+\/[^>]*[^a-z>][^>]*>/.test(nt), 'free text must never be glued onto a vocabulary IRI');
+  assert.ok(nt.includes('"مخطوط وحيد / أحادي (Single unit)"') && nt.includes('"English"') && nt.includes('"unmediated"'));
+});
+
+test('18. Properties entered on the wrong entity move to the one BIBFRAME defines them for', () => {
+  const doc = auditRecord(
+    { 'bf:title': { 'bf:mainTitle': 'القبسات' } },
+    {
+      'bf:title': { 'bf:mainTitle': 'القبسات' },
+      'bf:heldBy': { '@type': 'bf:Organization', 'rdfs:label': 'العتبة العباسية' },
+      'bf:itemOf': { '@id': 'https://moonlib.org/instance/stale' },
+      'bf:originDate': '1650',
+      'bf:edition': 'نسخة كاملة'
+    }
+  );
+  const byType = (t: string) => doc['@graph'].find((n: any) => [].concat(n['@type']).includes(t));
+  const instance = byType('bf:Instance'), item = byType('bf:Item'), work = byType('bf:Work');
+  assert.ok(!instance['bf:heldBy'] && item['bf:heldBy'], 'heldBy belongs to the Item');
+  assert.ok(!instance['bf:itemOf'], 'record links are built, never copied from form data');
+  assert.ok(!instance['bf:originDate'] && work['bf:originDate'], 'originDate belongs to the Work');
+  assert.ok(!instance['bf:edition'] && instance['moonext:edition'], 'a property of another class is kept as a Moon extension');
+});
+
+test('19. Dates are only typed when valid; call numbers keep their item portion', () => {
+  const doc = auditRecord({
+    'bf:originDate': '1650 [1061 هـ.]',
+    'bf:classification': { '@type': 'bf:ClassificationLcc', 'bf:classificationPortion': 'PS3562.E353', 'bf:itemPortion': 'T6 2002' }
+  }, { 'bf:provisionActivity': [{ '@type': 'bf:Publication', 'bf:date': '2002' }], 'bf:copyrightDate': 'c2002' });
+  const ttl = jsonLdToTurtle(doc);
+  assert.ok(ttl.includes('"1650 [1061 هـ.]"') && !ttl.includes('"1650 [1061 هـ.]"^^'), 'non-year text is a plain literal');
+  assert.ok(ttl.includes('"2002"^^xsd:gYear'));
+  assert.ok(ttl.includes('"c2002"') && !ttl.includes('"c2002"^^'));
+  assert.ok(ttl.includes('bf:itemPortion "T6 2002"'));
+});
+
+test('20. Primary contribution and description language follow the record', () => {
+  const doc = auditRecord({
+    'bf:contribution': [
+      { 'bf:agent': { 'rdfs:label': 'Editor, An' }, 'bf:role': { '@id': 'http://id.loc.gov/vocabulary/relators/edt' } },
+      { 'bf:agent': { 'rdfs:label': 'Author, An' }, 'bf:role': { '@id': 'http://id.loc.gov/vocabulary/relators/aut' } }
+    ],
+    'bf:adminMetadata': { 'bf:descriptionLanguage': 'ara', 'bf:descriptionConventions': 'RDA', 'bf:source': 'IQ-KaCCS' }
+  }, {});
+  const work = doc['@graph'].find((n: any) => n['@type'] === 'bf:Work');
+  const primary = work['bf:contribution'].filter((c: any) => [].concat(c['@type']).includes('bflc:PrimaryContribution'));
+  assert.strictEqual(primary.length, 1);
+  assert.strictEqual(primary[0]['bf:agent']['rdfs:label'], 'Author, An', 'the author, not the first-listed editor, is primary');
+  const admin = doc['@graph'].find((n: any) => n['@type'] === 'bf:AdminMetadata');
+  assert.deepStrictEqual(admin['bf:descriptionLanguage'], [{ '@id': 'http://id.loc.gov/vocabulary/languages/ara' }]);
+  assert.deepStrictEqual(admin['bf:descriptionConventions'], [{ '@id': 'http://id.loc.gov/vocabulary/descriptionConventions/rda' }]);
+  assert.strictEqual(admin['bf:assigner'][0]['rdfs:label'], 'IQ-KaCCS');
+});

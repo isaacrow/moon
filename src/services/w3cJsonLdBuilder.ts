@@ -15,9 +15,10 @@
  * 5. High-fidelity Turtle and N-Triples serialization
  */
 
-import { toTurtle, resolvePropertyUri, KNOWN_NAMESPACES } from './rdfGraphBuilder';
+import { toTurtle, resolvePropertyUri, KNOWN_NAMESPACES, hoistNamedNodes } from './rdfGraphBuilder';
 import { normalizeBibframe } from './bibframeNormalizer';
 import { BASE_URI } from './uriMintingService';
+import { BF_PROPERTY_DOMAINS, BF_DATATYPE_PROPERTIES } from './bibframeTerms.generated';
 
 // =====================================================
 // CANONICAL BIBFRAME & LINKED DATA @context
@@ -119,28 +120,32 @@ export interface JsonLdValidationResult {
 export function buildW3CJsonLd(input: BuilderInput): W3CJsonLdDocument {
   const { workData, instanceData, itemData, expressionData, adminData, uriSet, enableExpression } = input;
   const graph: W3CJsonLdNode[] = [];
+  const misplaced: MisplacedProperty[] = [];
 
   // 1. BUILD WORK NODE
-  const workNode = buildWorkNode(workData || {}, uriSet, enableExpression);
+  const workNode = buildWorkNode(workData || {}, uriSet, enableExpression, misplaced);
   graph.push(workNode);
 
   // 2. BUILD EXPRESSION NODE (optional)
   if (enableExpression) {
-    const exprNode = buildExpressionNode(expressionData || {}, uriSet);
+    const exprNode = buildExpressionNode(expressionData || {}, uriSet, workNode, misplaced);
     graph.push(exprNode);
   }
 
   // 3. BUILD INSTANCE NODE
-  const instanceNode = buildInstanceNode(instanceData || {}, uriSet, enableExpression);
+  const instanceNode = buildInstanceNode(instanceData || {}, uriSet, enableExpression, misplaced);
   graph.push(instanceNode);
 
   // 4. BUILD ITEM NODE
-  const itemNode = buildItemNode(itemData || {}, uriSet);
+  const itemNode = buildItemNode(itemData || {}, uriSet, misplaced);
   graph.push(itemNode);
 
   // 5. BUILD ADMIN METADATA NODE
-  const adminNode = buildAdminNode(adminData || {}, uriSet);
+  const adminNode = buildAdminNode(adminData || {}, workData?.["bf:adminMetadata"] || workData?.adminMetadata, uriSet);
   graph.push(adminNode);
+
+  // 6. MOVE PROPERTIES ENTERED ON THE WRONG ENTITY TO THE ONE BIBFRAME DEFINES THEM FOR
+  relocateMisplaced(misplaced, { Work: workNode, Instance: instanceNode, Item: itemNode, AdminMetadata: adminNode }, graph);
 
   // Only official BIBFRAME/BFLC terms leave the builder (custom fields are preserved as moonext:).
   return normalizeBibframe({
@@ -153,7 +158,7 @@ export function buildW3CJsonLd(input: BuilderInput): W3CJsonLdDocument {
 // NODE BUILDERS
 // =====================================================
 
-function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean): W3CJsonLdNode {
+function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean, misplaced?: MisplacedProperty[]): W3CJsonLdNode {
   const node: W3CJsonLdNode = {
     "@id": uriSet.work,
     "@type": "bf:Work",
@@ -189,11 +194,8 @@ function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean): W3CJ
   // Language
   const lang = extractProperty(data, "bf:language", "language");
   if (lang) {
-    if (typeof lang === "object" && lang["@id"]) {
-      node["bf:language"] = [{ "@id": lang["@id"] }];
-    } else if (typeof lang === "string") {
-      node["bf:language"] = [{ "@id": lang.startsWith("http") ? lang : `http://id.loc.gov/vocabulary/languages/${lang}` }];
-    }
+    const ref = vocabRef(lang, "languages", "bf:Language");
+    if (ref) node["bf:language"] = [ref];
   }
 
   // Subjects
@@ -229,9 +231,12 @@ function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean): W3CJ
   if (classifications.length > 0) {
     node["bf:classification"] = classifications.map(c => {
       if (typeof c === "object" && c !== null) {
+        const portion = c["bf:classificationPortion"] || c["classificationPortion"];
+        const itemPortion = c["bf:itemPortion"] || c["itemPortion"];
         return {
           "@type": c["@type"] || "bf:Classification",
-          "bf:classificationPortion": [{ "@value": c["bf:classificationPortion"] || c["classificationPortion"] || "" }],
+          ...(portion ? { "bf:classificationPortion": [{ "@value": String(portion) }] } : {}),
+          ...(itemPortion ? { "bf:itemPortion": [{ "@value": String(itemPortion) }] } : {}),
           ...(c["bf:source"] ? { "bf:source": [{ "@id": typeof c["bf:source"] === "object" ? c["bf:source"]["@id"] : c["bf:source"] }] } : {}),
           ...(c["bf:edition"] ? { "bf:edition": [{ "@value": String(c["bf:edition"]) }] } : {})
         };
@@ -255,14 +260,15 @@ function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean): W3CJ
   // Content type
   const content = extractProperty(data, "bf:content", "content");
   if (content) {
-    node["bf:content"] = [typeof content === "object" && content["@id"] ? { "@id": content["@id"] } : { "@id": `http://id.loc.gov/vocabulary/contentTypes/${content}` }];
+    const ref = vocabRef(content, "contentTypes", "bf:Content");
+    if (ref) node["bf:content"] = [ref];
   }
 
   // Origin date
   const originDate = extractProperty(data, "bf:originDate", "originDate");
   if (originDate) {
     const dateStr = String(typeof originDate === "object" ? originDate["@value"] || originDate.value || originDate : originDate);
-    node["bf:originDate"] = [{ "@value": dateStr, "@type": "xsd:gYear" }];
+    node["bf:originDate"] = [dateLiteral(dateStr)];
   }
 
   // Notes
@@ -281,7 +287,7 @@ function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean): W3CJ
     "summary", "bf:summary", "content", "bf:content", "originDate", "bf:originDate",
     "note", "bf:note", "hasInstance", "bf:hasInstance", "hasExpression", "bf:hasExpression",
     "adminMetadata", "bf:adminMetadata", "id", "uri", "created", "updated", "_type", "_raw"
-  ]);
+  ], "Work", misplaced);
 
   // Admin metadata reference
   node["bf:adminMetadata"] = [{ "@id": uriSet.admin }];
@@ -289,7 +295,7 @@ function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean): W3CJ
   return cleanNode(node);
 }
 
-function buildExpressionNode(data: any, uriSet: any): W3CJsonLdNode {
+function buildExpressionNode(data: any, uriSet: any, workNode: any, misplaced?: MisplacedProperty[]): W3CJsonLdNode {
   const node: W3CJsonLdNode = {
     "@id": uriSet.expression,
     "@type": "bf:Work", // BIBFRAME has no Expression class; expressions are Works with bf:expressionOf
@@ -297,20 +303,27 @@ function buildExpressionNode(data: any, uriSet: any): W3CJsonLdNode {
     "bf:hasInstance": [{ "@id": uriSet.instance }]
   };
 
+  // An expression is a Work too, and Works carry a title; it shares its Work's title unless given its own.
+  const ownTitle = extractTitle(data).mainTitle.trim();
+  node["bf:title"] = ownTitle
+    ? [{ "@type": "bf:Title", "bf:mainTitle": [{ "@value": ownTitle }] }]
+    : JSON.parse(JSON.stringify(workNode["bf:title"] || []));
+
   const lang = extractProperty(data, "bf:language", "language");
   if (lang) {
-    node["bf:language"] = [typeof lang === "object" && lang["@id"] ? { "@id": lang["@id"] } : { "@id": `http://id.loc.gov/vocabulary/languages/${lang}` }];
+    const ref = vocabRef(lang, "languages", "bf:Language");
+    if (ref) node["bf:language"] = [ref];
   }
 
   preserveCustomProperties(data, node, [
-    "language", "bf:language", "expressionOf", "bf:expressionOf", "hasInstance", "bf:hasInstance",
+    "title", "bf:title", "language", "bf:language", "expressionOf", "bf:expressionOf", "hasInstance", "bf:hasInstance",
     "id", "uri", "created", "updated", "_type", "_raw"
-  ]);
+  ], "Work", misplaced);
 
   return cleanNode(node);
 }
 
-function buildInstanceNode(data: any, uriSet: any, hasExpression?: boolean): W3CJsonLdNode {
+function buildInstanceNode(data: any, uriSet: any, hasExpression?: boolean, misplaced?: MisplacedProperty[]): W3CJsonLdNode {
   const node: W3CJsonLdNode = {
     "@id": uriSet.instance,
     "@type": "bf:Instance",
@@ -380,7 +393,7 @@ function buildInstanceNode(data: any, uriSet: any, hasExpression?: boolean): W3C
       const date = p["bf:date"] || p["date"];
       if (date) {
         const dateStr = typeof date === "object" ? (date["@value"] || date.value || String(date)) : String(date);
-        prov["bf:date"] = [{ "@value": dateStr, "@type": dateStr.length === 4 ? "xsd:gYear" : "xsd:date" }];
+        prov["bf:date"] = [dateLiteral(dateStr)];
       }
 
       return prov;
@@ -401,19 +414,22 @@ function buildInstanceNode(data: any, uriSet: any, hasExpression?: boolean): W3C
   // Carrier
   const carrier = extractProperty(data, "bf:carrier", "carrier");
   if (carrier) {
-    node["bf:carrier"] = [typeof carrier === "object" && carrier["@id"] ? { "@id": carrier["@id"] } : { "@id": `http://id.loc.gov/vocabulary/carriers/${carrier}` }];
+    const ref = vocabRef(carrier, "carriers", "bf:Carrier");
+    if (ref) node["bf:carrier"] = [ref];
   }
 
   // Media
   const media = extractProperty(data, "bf:media", "media");
   if (media) {
-    node["bf:media"] = [typeof media === "object" && media["@id"] ? { "@id": media["@id"] } : { "@id": `http://id.loc.gov/vocabulary/mediaTypes/${media}` }];
+    const ref = vocabRef(media, "mediaTypes", "bf:Media");
+    if (ref) node["bf:media"] = [ref];
   }
 
   // Issuance
   const issuance = extractProperty(data, "bf:issuance", "issuance");
   if (issuance) {
-    node["bf:issuance"] = [typeof issuance === "object" && issuance["@id"] ? { "@id": issuance["@id"] } : { "@id": `http://id.loc.gov/vocabulary/issuance/${issuance}` }];
+    const ref = vocabRef(issuance, "issuance", "bf:Issuance");
+    if (ref) node["bf:issuance"] = [ref];
   }
 
   // Series statement
@@ -422,7 +438,7 @@ function buildInstanceNode(data: any, uriSet: any, hasExpression?: boolean): W3C
 
   // Copyright date
   const copyright = extractProperty(data, "bf:copyrightDate", "copyrightDate");
-  if (copyright) node["bf:copyrightDate"] = [{ "@value": String(copyright), "@type": "xsd:gYear" }];
+  if (copyright) node["bf:copyrightDate"] = [dateLiteral(String(copyright))];
 
   // Notes
   const notes = extractArrayProperty(data, "bf:note", "note");
@@ -440,12 +456,12 @@ function buildInstanceNode(data: any, uriSet: any, hasExpression?: boolean): W3C
     "dimensions", "bf:dimensions", "carrier", "bf:carrier", "media", "bf:media", "issuance", "bf:issuance",
     "seriesStatement", "bf:seriesStatement", "copyrightDate", "bf:copyrightDate", "note", "bf:note",
     "instanceOf", "bf:instanceOf", "hasItem", "bf:hasItem", "id", "uri", "created", "updated", "_type", "_raw"
-  ]);
+  ], "Instance", misplaced);
 
   return cleanNode(node);
 }
 
-function buildItemNode(data: any, uriSet: any): W3CJsonLdNode {
+function buildItemNode(data: any, uriSet: any, misplaced?: MisplacedProperty[]): W3CJsonLdNode {
   const node: W3CJsonLdNode = {
     "@id": uriSet.item,
     "@type": "bf:Item",
@@ -484,24 +500,38 @@ function buildItemNode(data: any, uriSet: any): W3CJsonLdNode {
   preserveCustomProperties(data, node, [
     "heldBy", "bf:heldBy", "shelfMark", "bf:shelfMark", "electronicLocator", "bf:electronicLocator",
     "identifiedBy", "bf:identifiedBy", "itemOf", "bf:itemOf", "id", "uri", "created", "updated", "_type", "_raw"
-  ]);
+  ], "Item", misplaced);
 
   return cleanNode(node);
 }
 
-function buildAdminNode(data: any, uriSet: any): W3CJsonLdNode {
+function buildAdminNode(data: any, recordAdmin: any, uriSet: any): W3CJsonLdNode {
   const now = new Date().toISOString();
+  // Values from the admin node first, then from the record's own bf:adminMetadata (e.g. an imported
+  // Arabic record says "ara" / "rda"); English and RDA are only defaults.
+  const fromRecord = recordAdmin && typeof recordAdmin === "object" && !Array.isArray(recordAdmin) ? recordAdmin : {};
+  const pick = (key: string) => data[`bf:${key}`] || data[key] || fromRecord[`bf:${key}`] || fromRecord[key];
+  const code = (v: any) => typeof v === "string" && /^[A-Za-z]{1,4}$/.test(v.trim()) ? v.trim().toLowerCase() : v;
+  const agency = pick("assigner") || (typeof fromRecord["bf:source"] === "string" ? fromRecord["bf:source"] : undefined);
+
   const node: W3CJsonLdNode = {
     "@id": uriSet.admin,
     "@type": "bf:AdminMetadata",
     "bf:creationDate": [{ "@value": data["bf:creationDate"] || now.split("T")[0], "@type": "xsd:date" }],
     "bf:changeDate": [{ "@value": now.split("T")[0], "@type": "xsd:date" }],
-    "bf:descriptionConventions": [{
-      "@id": "http://id.loc.gov/vocabulary/descriptionConventions/rda"
-    }],
-    "bf:descriptionLanguage": [{
-      "@id": data["bf:descriptionLanguage"]?.["@id"] || "http://id.loc.gov/vocabulary/languages/eng"
-    }],
+    "bf:descriptionConventions": [
+      vocabRef(code(pick("descriptionConventions")), "descriptionConventions", "bf:DescriptionConventions") ||
+      { "@id": "http://id.loc.gov/vocabulary/descriptionConventions/rda" }
+    ],
+    "bf:descriptionLanguage": [
+      vocabRef(code(pick("descriptionLanguage")), "languages", "bf:Language") ||
+      { "@id": "http://id.loc.gov/vocabulary/languages/eng" }
+    ],
+    ...(agency ? {
+      "bf:assigner": [typeof agency === "object"
+        ? (agency["@id"] ? { "@id": agency["@id"] } : { "@type": "bf:Organization", "rdfs:label": String(agency["rdfs:label"] || "") })
+        : { "@type": "bf:Organization", "rdfs:label": String(agency) }]
+    } : {}),
     "bf:source": [{
       "@id": BASE_URI.replace(/\/resource$/, ""),
       "@type": "bf:Source",
@@ -520,24 +550,77 @@ function buildAdminNode(data: any, uriSet: any): W3CJsonLdNode {
 // PROPERTY PRESERVATION & EXTRACTION HELPERS
 // =====================================================
 
-function preserveCustomProperties(data: any, targetNode: any, ignoredKeys: string[]) {
+// Links between the record's own entities are always built from uriSet, never copied from form data.
+const STRUCTURAL_LINKS = new Set(["hasInstance", "instanceOf", "hasItem", "itemOf", "hasExpression", "expressionOf", "adminMetadata", "adminMetadataFor"]);
+const RECORD_ENTITIES = new Set(["Work", "Instance", "Item", "AdminMetadata"]);
+
+interface MisplacedProperty { domain: string; key: string; value: any[]; fromId: string }
+
+function preserveCustomProperties(data: any, targetNode: any, ignoredKeys: string[], nodeClass?: string, misplaced?: MisplacedProperty[]) {
   const ignored = new Set(ignoredKeys);
 
-  for (const [key, value] of Object.entries(data)) {
+  // Prefixed keys ("bf:notation", usually the structured value) win over bare form copies ("notation").
+  const entries = Object.entries(data).sort(([a], [b]) => Number(!a.includes(":")) - Number(!b.includes(":")));
+  for (const [key, value] of entries) {
     if (ignored.has(key) || key.startsWith("@")) continue;
     if (value === null || value === undefined || value === "") continue;
 
     const resolved = resolvePropertyUri(key, BIBFRAME_JSONLD_CONTEXT);
     const propKey = resolved.tag;
+    const local = propKey.startsWith("bf:") ? propKey.slice(3) : "";
+    if (STRUCTURAL_LINKS.has(local)) continue;
+
+    let formatted = Array.isArray(value) ? value.map(v => formatCustomValue(v)) : [formatCustomValue(value)];
+    // Datatype properties (bf:temporalCoverage, bf:dimensions...) take text, not a node: keep the node's label.
+    if (BF_DATATYPE_PROPERTIES.has(local)) {
+      formatted = formatted
+        .map(v => v && typeof v === "object" && v["@value"] === undefined
+          ? (v["rdfs:label"] || v["label"] ? { "@value": String(v["rdfs:label"] || v["label"]) } : null)
+          : v)
+        .filter(Boolean);
+      if (formatted.length === 0) continue;
+    }
+
+    // A BIBFRAME property used on the wrong entity (heldBy on an Instance, originDate on an Instance)
+    // goes to the entity its rdfs:domain names; title parts are already in bf:title; anything else is
+    // kept as a Moon extension rather than published as invalid BIBFRAME.
+    const domain = local ? BF_PROPERTY_DOMAINS[local] : undefined;
+    if (nodeClass && domain && domain !== nodeClass) {
+      if (domain === "Title") continue;
+      if (RECORD_ENTITIES.has(domain) && misplaced) {
+        misplaced.push({ domain, key: propKey, value: formatted, fromId: targetNode["@id"] });
+      } else if (!targetNode[`moonext:${local}`] && !alreadyStated(targetNode, formatted)) {
+        targetNode[`moonext:${local}`] = formatted;
+      }
+      continue;
+    }
 
     if (targetNode[propKey]) continue; // Already mapped
+    targetNode[propKey] = formatted;
+  }
+}
 
-    if (Array.isArray(value)) {
-      targetNode[propKey] = value.map(v => formatCustomValue(v));
-    } else {
-      targetNode[propKey] = [formatCustomValue(value)];
+function relocateMisplaced(misplaced: MisplacedProperty[], nodes: Record<string, any>, graph: any[]) {
+  for (const { domain, key, value, fromId } of misplaced) {
+    const target = nodes[domain];
+    const from = graph.find(n => n["@id"] === fromId);
+    const local = key.slice(3);
+    if (target && !target[key]) {
+      target[key] = value;
+    } else if (!target || JSON.stringify(target[key]) !== JSON.stringify(value)) {
+      if (from && !from[`moonext:${local}`] && !alreadyStated(from, value)) from[`moonext:${local}`] = value;
     }
   }
+}
+
+/** True when every literal in `values` already appears as a literal on the node (e.g. edition = editionStatement). */
+function alreadyStated(node: any, values: any[]): boolean {
+  const texts = new Set<string>();
+  for (const [k, v] of Object.entries(node)) {
+    if (k.startsWith("@")) continue;
+    for (const x of Array.isArray(v) ? v : [v]) if (x && typeof x === "object" && x["@value"] !== undefined) texts.add(String(x["@value"]).trim());
+  }
+  return values.length > 0 && values.every(v => v && typeof v === "object" && v["@value"] !== undefined && texts.has(String(v["@value"]).trim()));
 }
 
 function formatCustomValue(v: any): any {
@@ -585,15 +668,20 @@ function extractTitle(data: any): { mainTitle: string; subtitle: string; partNum
 
 function extractContributions(data: any, workUri: string): any[] {
   const c = data["bf:contribution"] || data["contribution"] || [];
-  const arr = Array.isArray(c) ? c : [c];
+  const arr = (Array.isArray(c) ? c : [c]).filter(Boolean)
+    .map(x => typeof x === "string" ? { "bf:agent": { "rdfs:label": x } } : x);
 
-  return arr.filter(Boolean).map((contrib, idx) => {
-    const isPrimary = contrib["@type"] === "bflc:PrimaryContribution" || 
-      (Array.isArray(contrib["@type"]) && contrib["@type"].includes("bflc:PrimaryContribution")) ||
-      idx === 0;
+  // Primary = the one(s) explicitly marked; when none is, the first author/creator (or first without a role).
+  const marked = (x: any) => [].concat(x["@type"] || []).some((t: string) => /PrimaryContribution$/.test(t));
+  const roleOf = (x: any) => { const r = x["bf:role"] || x["role"]; return (Array.isArray(r) ? r[0] : r)?.["@id"] || ""; };
+  const fallbackPrimary = arr.some(marked) ? -1 : arr.findIndex(x => !roleOf(x) || /\/relators\/(aut|cre)$/.test(roleOf(x)));
+
+  return arr.map((contrib, idx) => {
+    const isPrimary = marked(contrib) || idx === fallbackPrimary;
 
     const agent = contrib["bf:agent"] || contrib["agent"] || {};
-    const role = contrib["bf:role"] || contrib["role"] || {};
+    const rawRole = contrib["bf:role"] || contrib["role"] || {};
+    const role = Array.isArray(rawRole) ? rawRole[0] || {} : rawRole;
 
     const agentUri = agent["@id"] || `${workUri}/agent/${idx}`;
     const agentLabel = agent["rdfs:label"] || agent["label"] || "Unknown";
@@ -612,6 +700,34 @@ function extractContributions(data: any, workUri: string): any[] {
       }]
     };
   });
+}
+
+/**
+ * Link to an id.loc.gov vocabulary only when the value is a URI or a code (eng, txt, nc, mono).
+ * Free text ("مخطوط وحيد", "Single unit") becomes a labelled node instead of a broken IRI.
+ */
+function vocabRef(value: any, vocab: string, type: string): any {
+  const v = Array.isArray(value) ? value[0] : value;
+  if (!v) return null;
+  if (typeof v === "object") {
+    if (v["@id"]) return { "@id": v["@id"] };
+    const label = v["rdfs:label"] || v["label"] || v["@value"];
+    return label ? { "@type": v["@type"] || type, "rdfs:label": String(label) } : null;
+  }
+  const s = String(v).trim();
+  if (!s) return null;
+  if (s.startsWith("http://") || s.startsWith("https://")) return { "@id": s };
+  // LC codes in these vocabularies are 1-4 lowercase letters; "English" or "Print" is a label, not a code.
+  if (/^[a-z]{1,4}$/.test(s)) return { "@id": `http://id.loc.gov/vocabulary/${vocab}/${s}` };
+  return { "@type": type, "rdfs:label": s };
+}
+
+/** Types a date only when it is a valid xsd:gYear or xsd:date; "1061 هـ. = [1650]" or "c2002" stay plain. */
+function dateLiteral(value: string): any {
+  const v = value.trim();
+  if (/^-?\d{4}$/.test(v)) return { "@value": v, "@type": "xsd:gYear" };
+  if (/^-?\d{4}-\d{2}-\d{2}$/.test(v)) return { "@value": v, "@type": "xsd:date" };
+  return { "@value": v };
 }
 
 function extractProperty(data: any, prefixedKey: string, shortKey: string): any {
@@ -1035,7 +1151,7 @@ export function jsonLdToNTriples(doc: W3CJsonLdDocument): string {
   doc = normalizeBibframe(doc) as W3CJsonLdDocument;
   const context = doc["@context"] || BIBFRAME_JSONLD_CONTEXT;
   const lines: string[] = [];
-  const graph = doc["@graph"] || [];
+  const graph = hoistNamedNodes(doc["@graph"] || []);
   let blankNodeCounter = 0;
 
   function fmtSubject(s: string): string {

@@ -322,13 +322,63 @@ function formatTurtleValue(value: any, context: Record<string, string>, indentLe
 }
 
 /**
+ * Moves nested nodes that have a real IRI (e.g. an LC authority agent with a label)
+ * to the top level, leaving a plain { "@id" } link in their place. Turtle [ ... ] and
+ * N-Triples blank nodes can only describe anonymous resources, so without this the
+ * IRI or the description of linked authorities was lost.
+ */
+export function hoistNamedNodes(nodes: any[]): any[] {
+  const byId = new Map<string, any>();
+  const order: any[] = [];
+
+  const merge = (target: any, src: any) => {
+    for (const [k, v] of Object.entries(src)) {
+      if (k === '@id') continue;
+      if (target[k] === undefined) { target[k] = v; continue; }
+      const seen = new Set((Array.isArray(target[k]) ? target[k] : [target[k]]).map((x: any) => JSON.stringify(x)));
+      const added = (Array.isArray(v) ? v : [v]).filter((x: any) => !seen.has(JSON.stringify(x)));
+      if (added.length) target[k] = [...(Array.isArray(target[k]) ? target[k] : [target[k]]), ...added];
+    }
+  };
+
+  const isNamed = (v: any) => v && typeof v === 'object' && !Array.isArray(v) && typeof v['@id'] === 'string' &&
+    !v['@id'].startsWith('_:') && v['@value'] === undefined && Object.keys(v).some(k => k !== '@id');
+
+  const walk = (v: any): any => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (!v || typeof v !== 'object' || v['@value'] !== undefined) return v;
+    const out: any = {};
+    for (const [k, val] of Object.entries(v)) out[k] = k.startsWith('@') ? val : walk(val);
+    if (isNamed(out)) {
+      const existing = byId.get(out['@id']);
+      if (existing) merge(existing, out);
+      else { const copy = { ...out }; byId.set(out['@id'], copy); order.push(copy); }
+      return { '@id': out['@id'] };
+    }
+    return out;
+  };
+
+  const top = nodes.filter(n => n && typeof n === 'object').map(n => {
+    const out: any = {};
+    for (const [k, val] of Object.entries(n)) out[k] = k.startsWith('@') ? val : walk(val);
+    return out;
+  });
+  for (const n of top) {
+    const existing = n['@id'] && byId.get(n['@id']);
+    if (existing) { merge(n, existing); order.splice(order.indexOf(existing), 1); }
+    if (n['@id']) byId.set(n['@id'], n);
+  }
+  return [...top, ...order];
+}
+
+/**
  * Convert BIBFRAME record (or any JSON-LD @graph document) to valid W3C Turtle
  */
 export function toTurtle(jsonld: any): string {
   if (!jsonld) return '';
   jsonld = normalizeBibframe(jsonld);
 
-  const nodes = jsonld['@graph'] || (Array.isArray(jsonld) ? jsonld : [jsonld]);
+  const nodes = hoistNamedNodes(jsonld['@graph'] || (Array.isArray(jsonld) ? jsonld : [jsonld]));
   const docContext: Record<string, string> = {
     ...KNOWN_NAMESPACES,
     ...(jsonld['@context'] || {})

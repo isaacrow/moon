@@ -9,12 +9,18 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 function readTerms(file, ns) {
   const xml = readFileSync(join(root, 'ontologies', file), 'utf8');
   const version = (xml.match(/owl:versionIRI rdf:resource="([^"]+)"/) || [])[1] || 'unknown';
-  const terms = { classes: new Set(), objectProps: new Set(), datatypeProps: new Set() };
+  const terms = { classes: new Set(), objectProps: new Set(), datatypeProps: new Set(), domains: {} };
   const re = new RegExp(`<owl:(Class|ObjectProperty|DatatypeProperty|SymmetricProperty) rdf:about="${ns.replace(/[.\/]/g, '\\$&')}([A-Za-z0-9]+)"`, 'g');
   for (const [, kind, local] of xml.matchAll(re)) {
     if (kind === 'Class') terms.classes.add(local);
     else if (kind === 'DatatypeProperty') terms.datatypeProps.add(local);
     else terms.objectProps.add(local);
+  }
+  // rdfs:domain of each property (bibframe.rdf declares at most one plain class per property)
+  const propRe = new RegExp(`<owl:(ObjectProperty|DatatypeProperty|SymmetricProperty) rdf:about="${ns.replace(/[.\/]/g, '\\$&')}([A-Za-z0-9]+)">([\\s\\S]*?)</owl:\\1>`, 'g');
+  for (const [, , local, body] of xml.matchAll(propRe)) {
+    const domain = body.match(/<rdfs:domain rdf:resource="http:\/\/id\.loc\.gov\/ontologies\/bibframe\/([A-Za-z0-9]+)"/);
+    if (domain) terms.domains[local] = domain[1];
   }
   return { version, terms };
 }
@@ -33,6 +39,9 @@ export const BF_DATATYPE_PROPERTIES = new Set<string>(${list(bf.terms.datatypePr
 export const BFLC_CLASSES = new Set<string>(${list(bflc.terms.classes)});
 export const BFLC_OBJECT_PROPERTIES = new Set<string>(${list(bflc.terms.objectProps)});
 export const BFLC_DATATYPE_PROPERTIES = new Set<string>(${list(bflc.terms.datatypeProps)});
+
+/** rdfs:domain (a bf: class) of each bf: property that declares one. */
+export const BF_PROPERTY_DOMAINS: Record<string, string> = ${JSON.stringify(Object.fromEntries(Object.entries(bf.terms.domains).sort()))};
 `;
 
 writeFileSync(join(root, 'src/services/bibframeTerms.generated.ts'), out);
