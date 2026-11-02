@@ -16,7 +16,7 @@
  */
 
 import { toTurtle, resolvePropertyUri, KNOWN_NAMESPACES, hoistNamedNodes } from './rdfGraphBuilder';
-import { normalizeBibframe } from './bibframeNormalizer';
+import { normalizeBibframe, finishForExport } from './bibframeNormalizer';
 import { BASE_URI } from './uriMintingService';
 import { BF_PROPERTY_DOMAINS, BF_DATATYPE_PROPERTIES } from './bibframeTerms.generated';
 
@@ -147,6 +147,18 @@ export function buildW3CJsonLd(input: BuilderInput): W3CJsonLdDocument {
   // 6. MOVE PROPERTIES ENTERED ON THE WRONG ENTITY TO THE ONE BIBFRAME DEFINES THEM FOR
   relocateMisplaced(misplaced, { Work: workNode, Instance: instanceNode, Item: itemNode, AdminMetadata: adminNode }, graph);
 
+  // 7. A title entered once (on the Work, or by ISBN lookup) describes the Instance too, and vice versa.
+  const sharedTitle = workNode["bf:title"] || instanceNode["bf:title"];
+  for (const n of graph) {
+    if (sharedTitle && !n["bf:title"] && [].concat(n["@type"]).some((t: string) => t === "bf:Work" || t === "bf:Instance")) {
+      n["bf:title"] = JSON.parse(JSON.stringify(sharedTitle));
+    }
+  }
+
+  // 8. Every link must be a real IRI: an id like "ai-1730…" or "Q42" would make Turtle/N-Triples unparseable.
+  for (const n of graph) for (const k of Object.keys(n)) if (!k.startsWith("@")) n[k] = sanitizeIds(n[k]);
+
+
   // Only official BIBFRAME/BFLC terms leave the builder (custom fields are preserved as moonext:).
   return normalizeBibframe({
     "@context": { ...BIBFRAME_JSONLD_CONTEXT },
@@ -171,19 +183,21 @@ function buildWorkNode(data: any, uriSet: any, enableExpression?: boolean, mispl
 
   // Title
   const title = extractTitle(data);
-  const mainTitleText = title.mainTitle?.trim() || (typeof data["rdfs:label"] === "string" ? data["rdfs:label"].trim() : "") || (typeof data.label === "string" ? data.label.trim() : "") || "Untitled Work / عمل ببليوغرافي";
-  
-  const titleObj: any = {
-    "@type": "bf:Title",
-    "bf:mainTitle": [{ "@value": mainTitleText }]
-  };
-  if (title.subtitle) titleObj["bf:subtitle"] = [{ "@value": title.subtitle }];
-  if (title.partNumber) titleObj["bf:partNumber"] = [{ "@value": title.partNumber }];
-  if (title.partName) titleObj["bf:partName"] = [{ "@value": title.partName }];
-  if (title.nonSortNum !== undefined && title.nonSortNum !== '') {
-    titleObj["bflc:nonSortNum"] = [{ "@value": String(title.nonSortNum) }];
+  // No placeholder titles: an untitled Work is left untitled (validation reports it) or borrows the Instance's.
+  const mainTitleText = title.mainTitle?.trim() || (typeof data["rdfs:label"] === "string" ? data["rdfs:label"].trim() : "") || (typeof data.label === "string" ? data.label.trim() : "");
+  if (mainTitleText) {
+    const titleObj: any = {
+      "@type": "bf:Title",
+      "bf:mainTitle": [{ "@value": mainTitleText }]
+    };
+    if (title.subtitle) titleObj["bf:subtitle"] = [{ "@value": title.subtitle }];
+    if (title.partNumber) titleObj["bf:partNumber"] = [{ "@value": title.partNumber }];
+    if (title.partName) titleObj["bf:partName"] = [{ "@value": title.partName }];
+    if (title.nonSortNum !== undefined && title.nonSortNum !== '') {
+      titleObj["bflc:nonSortNum"] = [{ "@value": String(title.nonSortNum) }];
+    }
+    node["bf:title"] = [titleObj];
   }
-  node["bf:title"] = [titleObj];
 
   // Contributions
   const contributions = extractContributions(data, uriSet.work);
@@ -333,15 +347,17 @@ function buildInstanceNode(data: any, uriSet: any, hasExpression?: boolean, misp
 
   // Title
   const title = extractTitle(data);
-  const instMain = title.mainTitle?.trim() || "Untitled Instance / وعاء بدون عنوان";
-  const titleObj: any = {
-    "@type": "bf:Title",
-    "bf:mainTitle": [{ "@value": instMain }]
-  };
-  if (title.subtitle) titleObj["bf:subtitle"] = [{ "@value": title.subtitle }];
-  if (title.partNumber) titleObj["bf:partNumber"] = [{ "@value": title.partNumber }];
-  if (title.partName) titleObj["bf:partName"] = [{ "@value": title.partName }];
-  node["bf:title"] = [titleObj];
+  const instMain = title.mainTitle?.trim();
+  if (instMain) {
+    const titleObj: any = {
+      "@type": "bf:Title",
+      "bf:mainTitle": [{ "@value": instMain }]
+    };
+    if (title.subtitle) titleObj["bf:subtitle"] = [{ "@value": title.subtitle }];
+    if (title.partNumber) titleObj["bf:partNumber"] = [{ "@value": title.partNumber }];
+    if (title.partName) titleObj["bf:partName"] = [{ "@value": title.partName }];
+    node["bf:title"] = [titleObj];
+  }
 
   // Edition statement
   const edition = extractProperty(data, "bf:editionStatement", "editionStatement");
@@ -507,10 +523,10 @@ function buildItemNode(data: any, uriSet: any, misplaced?: MisplacedProperty[]):
 
 function buildAdminNode(data: any, recordAdmin: any, uriSet: any): W3CJsonLdNode {
   const now = new Date().toISOString();
-  // Values from the admin node first, then from the record's own bf:adminMetadata (e.g. an imported
-  // Arabic record says "ara" / "rda"); English and RDA are only defaults.
+  // The record's own bf:adminMetadata (e.g. an imported Arabic record says "ara" / "rda") wins over the
+  // editor's session defaults in the admin node; English and RDA are only the last resort.
   const fromRecord = recordAdmin && typeof recordAdmin === "object" && !Array.isArray(recordAdmin) ? recordAdmin : {};
-  const pick = (key: string) => data[`bf:${key}`] || data[key] || fromRecord[`bf:${key}`] || fromRecord[key];
+  const pick = (key: string) => fromRecord[`bf:${key}`] || fromRecord[key] || data[`bf:${key}`] || data[key];
   const code = (v: any) => typeof v === "string" && /^[A-Za-z]{1,4}$/.test(v.trim()) ? v.trim().toLowerCase() : v;
   const agency = pick("assigner") || (typeof fromRecord["bf:source"] === "string" ? fromRecord["bf:source"] : undefined);
 
@@ -540,7 +556,10 @@ function buildAdminNode(data: any, recordAdmin: any, uriSet: any): W3CJsonLdNode
     "bf:generationProcess": [{
       "@type": "bf:GenerationProcess",
       "rdfs:label": data["bf:generationProcess"] || "Moon BIBFRAME Template v2.0"
-    }]
+    }],
+    ...(data["bf:catalogerId"] || data["bflc:catalogerId"]
+      ? { "bflc:catalogerId": [{ "@value": String(data["bf:catalogerId"] || data["bflc:catalogerId"]) }] }
+      : {})
   };
 
   return cleanNode(node);
@@ -683,13 +702,13 @@ function extractContributions(data: any, workUri: string): any[] {
     const rawRole = contrib["bf:role"] || contrib["role"] || {};
     const role = Array.isArray(rawRole) ? rawRole[0] || {} : rawRole;
 
-    const agentUri = agent["@id"] || `${workUri}/agent/${idx}`;
+    const agentUri = typeof agent["@id"] === "string" && VALID_IRI.test(agent["@id"]) ? agent["@id"] : `${workUri}/agent/${idx}`;
     const agentLabel = agent["rdfs:label"] || agent["label"] || "Unknown";
     const agentType = agent["@type"] || "bf:Person";
     const roleUri = role["@id"] || "http://id.loc.gov/vocabulary/relators/ctb";
 
     return {
-      "@type": isPrimary ? ["bf:Contribution", "bflc:PrimaryContribution"] : "bf:Contribution",
+      "@type": isPrimary ? ["bf:Contribution", "bf:PrimaryContribution"] : "bf:Contribution",
       "bf:agent": {
         "@id": agentUri,
         "@type": agentType,
@@ -720,6 +739,22 @@ function vocabRef(value: any, vocab: string, type: string): any {
   // LC codes in these vocabularies are 1-4 lowercase letters; "English" or "Print" is a label, not a code.
   if (/^[a-z]{1,4}$/.test(s)) return { "@id": `http://id.loc.gov/vocabulary/${vocab}/${s}` };
   return { "@type": type, "rdfs:label": s };
+}
+
+const VALID_IRI = /^(https?:\/\/[^\s<>"{}|\\^`]+|urn:[^\s<>"{}|\\^`]+|_:[A-Za-z0-9_.-]+)$/;
+
+/** Turns nodes with an invalid @id into anonymous nodes, keeping a bare invalid reference as its label. */
+function sanitizeIds(value: any): any {
+  if (Array.isArray(value)) return value.map(sanitizeIds);
+  if (!value || typeof value !== "object" || value["@value"] !== undefined) return value;
+  const out: any = {};
+  for (const [k, v] of Object.entries(value)) out[k] = k.startsWith("@") ? v : sanitizeIds(v);
+  const id = out["@id"];
+  if (typeof id === "string" && !VALID_IRI.test(id)) {
+    delete out["@id"];
+    if (Object.keys(out).length === 0) return { "rdfs:label": id };
+  }
+  return out;
 }
 
 /** Types a date only when it is a valid xsd:gYear or xsd:date; "1061 هـ. = [1650]" or "c2002" stay plain. */
@@ -1148,7 +1183,7 @@ export function jsonLdToTurtle(doc: W3CJsonLdDocument): string {
  * Convert W3C JSON-LD Document to standard N-Triples
  */
 export function jsonLdToNTriples(doc: W3CJsonLdDocument): string {
-  doc = normalizeBibframe(doc) as W3CJsonLdDocument;
+  doc = finishForExport(doc) as W3CJsonLdDocument;
   const context = doc["@context"] || BIBFRAME_JSONLD_CONTEXT;
   const lines: string[] = [];
   const graph = hoistNamedNodes(doc["@graph"] || []);

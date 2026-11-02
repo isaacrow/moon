@@ -574,11 +574,59 @@ test('20. Primary contribution and description language follow the record', () =
     'bf:adminMetadata': { 'bf:descriptionLanguage': 'ara', 'bf:descriptionConventions': 'RDA', 'bf:source': 'IQ-KaCCS' }
   }, {});
   const work = doc['@graph'].find((n: any) => n['@type'] === 'bf:Work');
-  const primary = work['bf:contribution'].filter((c: any) => [].concat(c['@type']).includes('bflc:PrimaryContribution'));
+  const primary = work['bf:contribution'].filter((c: any) => [].concat(c['@type']).includes('bf:PrimaryContribution'));
   assert.strictEqual(primary.length, 1);
   assert.strictEqual(primary[0]['bf:agent']['rdfs:label'], 'Author, An', 'the author, not the first-listed editor, is primary');
   const admin = doc['@graph'].find((n: any) => n['@type'] === 'bf:AdminMetadata');
   assert.deepStrictEqual(admin['bf:descriptionLanguage'], [{ '@id': 'http://id.loc.gov/vocabulary/languages/ara' }]);
   assert.deepStrictEqual(admin['bf:descriptionConventions'], [{ '@id': 'http://id.loc.gov/vocabulary/descriptionConventions/rda' }]);
   assert.strictEqual(admin['bf:assigner'][0]['rdfs:label'], 'IQ-KaCCS');
+});
+
+test('21. No placeholder titles; a title entered once describes both Work and Instance', () => {
+  const lookedUp = auditRecord({ 'bf:title': { 'bf:mainTitle': 'The Muqaddimah' } }, {});
+  const instance = lookedUp['@graph'].find((n: any) => n['@type'] === 'bf:Instance');
+  assert.strictEqual(instance['bf:title'][0]['bf:mainTitle'][0]['@value'], 'The Muqaddimah');
+  const empty = jsonLdToTurtle(auditRecord({}, {}));
+  assert.ok(!/Untitled|بدون عنوان/.test(empty), 'an empty record must not invent a title');
+  assert.strictEqual(validateW3CJsonLd(auditRecord({}, {})).semantic.valid, false, 'validation still asks for a title');
+});
+
+test('22. Invalid ids never become IRIs (AI-suggested or internal authority ids)', async () => {
+  const doc = auditRecord({
+    'bf:contribution': [{ 'bf:agent': { '@id': 'ai-1730000000000', '@type': 'bf:Person', 'rdfs:label': 'ابن خلدون' } }],
+    'bf:subject': [{ '@id': 'Q42 local', '@type': 'bf:Topic', 'rdfs:label': 'تاريخ' }]
+  }, { 'bf:title': 'مقدمة' });
+  const ttl = jsonLdToTurtle(doc);
+  await parseTurtle(ttl);
+  assert.doesNotThrow(() => new N3Parser({ format: 'N-Triples' }).parse(jsonLdToNTriples(doc)));
+  assert.ok(!ttl.includes('ai-1730000000000') && !ttl.includes('Q42 local'));
+  assert.ok(ttl.includes('<https://moonlib.org/work/a1/agent/0>'), 'the contributor falls back to a minted URI');
+});
+
+test('23. Editor session defaults never override the record; exports follow LC conventions', async () => {
+  const editorAdmin = {
+    '@type': 'bf:AdminMetadata',
+    'bf:descriptionLanguage': { '@id': 'http://id.loc.gov/vocabulary/languages/eng' },
+    'bf:catalogerId': 'tester'
+  };
+  const doc = buildW3CJsonLd({
+    workData: {
+      'bf:title': { 'bf:mainTitle': 'القبسات' }, 'bf:content': 'txt', 'bf:language': 'ara',
+      'bf:contribution': [{ '@type': 'bflc:PrimaryContribution', 'bf:agent': { 'rdfs:label': 'الميرداماد' } }],
+      'bf:adminMetadata': { 'bf:descriptionLanguage': 'ara' }
+    },
+    instanceData: {}, adminData: editorAdmin, uriSet: AUDIT_URIS
+  });
+  const admin = doc['@graph'].find((n: any) => n['@type'] === 'bf:AdminMetadata');
+  assert.deepStrictEqual(admin['bf:descriptionLanguage'], [{ '@id': 'http://id.loc.gov/vocabulary/languages/ara' }]);
+  assert.strictEqual(admin['bflc:catalogerId'][0]['@value'], 'tester');
+
+  const quads = await parseTurtle(jsonLdToTurtle(doc));
+  const has = (p: string, o: string) => quads.some(q => q.predicate.value === p && q.object.value === o);
+  assert.ok(has(RDF_TYPE, `${BF}PrimaryContribution`) && !has(RDF_TYPE, 'http://id.loc.gov/ontologies/bflc/PrimaryContribution'), 'bflc:PrimaryContribution is deprecated');
+  assert.ok(has(RDF_TYPE, `${BF}Text`), 'a txt Work is also a bf:Text');
+  assert.ok(quads.some(q => q.object.value === 'القبسات' && q.object.language === 'ar-arab'), 'Arabic script is language-tagged');
+  const inMemory = doc['@graph'].find((n: any) => n['@type'] === 'bf:Work');
+  assert.strictEqual(typeof inMemory['bf:title'][0]['bf:mainTitle'][0]['@value'], 'string', 'editors reading the builder output keep plain values');
 });

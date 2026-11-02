@@ -735,12 +735,24 @@ export default function WolfMoon({
       "bf:creationDate": new Date().toISOString().split("T")[0],
       "bf:source": { "@id": "https://moonlib.org", "rdfs:label": "Moon Library System — Blue Moon" },
       "bf:descriptionConventions": { "@id": "http://id.loc.gov/vocabulary/descriptionConventions/rda", "rdfs:label": "RDA" },
-      "bf:descriptionLanguage": { "@id": "http://id.loc.gov/vocabulary/languages/eng", "rdfs:label": "English" },
+      "bf:descriptionLanguage": language === "ar"
+        ? { "@id": "http://id.loc.gov/vocabulary/languages/ara", "rdfs:label": "العربية" }
+        : { "@id": "http://id.loc.gov/vocabulary/languages/eng", "rdfs:label": "English" },
       "bf:generationProcess": `Blue Moon v1.0 (${template.name})`,
       "bf:catalogerId": username || "anonymous",
     });
     regenerateRDF();
   }, []);
+
+  // The description is written in the cataloging interface's language unless the record says otherwise.
+  useEffect(() => {
+    const admin = graphStore.getNode(uriSet.admin);
+    if (!admin) return;
+    admin["bf:descriptionLanguage"] = language === "ar"
+      ? { "@id": "http://id.loc.gov/vocabulary/languages/ara", "rdfs:label": "العربية" }
+      : { "@id": "http://id.loc.gov/vocabulary/languages/eng", "rdfs:label": "English" };
+    regenerateRDF();
+  }, [language]);
 
   useEffect(() => {
     if (template.enableExpression && !enableExpression) {
@@ -981,7 +993,13 @@ export default function WolfMoon({
       toast.success("Subject added!");
       return;
     }
-    const contribution = { "@type": "bf:Contribution", "bf:agent": { "@id": entity.identifiers?.loc ? `http://id.loc.gov/authorities/names/${entity.identifiers.loc}` : entity.id, "@type": "bf:Person", "rdfs:label": entity.label }, "bf:role": { "@id": "http://id.loc.gov/vocabulary/relators/aut", "rdfs:label": "Author" } };
+    // Link the person by an authority URI (LC, then VIAF, then Wikidata); internal ids such as "ai-…" are not IRIs.
+    const ids = entity.identifiers || {};
+    const agentUri = ids.loc ? `http://id.loc.gov/authorities/names/${ids.loc}`
+      : ids.viaf ? `http://viaf.org/viaf/${ids.viaf}`
+      : ids.wikidata ? `http://www.wikidata.org/entity/${ids.wikidata}`
+      : (typeof entity.id === "string" && /^https?:\/\//.test(entity.id) ? entity.id : undefined);
+    const contribution = { "@type": "bf:Contribution", "bf:agent": { ...(agentUri ? { "@id": agentUri } : {}), "@type": "bf:Person", "rdfs:label": entity.label }, "bf:role": { "@id": "http://id.loc.gov/vocabulary/relators/aut", "rdfs:label": "Author" } };
     setWorkData((prev: any) => ({ ...prev, "bf:contribution": [...(prev["bf:contribution"] || []), contribution] }));
     toast.success(`${entity.label} added!`);
   };
@@ -1867,13 +1885,13 @@ export default function WolfMoon({
                   <Shield className="h-5 w-5" style={{ color: BM.success }} /> W3C-Compliant JSON-LD
                 </h3>
                 <div className="flex gap-2">
-                  <BMSmallBtn onClick={() => copyToClipboard(JSON.stringify(w3cJsonLd, null, 2))} icon={<Copy className="h-3.5 w-3.5" />} label="Copy" />
+                  <BMSmallBtn onClick={() => copyToClipboard(toBibframeJsonLdString(w3cJsonLd))} icon={<Copy className="h-3.5 w-3.5" />} label="Copy" />
                   <BMSmallBtn onClick={() => downloadFile(toBibframeJsonLdString(w3cJsonLd), `${recordId}-w3c.jsonld`, "application/ld+json")} icon={<Download className="h-3.5 w-3.5" />} label="Download" />
                 </div>
               </div>
               <pre className="p-5 rounded-2xl overflow-auto text-sm max-h-[calc(100vh-380px)] font-mono leading-relaxed shadow-inner"
                 style={{ background: "rgba(15, 23, 42, 0.88)", backdropFilter: "blur(16px)", border: "1px solid rgba(255, 255, 255, 0.12)", color: "#a3e635" }}>
-                {w3cJsonLd ? JSON.stringify(w3cJsonLd, null, 2) : "Fill in the form to generate W3C-compliant JSON-LD..."}
+                {w3cJsonLd ? toBibframeJsonLdString(w3cJsonLd) : "Fill in the form to generate W3C-compliant JSON-LD..."}
               </pre>
             </BMCard>
           </div>
@@ -1888,7 +1906,8 @@ export default function WolfMoon({
               </h3>
               <div className="flex gap-2">
                 <BMSmallBtn onClick={() => copyToClipboard(JSON.stringify(graphJsonld || graph, null, 2))} icon={<Copy className="h-3.5 w-3.5" />} label="Copy" />
-                <BMSmallBtn onClick={() => downloadFile(toBibframeJsonLdString(graphJsonld || graph), `${recordId}.jsonld`, "application/ld+json")} icon={<Download className="h-3.5 w-3.5" />} label="Download" />
+                {/* The raw graph is for inspection only; a downloaded record is always the validated W3C build. */}
+                <BMSmallBtn onClick={() => downloadFile(toBibframeJsonLdString(w3cJsonLd || graphJsonld || graph), `${recordId}.jsonld`, "application/ld+json")} icon={<Download className="h-3.5 w-3.5" />} label="Download" />
               </div>
             </div>
             <div className="mb-3 p-3 rounded-lg text-xs flex items-center gap-2" style={{ background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.15)", color: BM.warning }}>

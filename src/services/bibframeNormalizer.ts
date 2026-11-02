@@ -154,6 +154,7 @@ const TYPE_RENAMES: Record<string, string | null> = {
   'bf:SubLocation': 'bf:Sublocation',
   'bf:AccessibilityContent': 'bf:ContentAccessibility',
   'bf:Object3D': 'bf:Object',
+  'bflc:PrimaryContribution': 'bf:PrimaryContribution', // deprecated in bflc.rdf (GH21); BIBFRAME 3 has its own
   'bf:Resource': null
 };
 
@@ -543,8 +544,58 @@ export function normalizeBibframe(input: any): NormalizeResult['doc'] {
 }
 
 /** JSON-LD text for downloads: always normalized, never raw editor state. */
+// id.loc.gov content type code -> BIBFRAME Work subclass
+const CONTENT_CLASSES: Record<string, string> = {
+  txt: "bf:Text", tct: "bf:Text",
+  ntm: "bf:NotatedMusic", tcm: "bf:NotatedMusic",
+  prm: "bf:Audio", snd: "bf:Audio", spw: "bf:Audio",
+  cri: "bf:Cartography", crd: "bf:Cartography", crm: "bf:Cartography", crt: "bf:Cartography", crn: "bf:Cartography", crf: "bf:Cartography",
+  sti: "bf:StillImage", tci: "bf:StillImage",
+  tdi: "bf:MovingImage", tdm: "bf:MovingImage",
+  tdf: "bf:Object", cod: "bf:Dataset", cop: "bf:Multimedia"
+};
+
+// MARC language code -> BCP 47 language for Arabic-script text
+const ARABIC_SCRIPT_LANGUAGES: Record<string, string> = { ara: "ar", per: "fa", urd: "ur", kur: "ku", ota: "ota", pus: "ps", snd: "sd" };
+const ARABIC_SCRIPT = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+
+/** Adds a language tag to untyped Arabic-script literals (plain strings or { "@value" } objects). */
+function tagArabicScript(value: any, tag: string): any {
+  if (Array.isArray(value)) return value.map(v => tagArabicScript(v, tag));
+  if (typeof value === "string") return ARABIC_SCRIPT.test(value) ? { "@value": value, "@language": tag } : value;
+  if (!value || typeof value !== "object") return value;
+  if (value["@value"] !== undefined) {
+    return !value["@type"] && !value["@language"] && ARABIC_SCRIPT.test(String(value["@value"])) ? { ...value, "@language": tag } : value;
+  }
+  const out: any = {};
+  for (const [k, v] of Object.entries(value)) out[k] = k.startsWith("@") ? v : tagArabicScript(v, tag);
+  return out;
+}
+
+/**
+ * Final step for exported files (JSON-LD, Turtle, N-Triples, RDF/XML), matching LC's own records:
+ * Works also carry their content class (bf:Text...), and Arabic-script text is language-tagged
+ * ("…"@ar-Arab). In-memory builder output keeps plain values for the editors that read it.
+ */
+export function finishForExport(input: any): any {
+  const doc = normalizeBibframe(input);
+  const graph: any[] = Array.isArray(doc) ? doc : doc['@graph'] || [doc];
+  const works = graph.filter(n => n && [].concat(n['@type'] || []).includes('bf:Work' as never));
+  for (const n of works) {
+    const contentCode = String(([] as any[]).concat(n['bf:content'] || [])[0]?.['@id'] || '').split('/contentTypes/')[1];
+    const contentClass = contentCode && CONTENT_CLASSES[contentCode];
+    const types: string[] = [].concat(n['@type']);
+    if (contentClass && !types.includes(contentClass)) n['@type'] = [...types, contentClass];
+  }
+  const primaryWork = works.find(n => !n['bf:expressionOf']) || works[0];
+  const langCode = String(([] as any[]).concat(primaryWork?.['bf:language'] || [])[0]?.['@id'] || '').split('/languages/')[1];
+  const arabicTag = `${ARABIC_SCRIPT_LANGUAGES[langCode] || 'ar'}-Arab`;
+  for (const n of graph) if (n && typeof n === 'object') for (const k of Object.keys(n)) if (!k.startsWith('@')) n[k] = tagArabicScript(n[k], arabicTag);
+  return doc;
+}
+
 export function toBibframeJsonLdString(input: any): string {
-  return JSON.stringify(normalizeBibframe(input), null, 2);
+  return JSON.stringify(finishForExport(input), null, 2);
 }
 
 /** Every bf:/bflc: term (property or class) in the document that the official ontologies do not define. */

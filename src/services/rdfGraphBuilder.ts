@@ -8,7 +8,7 @@
  * official BIBFRAME 3.0.1 / BFLC terms are emitted in the bf: and bflc: namespaces.
  */
 
-import { normalizeBibframe } from './bibframeNormalizer';
+import { normalizeBibframe, finishForExport } from './bibframeNormalizer';
 import { BASE_URI } from './uriMintingService';
 
 export interface GraphNode {
@@ -376,7 +376,7 @@ export function hoistNamedNodes(nodes: any[]): any[] {
  */
 export function toTurtle(jsonld: any): string {
   if (!jsonld) return '';
-  jsonld = normalizeBibframe(jsonld);
+  jsonld = finishForExport(jsonld);
 
   const nodes = hoistNamedNodes(jsonld['@graph'] || (Array.isArray(jsonld) ? jsonld : [jsonld]));
   const docContext: Record<string, string> = {
@@ -627,7 +627,7 @@ function collectReferences(value: any, refs: Set<string>) {
  */
 export function toRdfXml(jsonld: any): string {
   if (!jsonld) return '';
-  jsonld = normalizeBibframe(jsonld);
+  jsonld = finishForExport(jsonld);
   const nodes = jsonld['@graph'] || (Array.isArray(jsonld) ? jsonld : [jsonld]);
   const docContext: Record<string, string> = {
     ...KNOWN_NAMESPACES,
