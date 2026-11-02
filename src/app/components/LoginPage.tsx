@@ -650,7 +650,7 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                               Your request has been dispatched to administrator <strong>Isaac Faleh</strong>. It will appear directly on his admin account for instant approval.
                             </p>
                             <a
-                              href={`mailto:isaac@moon.local?subject=${encodeURIComponent(`Moon Editor Access Request: ${pendingApprovalInfo.user}`)}&body=${encodeURIComponent(`Hello Isaac,\n\nA new tester has requested access to the Moon BIBFRAME Editor:\n\nUser: ${pendingApprovalInfo.user}\nEmail: ${pendingApprovalInfo.email}\nInstitution: ${pendingApprovalInfo.institution}\nSubmitted At: ${new Date().toLocaleString()}\n\nPlease approve this request from your Admin account in Moon Studio.\n\nThank you!`)}`}
+                              href={`mailto:eshak100falah@gmail.com?subject=${encodeURIComponent(`Moon Editor Access Request: ${pendingApprovalInfo.user}`)}&body=${encodeURIComponent(`Hello Isaac,\n\nA new tester has requested access to the Moon BIBFRAME Editor:\n\nUser: ${pendingApprovalInfo.user}\nEmail: ${pendingApprovalInfo.email}\nInstitution: ${pendingApprovalInfo.institution}\nSubmitted At: ${new Date().toLocaleString()}\n\nPlease approve this request from your Admin account in Moon Studio.\n\nThank you!`)}`}
                               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-500/30 hover:bg-blue-500/50 border border-blue-400/60 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
                             >
                               <Mail className="h-3.5 w-3.5" />
