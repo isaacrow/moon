@@ -51,7 +51,9 @@ export function RecordsGallery({ onLoadRecord, onEditRecord, onViewRecord }: Rec
       toast.success('Record deleted successfully');
     } catch (error) {
       console.error('Error deleting record:', error);
-      toast.error('Failed to delete record');
+      toast.error('Failed to delete record', {
+        description: error instanceof Error ? error.message : undefined,
+      });
     }
   };
 

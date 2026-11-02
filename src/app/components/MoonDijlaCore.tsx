@@ -38,6 +38,7 @@ import { projectId, publicAnonKey } from "/utils/supabase/info";
 import moonLogo from "figma:asset/448923f9298ec547f27dd322785433298cd5ac34.png";
 import "../../styles/dijla-theme.css";
 import { toBibframeJsonLdString } from '../../services/bibframeNormalizer';
+import { moonHeaders } from '../utils/moonApi';
 
 // ─── API ─────────────────────────────────────────────────────────
 const API = `https://${projectId}.supabase.co/functions/v1/make-server-49c0e13c`;
@@ -45,7 +46,8 @@ const H = { "Authorization": `Bearer ${publicAnonKey}`, "Content-Type": "applica
 
 async function api(path: string, opts: RequestInit = {}) {
   const t0 = Date.now();
-  const res = await fetch(`${API}${path}`, { ...opts, headers: { ...H, ...(opts.headers as any || {}) } });
+  // moonHeaders() adds the signed-in user's session so record saves get the right review status.
+  const res = await fetch(`${API}${path}`, { ...opts, headers: { ...H, ...moonHeaders(), ...(opts.headers as any || {}) } });
   const data = await res.json().catch(() => null);
   const ms = Date.now() - t0;
   if (!res.ok) throw Object.assign(new Error(data?.error || `HTTP ${res.status}`), { ms });

@@ -69,9 +69,13 @@ export function SearchPage({ onLoadRecord, onNewRecord }: SearchPageProps) {
 
   const confirmDelete = async () => {
     if (recordToDelete) {
-      await deleteRecord(recordToDelete);
-      const updatedRecords = await searchRecords(query);
-      setResults(updatedRecords);
+      try {
+        await deleteRecord(recordToDelete);
+        const updatedRecords = await searchRecords(query);
+        setResults(updatedRecords);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Failed to delete record');
+      }
     }
     setDeleteDialogOpen(false);
     setRecordToDelete(null);

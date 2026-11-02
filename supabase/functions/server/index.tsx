@@ -739,9 +739,23 @@ app.delete("/make-server-49c0e13c/records/:id", async (c) => {
   try {
     const id = c.req.param('id');
     const recordKey = `bibframe:record:${id}`;
-    
+
+    // Only the Super Admin or the record's own cataloger may delete it.
+    const session = await getSession(c);
+    if (!session) {
+      return c.json({ error: 'Please sign in to delete records' }, 401);
+    }
+    const raw = await kv.get(recordKey);
+    if (raw && session.role !== 'admin') {
+      const existing = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const owner = String(existing.cataloger || existing.metadata?.catalogerId || '').toLowerCase();
+      if (owner !== session.username.toLowerCase()) {
+        return c.json({ error: 'Only the Super Admin or the record\'s cataloger can delete it' }, 403);
+      }
+    }
+
     await kv.del(recordKey);
-    console.log(`[RECORDS] Deleted record ${id}`);
+    console.log(`[RECORDS] ${session.username} deleted record ${id}`);
     
     return c.json({ success: true, id });
   } catch (error) {

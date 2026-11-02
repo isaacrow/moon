@@ -3,6 +3,7 @@
  * Connects Moon Wolf to the BCLD FastAPI Platform (https://dev.bcld.info/api/docs)
  * Provides federated search, retrieval of Works, Instances, Hubs, and LSP export.
  */
+import { BASE_URI } from '../../services/uriMintingService';
 
 export interface BcldSearchResult {
   id: number;

@@ -26,6 +26,7 @@ import {
   Sparkles,
   Shield,
   FileJson,
+  FileCode2,
   Upload,
   Globe,
   Tag,
