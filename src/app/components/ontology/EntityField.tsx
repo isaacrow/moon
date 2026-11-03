@@ -9,7 +9,7 @@ import { OntologyProperty } from '../../services/bibframeOntologyEngine';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Search, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
-import { lookupISBN, ISBNData } from '../../../services/authoritySearch';
+import { lookupIsbnDetailed, ISBNData } from '../../../services/authoritySearch';
 
 interface EntityFieldProps {
   property: OntologyProperty;
@@ -23,6 +23,7 @@ export function EntityField({ property, value, onChange, language = 'en', type }
   const direction = language === 'ar' ? 'rtl' : 'ltr';
   const [isLoading, setIsLoading] = useState(false);
   const [isbnData, setIsbnData] = useState<ISBNData | null>(null);
+  const [isbnNotice, setIsbnNotice] = useState<{ tone: 'error' | 'warn'; text: string } | null>(null);
 
   // Handle Title entity (bf:Title)
   if (property.range.includes('bf:Title')) {
@@ -103,29 +104,55 @@ export function EntityField({ property, value, onChange, language = 'en', type }
 
   // Handle Identifier entity
   if (property.label.includes('Identifier')) {
+    const ar = language === 'ar';
     const handleIsbnLookup = async () => {
       const isbn = value?.isbn?.trim();
       if (!isbn) return;
       setIsLoading(true);
       setIsbnData(null);
+      setIsbnNotice(null);
       try {
-        const data = await lookupISBN(isbn);
-        if (data) {
-          setIsbnData(data);
-          // Pass the ISBN value AND the full lookup data through onChange
-          // so the parent (MoonDijla) can distribute it to Work/Instance fields
-          onChange({
-            ...value,
-            isbn: isbn,
-            '@type': 'bf:Isbn',
-            _isbnLookupData: data,
+        const { data, isbn: info, unreachable } = await lookupIsbnDetailed(isbn);
+        if (!info.valid) {
+          setIsbnNotice({
+            tone: 'error',
+            text: info.problem === 'checksum'
+              ? (ar ? 'رقم الردمك غير صحيح: رقم التحقق لا يطابق. راجع الأرقام.' : 'Not a valid ISBN: the check digit does not match. Please re-check the digits.')
+              : (ar ? 'الردمك يجب أن يتكون من 10 أو 13 رقماً.' : 'An ISBN has 10 or 13 digits.'),
           });
+          return;
         }
+        // Store the ISBN the way LC does: digits only, ISBN-13 when there is one.
+        const normalized = info.isbn13 || info.digits;
+        if (!data) {
+          onChange({ ...value, isbn: normalized, '@type': 'bf:Isbn' });
+          setIsbnNotice({
+            tone: 'warn',
+            text: unreachable.length
+              ? (ar ? `لم يتم العثور على الكتاب، وتعذر الوصول إلى: ${unreachable.join('، ')}. حاول لاحقاً.` : `Not found, and ${unreachable.join(' and ')} could not be reached. Try again later.`)
+              : (ar ? 'الردمك صحيح لكن الكتاب غير موجود في Open Library أو Google Books. أدخل البيانات يدوياً.' : 'The ISBN is valid but the book is not in Open Library or Google Books. Please enter the details by hand.'),
+          });
+          return;
+        }
+        setIsbnData(data);
+        // Pass the ISBN value AND the full lookup data through onChange
+        // so the editor can fill the empty Work/Instance fields
+        onChange({
+          ...value,
+          isbn: normalized,
+          '@type': 'bf:Isbn',
+          _isbnLookupData: data,
+        });
       } catch (err) {
         console.error('ISBN lookup failed:', err);
+        setIsbnNotice({ tone: 'error', text: ar ? 'تعذر البحث عن الردمك.' : 'The ISBN lookup failed.' });
       } finally {
         setIsLoading(false);
       }
+    };
+    const sourceOf = (field: string) => {
+      const s = (isbnData?.sources as any)?.[field];
+      return s ? <span className="ml-1 text-[10px] opacity-60">({s})</span> : null;
     };
 
     return (
@@ -157,9 +184,9 @@ export function EntityField({ property, value, onChange, language = 'en', type }
                 }}
               >
                 {isLoading ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" /> Looking up...</>
+                  <><Loader2 className="h-4 w-4 animate-spin" /> {ar ? 'جارٍ البحث...' : 'Looking up...'}</>
                 ) : (
-                  <><Search className="h-4 w-4" /> Auto-Fill</>
+                  <><Search className="h-4 w-4" /> {ar ? 'ملء تلقائي' : 'Auto-Fill'}</>
                 )}
               </button>
             </div>
@@ -176,36 +203,59 @@ export function EntityField({ property, value, onChange, language = 'en', type }
           </div>
         </div>
 
+        {isbnNotice && (
+          <div className={`p-3 rounded-lg border text-xs ${isbnNotice.tone === 'error'
+            ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700 text-red-700 dark:text-red-300'
+            : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300'}`}>
+            {isbnNotice.text}
+          </div>
+        )}
+
         {/* ISBN Auto-Fill Result Summary */}
         {isbnData && (
           <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 className="h-4 w-4 text-green-600" />
-              <span className="text-sm font-semibold text-green-700 dark:text-green-400">{language === "ar" ? "اكتمل الملء التلقائي للردمك بنجاح" : "ISBN Auto-Fill Complete"}</span>
+              <span className="text-sm font-semibold text-green-700 dark:text-green-400">
+                {ar ? 'تم العثور على الكتاب' : 'Book found'}
+                {isbnData.foundIn?.length ? <span className="font-normal opacity-70"> · {isbnData.foundIn.join(' + ')}</span> : null}
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-300">
+              {isbnData.isbn13 && (
+                <div className="font-mono"><span className="font-semibold font-sans">ISBN-13:</span> {isbnData.isbn13}</div>
+              )}
+              {isbnData.isbn10 && (
+                <div className="font-mono"><span className="font-semibold font-sans">ISBN-10:</span> {isbnData.isbn10}</div>
+              )}
               {isbnData.title && (
-                <div><span className="font-semibold">Title:</span> {isbnData.title}</div>
+                <div><span className="font-semibold">{ar ? 'العنوان:' : 'Title:'}</span> {isbnData.title}{sourceOf('title')}</div>
               )}
               {isbnData.subtitle && (
-                <div><span className="font-semibold">Subtitle:</span> {isbnData.subtitle}</div>
+                <div><span className="font-semibold">{ar ? 'العنوان الفرعي:' : 'Subtitle:'}</span> {isbnData.subtitle}{sourceOf('subtitle')}</div>
               )}
               {isbnData.authors && isbnData.authors.length > 0 && (
-                <div><span className="font-semibold">Authors:</span> {isbnData.authors.join(', ')}</div>
+                <div><span className="font-semibold">{ar ? 'المؤلفون:' : 'Authors:'}</span> {isbnData.authors.join(ar ? '، ' : ', ')}{sourceOf('authors')}</div>
               )}
               {isbnData.publishers && isbnData.publishers.length > 0 && (
-                <div><span className="font-semibold">Publisher:</span> {isbnData.publishers.join(', ')}</div>
+                <div><span className="font-semibold">{ar ? 'الناشر:' : 'Publisher:'}</span> {isbnData.publishers.join(', ')}{sourceOf('publisher')}</div>
+              )}
+              {isbnData.place && (
+                <div><span className="font-semibold">{ar ? 'مكان النشر:' : 'Place:'}</span> {isbnData.place}{sourceOf('place')}</div>
               )}
               {isbnData.publishDate && (
-                <div><span className="font-semibold">Date:</span> {isbnData.publishDate}</div>
+                <div><span className="font-semibold">{ar ? 'التاريخ:' : 'Date:'}</span> {isbnData.publishDate}{sourceOf('date')}</div>
               )}
               {isbnData.numberOfPages && (
-                <div><span className="font-semibold">Pages:</span> {isbnData.numberOfPages}</div>
+                <div><span className="font-semibold">{ar ? 'الصفحات:' : 'Pages:'}</span> {isbnData.numberOfPages}{sourceOf('pages')}</div>
+              )}
+              {isbnData.language && (
+                <div><span className="font-semibold">{ar ? 'اللغة:' : 'Language:'}</span> <span className="font-mono">{isbnData.language}</span>{sourceOf('language')}</div>
               )}
             </div>
             <div className="mt-2 flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-400">
               <Sparkles className="h-3 w-3" />
-              <span>{language === "ar" ? "تم تحديث حقول العمل والتجسيدة تلقائياً" : "Work & Instance fields updated automatically"}</span>
+              <span>{ar ? 'تم ملء الحقول الفارغة فقط؛ لم يتم تغيير ما أدخلته.' : 'Only empty fields were filled; nothing you entered was changed.'}</span>
             </div>
           </div>
         )}

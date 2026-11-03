@@ -17,11 +17,17 @@ html[lang="ar"],
   text-align: right;
 }
 
-[dir="rtl"] input,
-[dir="rtl"] textarea,
 [dir="rtl"] select {
   direction: rtl;
   text-align: right;
+}
+
+/* Text fields follow their own content's direction (see theme.css). */
+[dir="rtl"] input,
+[dir="rtl"] textarea {
+  direction: rtl;
+  unicode-bidi: plaintext;
+  text-align: start;
 }
 
 [dir="rtl"] input::placeholder,

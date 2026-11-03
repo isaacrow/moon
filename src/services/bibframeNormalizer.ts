@@ -572,6 +572,32 @@ function tagArabicScript(value: any, tag: string): any {
   return out;
 }
 
+const LATIN_SCRIPT = /[A-Za-zÀ-ɏḀ-ỿ]/;
+const literalString = (v: any): string | null =>
+  typeof v === "string" ? v : v && typeof v === "object" && v["@value"] !== undefined && !v["@type"] ? String(v["@value"]) : null;
+
+/**
+ * LC pairs a non-Latin value with its romanization on the same property ("القبسات"@ar-Arab and
+ * "al-Qabasāt"@ar-Latn), as Marva's non-Latin tools do. When a property holds Arabic-script text
+ * tagged by tagArabicScript and untagged Latin-script text, the Latin text is that romanization.
+ */
+function tagRomanizedPartners(value: any, latnTag: string): any {
+  if (Array.isArray(value)) {
+    const hasArabic = value.some(v => typeof v?.["@language"] === "string" && v["@language"].endsWith("-Arab"));
+    return value.map(v => {
+      const text = literalString(v);
+      if (hasArabic && text !== null && !(v as any)?.["@language"] && LATIN_SCRIPT.test(text) && !ARABIC_SCRIPT.test(text)) {
+        return typeof v === "string" ? { "@value": v, "@language": latnTag } : { ...v, "@language": latnTag };
+      }
+      return tagRomanizedPartners(v, latnTag);
+    });
+  }
+  if (!value || typeof value !== "object" || value["@value"] !== undefined) return value;
+  const out: any = {};
+  for (const [k, v] of Object.entries(value)) out[k] = k.startsWith("@") ? v : tagRomanizedPartners(v, latnTag);
+  return out;
+}
+
 /**
  * Final step for exported files (JSON-LD, Turtle, N-Triples, RDF/XML), matching LC's own records:
  * Works also carry their content class (bf:Text...), and Arabic-script text is language-tagged
@@ -589,8 +615,10 @@ export function finishForExport(input: any): any {
   }
   const primaryWork = works.find(n => !n['bf:expressionOf']) || works[0];
   const langCode = String(([] as any[]).concat(primaryWork?.['bf:language'] || [])[0]?.['@id'] || '').split('/languages/')[1];
-  const arabicTag = `${ARABIC_SCRIPT_LANGUAGES[langCode] || 'ar'}-Arab`;
+  const scriptLang = ARABIC_SCRIPT_LANGUAGES[langCode] || 'ar';
+  const arabicTag = `${scriptLang}-Arab`;
   for (const n of graph) if (n && typeof n === 'object') for (const k of Object.keys(n)) if (!k.startsWith('@')) n[k] = tagArabicScript(n[k], arabicTag);
+  for (const n of graph) if (n && typeof n === 'object') for (const k of Object.keys(n)) if (!k.startsWith('@')) n[k] = tagRomanizedPartners(n[k], `${scriptLang}-Latn`);
   return doc;
 }
 
