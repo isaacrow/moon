@@ -147,11 +147,24 @@
     text-align: right;
   }
 
-  [dir="rtl"] input,
-  [dir="rtl"] textarea,
   [dir="rtl"] select {
     text-align: right;
     direction: rtl;
+  }
+
+  /* Each line takes its direction from its own text: a romanized title or an ISBN typed in the
+     Arabic interface reads left to right with its punctuation in place, Arabic reads right to left,
+     and an empty field keeps the interface direction for its placeholder. */
+  input,
+  textarea {
+    unicode-bidi: plaintext;
+  }
+
+  [dir="rtl"] input,
+  [dir="rtl"] textarea {
+    direction: rtl;
+    unicode-bidi: plaintext;
+    text-align: start;
   }
 
   [dir="rtl"] input::placeholder,

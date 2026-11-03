@@ -3,6 +3,7 @@
  * Integrates with LOC, VIAF, and Wikidata APIs
  * Provides unified authority search for cataloging
  */
+import { lookupIsbnEverywhere, normalizeIsbn, IsbnInfo, IsbnRecord, IsbnSource } from './isbnLookup';
 
 export interface AuthorityResult {
   label: string;
@@ -336,7 +337,8 @@ export function searchRelators(query: string) {
 }
 
 /**
- * ISBN Lookup using Open Library API
+ * ISBN lookup: validates the ISBN (Arabic-Indic digits accepted) and asks Open Library and Google
+ * Books; see services/isbnLookup.ts.
  */
 export interface ISBNData {
   title?: string;
@@ -347,35 +349,45 @@ export interface ISBNData {
   numberOfPages?: number;
   isbn10?: string;
   isbn13?: string;
+  place?: string;
+  /** MARC language code, e.g. "ara". */
+  language?: string;
+  /** Which source supplied each field. */
+  sources?: IsbnRecord['sources'];
+  foundIn?: IsbnSource[];
 }
 
 export async function lookupISBN(isbn: string): Promise<ISBNData | null> {
+  const result = await lookupIsbnDetailed(isbn);
+  return result.data;
+}
+
+/** Like lookupISBN, but also says whether the ISBN was valid and which sources could not be reached. */
+export async function lookupIsbnDetailed(isbn: string): Promise<{ data: ISBNData | null; isbn: IsbnInfo; unreachable: IsbnSource[] }> {
   try {
-    // Clean ISBN
-    const cleanISBN = isbn.replace(/[-\s]/g, '');
-    
-    // Try Open Library
-    const response = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${cleanISBN}&format=json&jscmd=data`);
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const bookData = data[`ISBN:${cleanISBN}`];
-    
-    if (!bookData) return null;
-
+    const { isbn: info, record, unreachable } = await lookupIsbnEverywhere(isbn);
+    if (!record) return { data: null, isbn: info, unreachable };
     return {
-      title: bookData.title,
-      subtitle: bookData.subtitle,
-      authors: bookData.authors?.map((a: any) => a.name) || [],
-      publishers: bookData.publishers?.map((p: any) => p.name) || [],
-      publishDate: bookData.publish_date,
-      numberOfPages: bookData.number_of_pages,
-      isbn10: bookData.identifiers?.isbn_10?.[0],
-      isbn13: bookData.identifiers?.isbn_13?.[0],
+      isbn: info,
+      unreachable,
+      data: {
+        title: record.title,
+        subtitle: record.subtitle,
+        authors: record.authors,
+        publishers: record.publisher ? [record.publisher] : [],
+        publishDate: record.date,
+        numberOfPages: record.pages,
+        isbn10: record.isbn10,
+        isbn13: record.isbn13,
+        place: record.place,
+        language: record.language,
+        sources: record.sources,
+        foundIn: record.foundIn,
+      },
     };
   } catch (error) {
     console.error('ISBN lookup error:', error);
-    return null;
+    return { data: null, isbn: normalizeIsbn(isbn), unreachable: [] };
   }
 }
 

@@ -93,7 +93,7 @@ import {
 
 // ===== APP UTILS =====
 import { realLocExamples } from "../utils/realLocExamples";
-import { saveRecord } from "../utils/recordStorageBackend";
+import { saveRecord, getAllRecordsLocal } from "../utils/recordStorageBackend";
 
 // ===== COMPONENTS =====
 import { OntologyField } from "./ontology/OntologyField";
@@ -184,6 +184,18 @@ interface WolfMoonProps {
 }
 
 const DRAFT_KEY = "moon_wolf_draft";
+
+/** True when a field holds nothing a cataloger entered (empty string, empty list, or a node with no text). */
+function isBlankValue(value: any): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (typeof value === "number") return false;
+  if (Array.isArray(value)) return value.every(isBlankValue);
+  if (typeof value === "object") {
+    return Object.entries(value).every(([k, v]) => k === "@type" || k === "@id" && !v || isBlankValue(v));
+  }
+  return false;
+}
 
 interface WolfMoonDraft {
   record: BIBFRAMERecord;
@@ -1024,33 +1036,84 @@ export default function WolfMoon({
       const data: ISBNData = value._isbnLookupData;
       const cleanValue = { ...value };
       delete cleanValue._isbnLookupData;
-      setInstanceData((prev: any) => {
-        const updated = {
-          ...prev,
-          [propertyName]: cleanValue,
-          [bfKey]: cleanValue,
-          [unprefixed]: cleanValue,
-        };
-        if (data.numberOfPages) updated["bf:extent"] = { value: `${data.numberOfPages} pages`, "@type": "bf:Extent" };
-        if (data.publishers?.length) {
-          updated["bf:provisionActivity"] = {
+      const ar = language === "ar";
+      // Auto-fill only fills what is empty: anything the cataloger already entered is kept.
+      const filled: string[] = [];
+      const kept: string[] = [];
+      const instancePatch: any = {};
+      const workPatch: any = {};
+      const offer = (label: string, current: any, apply: () => void) => {
+        if (isBlankValue(current)) { apply(); filled.push(label); } else kept.push(label);
+      };
+
+      if (data.numberOfPages) {
+        offer(ar ? "الوصف المادي" : "extent", instanceData["bf:extent"], () => {
+          const label = ar ? `${data.numberOfPages} صفحة` : `${data.numberOfPages} pages`;
+          instancePatch["bf:extent"] = { value: label, "rdfs:label": label, "@type": "bf:Extent" };
+        });
+      }
+      if (data.publishers?.length || data.place || data.publishDate) {
+        offer(ar ? "بيانات النشر" : "publication", instanceData["bf:provisionActivity"], () => {
+          instancePatch["bf:provisionActivity"] = {
             "@type": "bf:Publication",
-            "bf:agent": { "@type": "bf:Organization", "rdfs:label": data.publishers[0] },
-            ...(data.publishDate ? { "bf:date": data.publishDate.match(/\d{4}/)?.[0] || data.publishDate } : {}),
+            ...(data.publishers?.length ? { "bf:agent": { "@type": "bf:Agent", "rdfs:label": data.publishers[0] } } : {}),
+            ...(data.place ? { "bf:place": { "@type": "bf:Place", "rdfs:label": data.place } } : {}),
+            ...(data.publishDate ? { "bf:date": data.publishDate } : {}),
           };
-        }
-        return updated;
-      });
-      setWorkData((prev: any) => {
-        const updated = { ...prev };
-        if (data.title) {
-          updated["bf:title"] = {
+        });
+      }
+      if (data.title) {
+        offer(ar ? "العنوان" : "title", workData["bf:title"], () => {
+          workPatch["bf:title"] = {
             "@type": "bf:Title", "bf:mainTitle": data.title, mainTitle: data.title,
             ...(data.subtitle ? { "bf:subtitle": data.subtitle, subtitle: data.subtitle } : {}),
           };
-        }
-        return updated;
-      });
+        });
+      }
+      if (data.authors?.length) {
+        offer(ar ? "المؤلفون" : "authors", workData["bf:contribution"], () => {
+          const contributions = data.authors!.map(name => ({
+            "@type": "bf:Contribution",
+            "bf:agent": { "@type": "bf:Person", "rdfs:label": name },
+            "bf:role": { "@type": "bf:Role", "@id": "http://id.loc.gov/vocabulary/relators/aut", "rdfs:label": ar ? "مؤلف" : "author" },
+          }));
+          workPatch["bf:contribution"] = contributions;
+          workPatch["contribution"] = contributions;
+        });
+      }
+      if (data.language && /^[a-z]{3}$/.test(data.language)) {
+        offer(ar ? "اللغة" : "language", workData["bf:language"], () => {
+          workPatch["bf:language"] = { "@type": "bf:Language", "@id": `http://id.loc.gov/vocabulary/languages/${data.language}` };
+        });
+      }
+
+      setInstanceData((prev: any) => ({
+        ...prev,
+        [propertyName]: cleanValue,
+        [bfKey]: cleanValue,
+        [unprefixed]: cleanValue,
+        ...instancePatch,
+      }));
+      if (Object.keys(workPatch).length) setWorkData((prev: any) => ({ ...prev, ...workPatch }));
+      if (workPatch["bf:title"]) setRecordTitle(data.title!);
+      setSaveStatus("unsaved");
+
+      // Like Marva's copy-cataloging check: warn when another saved record already has this ISBN.
+      const isbns = [data.isbn13, data.isbn10, cleanValue.isbn].filter(Boolean) as string[];
+      const duplicate = getAllRecordsLocal().find(r =>
+        r.record?.work?.["@id"] !== uriSet.work &&
+        isbns.some(isbn => JSON.stringify(r.record?.instance || {}).replace(/[-\s]/g, "").includes(isbn))
+      );
+      setTimeout(() => {
+        if (filled.length) toast.success(ar ? `تم ملء: ${filled.join("، ")}` : `Filled: ${filled.join(", ")}`, {
+          description: kept.length ? (ar ? `لم يتم تغيير ما أدخلته في: ${kept.join("، ")}` : `Kept what you entered in: ${kept.join(", ")}`) : undefined,
+        });
+        else if (kept.length) toast.info(ar ? "كل الحقول مملوءة مسبقاً؛ لم يتم تغيير شيء." : "Those fields were already filled; nothing was changed.");
+        if (duplicate) toast.warning(
+          ar ? `يوجد سجل محفوظ بنفس الردمك: «${duplicate.title}»` : `A saved record already has this ISBN: "${duplicate.title}"`,
+          { description: ar ? "تحقق من أنك لا تفهرس الكتاب مرتين." : "Check that you are not cataloging the same book twice.", duration: 10000 }
+        );
+      }, 0);
       return;
     }
     setInstanceData((prev: any) => ({
@@ -1060,7 +1123,7 @@ export default function WolfMoon({
       [unprefixed]: value,
     }));
     setSaveStatus("unsaved");
-  }, []);
+  }, [language, uriSet, workData, instanceData]);
 
   // ============================== RELATIONSHIPS ==============================
 
