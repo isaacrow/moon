@@ -130,7 +130,14 @@ export interface BIBFRAMERecord {
   } | string;
   work: BIBFRAMEWork;
   instance: BIBFRAMEInstance;
+  // The rest of the WEMI graph an editor keeps alongside Work and Instance.
+  item?: Record<string, any>;
+  expression?: Record<string, any>;
+  adminMetadata?: Record<string, any>;
   metadata?: {
+    // Storage key of the saved record; saving again with it updates instead of duplicating.
+    storageId?: string;
+    status?: string;
     created?: string;
     modified?: string;
     cataloger?: string;
