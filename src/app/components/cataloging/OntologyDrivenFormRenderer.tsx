@@ -26,7 +26,8 @@ import {
   searchNotationTypes,
   searchGovernmentPub,
   searchDescriptionAuth,
-  searchLOCAuthorities
+  searchLOCAuthorities,
+  searchIssuance
 } from '../../../services/authoritySearch';
 import {
   TitleEditorModal,
@@ -195,6 +196,9 @@ const ARABIC_PROPERTY_FALLBACKS: Record<string, string> = {
   'Granting Institution': 'الجامعة المانحة',
   'Year': 'السنة',
   'Electronic Location': 'الرابط الإلكتروني',
+  'Electronic Locator': 'الرابط الإلكتروني (URL)',
+  'Geographic Coverage': 'التغطية الجغرافية',
+  'Color Content': 'المحتوى اللوني',
   'Item Of': 'نسخة من التجسيدة',
   'Instance Of': 'تجسيدة للعمل',
   'Publication': 'النشر والتوزيع',
@@ -202,13 +206,15 @@ const ARABIC_PROPERTY_FALLBACKS: Record<string, string> = {
 
 // Helper to translate a label with i18n fallback
 function useTranslatedLabel() {
-  const { t } = useTranslation();
+  const { t, i18n: i18nInstance } = useTranslation();
   return (label: string) => {
     const key = PROPERTY_I18N_MAP[label];
     if (key) {
       const translated = t(key);
       if (translated !== key) return translated;
     }
+    // Labels without an i18n key still get their Arabic name in the Arabic interface.
+    if (i18nInstance.language === 'ar' && ARABIC_PROPERTY_FALLBACKS[label]) return ARABIC_PROPERTY_FALLBACKS[label];
     return label;
   };
 }
@@ -640,6 +646,12 @@ function SinglePropertyRenderer({
     // Each remaining field searches the vocabulary its BIBFRAME property points to (it used to fall back
     // to subject headings for all of them).
     if (property.controlledVocab === 'contentTypes') return (q: string) => searchLOCAuthorities(q, 'contentTypes');
+    if (property.controlledVocab === 'issuance') return searchIssuance;
+    if (property.controlledVocab === 'audience') return (q: string) => searchLOCAuthorities(q, 'audience');
+    if (property.controlledVocab === 'illustrativeContent') return (q: string) => searchLOCAuthorities(q, 'illustrativeContent');
+    if (property.controlledVocab === 'colorContent') return (q: string) => searchLOCAuthorities(q, 'colorContent');
+    if (property.controlledVocab === 'supplementaryContent') return (q: string) => searchLOCAuthorities(q, 'supplementaryContent');
+    if (property.controlledVocab === 'geographicAreas') return (q: string) => searchLOCAuthorities(q, 'geographicAreas');
     if (property.controlledVocab === 'genreForms') return (q: string) => searchAllAuthorities(q, 'genre');
     if (property.controlledVocab === 'organizations') return (q: string) => searchAllAuthorities(q, 'holder');
     const name = property.shortName.replace(/^bf:/, '');

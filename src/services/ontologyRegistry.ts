@@ -1,5 +1,5 @@
-/**
- * 🧠 BIBFRAME Ontology Registry - Single Source of Truth
+﻿/**
+ * ðŸ§  BIBFRAME Ontology Registry - Single Source of Truth
  * Fully ontology-driven property definitions
  * No templates, no hardcoded fields - pure semantic modeling
  */
@@ -57,7 +57,7 @@ export interface OntologyProperty {
 }
 
 /**
- * 📚 BIBFRAME Property Registry
+ * ðŸ“š BIBFRAME Property Registry
  * Comprehensive ontology-driven definitions
  */
 export const ONTOLOGY_REGISTRY: Record<string, OntologyProperty> = {
@@ -216,7 +216,7 @@ export const ONTOLOGY_REGISTRY: Record<string, OntologyProperty> = {
     domain: ['Work'],
     rangeType: 'URI',
     repeatable: true,
-    required: false,
+    required: true,
     inputComponent: 'AuthoritySelect',
     controlledVocab: 'contentTypes',
     category: 'Language & Content',
@@ -629,7 +629,7 @@ export const ONTOLOGY_REGISTRY: Record<string, OntologyProperty> = {
     domain: ['Instance'],
     rangeType: 'URI',
     repeatable: false,
-    required: false,
+    required: true,
     inputComponent: 'AuthoritySelect',
     controlledVocab: 'carriers',
     category: 'Physical Description',
@@ -645,7 +645,7 @@ export const ONTOLOGY_REGISTRY: Record<string, OntologyProperty> = {
     domain: ['Instance'],
     rangeType: 'URI',
     repeatable: false,
-    required: false,
+    required: true,
     inputComponent: 'AuthoritySelect',
     controlledVocab: 'mediaTypes',
     category: 'Physical Description',
@@ -706,7 +706,7 @@ export const ONTOLOGY_REGISTRY: Record<string, OntologyProperty> = {
     shortName: 'bf:electronicLocator',
     label: 'Electronic Locator',
     description: 'URI for electronic access',
-    domain: ['Item'],
+    domain: ['Instance', 'Item'],
     rangeType: 'URI',
     repeatable: true,
     required: false,
@@ -913,10 +913,123 @@ export const ONTOLOGY_REGISTRY: Record<string, OntologyProperty> = {
       nodeKind: 'IRI'
     }
   },
+
+  // ==================== FROM LC's MONOGRAPH PROFILE ====================
+  // Properties LC's own profiles (as loaded by Marva) include that Moon's form did not offer.
+  'bf:issuance': {
+    uri: 'http://id.loc.gov/ontologies/bibframe/issuance',
+    shortName: 'bf:issuance',
+    label: 'Mode of Issuance',
+    description: 'Whether the resource is issued as a single unit, a serial, or an integrating resource',
+    domain: ['Instance'],
+    rangeType: 'URI',
+    classType: 'bf:Issuance',
+    repeatable: false,
+    required: true, // mandatory in LC's profiles
+    inputComponent: 'AuthoritySelect',
+    controlledVocab: 'issuance',
+    category: 'Edition & Publication',
+    inputHint: 'single unit, serial, integrating resource…',
+    validation: { nodeKind: 'IRI' }
+  },
+  'bf:responsibilityStatement': {
+    uri: 'http://id.loc.gov/ontologies/bibframe/responsibilityStatement',
+    shortName: 'bf:responsibilityStatement',
+    label: 'Statement of Responsibility',
+    description: 'Statement relating to persons or bodies responsible for the content, as it appears on the resource (MARC 245 $c)',
+    domain: ['Instance'],
+    rangeType: 'Literal',
+    repeatable: true,
+    required: false,
+    inputComponent: 'TextInput',
+    category: 'Title Information',
+    inputHint: 'e.g. George Orwell ; translated by …',
+    validation: { datatype: 'xsd:string' }
+  },
+  'bf:intendedAudience': {
+    uri: 'http://id.loc.gov/ontologies/bibframe/intendedAudience',
+    shortName: 'bf:intendedAudience',
+    label: 'Intended Audience',
+    description: 'Audience for which the content is intended (LC vocabulary maudience)',
+    domain: ['Work'],
+    rangeType: 'URI',
+    classType: 'bf:IntendedAudience',
+    repeatable: true,
+    required: false,
+    inputComponent: 'AuthoritySelect',
+    controlledVocab: 'audience',
+    category: 'Content Description',
+    inputHint: 'juvenile, adolescent, adult, specialized…',
+    validation: { nodeKind: 'IRI' }
+  },
+  'bf:geographicCoverage': {
+    uri: 'http://id.loc.gov/ontologies/bibframe/geographicCoverage',
+    shortName: 'bf:geographicCoverage',
+    label: 'Geographic Coverage',
+    description: 'Geographic area the content covers (LC geographic areas, MARC 043)',
+    domain: ['Work'],
+    rangeType: 'URI',
+    classType: 'bf:GeographicCoverage',
+    repeatable: true,
+    required: false,
+    inputComponent: 'AuthoritySelect',
+    controlledVocab: 'geographicAreas',
+    category: 'Subject & Classification',
+    inputHint: 'e.g. Iraq, Middle East',
+    validation: { nodeKind: 'IRI' }
+  },
+  'bf:illustrativeContent': {
+    uri: 'http://id.loc.gov/ontologies/bibframe/illustrativeContent',
+    shortName: 'bf:illustrativeContent',
+    label: 'Illustrative Content',
+    description: 'Illustrations, maps, portraits… (LC vocabulary millus)',
+    domain: ['Work'],
+    rangeType: 'URI',
+    classType: 'bf:Illustration',
+    repeatable: true,
+    required: false,
+    inputComponent: 'AuthoritySelect',
+    controlledVocab: 'illustrativeContent',
+    category: 'Content Description',
+    inputHint: 'illustrations, maps, portraits…',
+    validation: { nodeKind: 'IRI' }
+  },
+  'bf:colorContent': {
+    uri: 'http://id.loc.gov/ontologies/bibframe/colorContent',
+    shortName: 'bf:colorContent',
+    label: 'Color Content',
+    description: 'Presence of color (LC vocabulary mcolor)',
+    domain: ['Work'],
+    rangeType: 'URI',
+    classType: 'bf:ColorContent',
+    repeatable: true,
+    required: false,
+    inputComponent: 'AuthoritySelect',
+    controlledVocab: 'colorContent',
+    category: 'Content Description',
+    inputHint: 'color, black and white…',
+    validation: { nodeKind: 'IRI' }
+  },
+  'bf:supplementaryContent': {
+    uri: 'http://id.loc.gov/ontologies/bibframe/supplementaryContent',
+    shortName: 'bf:supplementaryContent',
+    label: 'Supplementary Content',
+    description: 'Index, bibliography, glossary… (LC vocabulary msupplcont)',
+    domain: ['Work'],
+    rangeType: 'URI',
+    classType: 'bf:SupplementaryContent',
+    repeatable: true,
+    required: false,
+    inputComponent: 'AuthoritySelect',
+    controlledVocab: 'supplementaryContent',
+    category: 'Content Description',
+    inputHint: 'index, bibliography…',
+    validation: { nodeKind: 'IRI' }
+  },
 };
 
 /**
- * 🔍 Query Functions
+ * ðŸ” Query Functions
  */
 
 export function getPropertiesByDomain(domain: string): OntologyProperty[] {

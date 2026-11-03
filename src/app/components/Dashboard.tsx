@@ -22,6 +22,7 @@ import {
   Clock,
   CheckCircle,
   CheckCircle2,
+  Box,
   AlertCircle,
   BarChart3,
   Calendar,
@@ -61,6 +62,17 @@ import '../../styles/glassmorphism.css';
 
 // 3D Spline Scene from Login Screen
 const SPLINE_SCENE_URL = 'https://my.spline.design/3ddesigntextcopycopy-ICjwUjRH9s8O1NCNqRAWjo5g-5OJ/';
+// Shared with Moon Studio's 3D switch, so one choice applies to both.
+const THREE_D_KEY = 'moon_wolf_3d_bg';
+
+function readThreeD(): boolean {
+  try {
+    const stored = localStorage.getItem(THREE_D_KEY);
+    return stored !== null ? stored === 'true' : true;
+  } catch {
+    return true;
+  }
+}
 
 // Glass Panel Level 1 (VisionOS Primary Floating Window)
 const GLASS_STYLE: React.CSSProperties = {
@@ -118,6 +130,16 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
   const [isQuickActionsFolded, setIsQuickActionsFolded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAllRecords, setShowAllRecords] = useState(false);
+  const [show3d, setShow3d] = useState<boolean>(readThreeD);
+  const isAr = (typeof document !== 'undefined' && document.documentElement.dir === 'rtl');
+
+  const toggle3d = () => {
+    setShow3d(prev => {
+      const next = !prev;
+      try { localStorage.setItem(THREE_D_KEY, String(next)); } catch {}
+      return next;
+    });
+  };
 
   // Load saved records from database
   useEffect(() => {
@@ -299,26 +321,33 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
   return (
     <div className="relative min-h-screen w-full overflow-x-hidden bg-black text-white selection:bg-blue-500/30">
       
-      {/* ===== 1. INTERACTIVE 3D SPLINE SCENE FROM LOGIN SCREEN ===== */}
-      <div
-        className="fixed inset-0 z-0 overflow-hidden pointer-events-auto"
-        style={{ top: '-10%', height: '120%' }}
-      >
-        <iframe
-          src={SPLINE_SCENE_URL}
-          frameBorder="0"
-          width="100%"
-          height="100%"
-          className="w-full h-full"
-          title="Spline 3D Scene"
-          allow="fullscreen; autoplay"
-          style={{
-            pointerEvents: 'auto',
-            border: 'none',
-            background: 'transparent'
-          }}
+      {/* ===== 1. INTERACTIVE 3D SPLINE SCENE FROM LOGIN SCREEN (can be switched off) ===== */}
+      {show3d ? (
+        <div
+          className="fixed inset-0 z-0 overflow-hidden pointer-events-auto"
+          style={{ top: '-10%', height: '120%' }}
+        >
+          <iframe
+            src={SPLINE_SCENE_URL}
+            frameBorder="0"
+            width="100%"
+            height="100%"
+            className="w-full h-full"
+            title="Spline 3D Scene"
+            allow="fullscreen; autoplay"
+            style={{
+              pointerEvents: 'auto',
+              border: 'none',
+              background: 'transparent'
+            }}
+          />
+        </div>
+      ) : (
+        <div
+          className="fixed inset-0 z-0"
+          style={{ background: 'radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.18) 0%, rgba(10, 15, 30, 0.96) 50%, #030408 100%)' }}
         />
-      </div>
+      )}
 
       {/* ===== 2. FROSTED GLASS OVERLAY & MAIN DASHBOARD CONTENT ===== */}
       <div className="relative z-10 p-6 max-w-7xl mx-auto space-y-6 pointer-events-auto">
@@ -340,8 +369,22 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                 </p>
               </div>
             </div>
-            
-            </div>
+
+            <button
+              type="button"
+              onClick={toggle3d}
+              aria-pressed={show3d}
+              className="hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-5 py-2.5 text-sm font-bold cursor-pointer"
+              style={{
+                ...LIQUID_GLASS_PURPLE_REPLACEMENT,
+                color: show3d ? '#0369a1' : '#475569',
+              }}
+              title={show3d ? (isAr ? 'إيقاف الخلفية ثلاثية الأبعاد' : 'Turn the 3D background off') : (isAr ? 'تشغيل الخلفية ثلاثية الأبعاد' : 'Turn the 3D background on')}
+            >
+              <Box className="h-4 w-4" />
+              <span>{show3d ? (isAr ? '3D مفعّل' : '3D ON') : (isAr ? '3D معطّل' : '3D OFF')}</span>
+            </button>
+          </div>
         </div>
 
         {/* Stats Grid - Glass Cards */}

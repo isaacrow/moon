@@ -185,6 +185,22 @@ interface WolfMoonProps {
 
 const DRAFT_KEY = "moon_wolf_draft";
 
+// The values LC's profiles pre-fill (as Marva does) for the fields LC requires, per Moon template.
+type LcDefault = { "@id": string; "rdfs:label": string };
+const LC_VOCAB_BASE = "http://id.loc.gov/vocabulary";
+const lcValue = (path: string, label: string): LcDefault => ({ "@id": `${LC_VOCAB_BASE}/${path}`, "rdfs:label": label });
+const TEXT = lcValue("contentTypes/txt", "text");
+const UNMEDIATED = lcValue("mediaTypes/n", "unmediated");
+const VOLUME = lcValue("carriers/nc", "volume");
+const SINGLE_UNIT = lcValue("issuance/mono", "single unit");
+const LC_TEMPLATE_DEFAULTS: Record<string, { work: Record<string, LcDefault>; instance: Record<string, LcDefault> }> = {
+  "monograph-complete": { work: { "bf:content": TEXT }, instance: { "bf:media": UNMEDIATED, "bf:carrier": VOLUME, "bf:issuance": SINGLE_UNIT } },
+  manuscript: { work: { "bf:content": TEXT }, instance: { "bf:media": UNMEDIATED, "bf:carrier": VOLUME, "bf:issuance": SINGLE_UNIT } },
+  serial: { work: { "bf:content": TEXT }, instance: { "bf:media": UNMEDIATED, "bf:carrier": VOLUME, "bf:issuance": lcValue("issuance/serl", "serial") } },
+  music: { work: { "bf:content": lcValue("contentTypes/ntm", "notated music") }, instance: { "bf:media": UNMEDIATED, "bf:carrier": VOLUME, "bf:issuance": SINGLE_UNIT } },
+  map: { work: { "bf:content": lcValue("contentTypes/cri", "cartographic image") }, instance: { "bf:media": UNMEDIATED, "bf:carrier": lcValue("carriers/nb", "sheet"), "bf:issuance": SINGLE_UNIT } },
+};
+
 /** True when a field holds nothing a cataloger entered (empty string, empty list, or a node with no text). */
 function isBlankValue(value: any): boolean {
   if (value === undefined || value === null) return true;
@@ -893,6 +909,33 @@ export default function WolfMoon({
       setInstanceData({ ...initialInstance, "@id": uriSet.instance, "bf:instanceOf": { "@id": uriSet.work } });
     }
   }, [initialInstance]);
+
+  // New records start with LC's profile defaults for the fields LC requires (content, media, carrier,
+  // issuance). Opened records are never touched. Changing template swaps a value only while it still
+  // holds the previous template's default.
+  const [isNewRecord] = useState(() => !initialRecord?.metadata?.storageId && isBlankValue(initialWork?.["bf:title"]));
+  const appliedDefaultsRef = useRef<{ work: Record<string, LcDefault>; instance: Record<string, LcDefault> } | null>(null);
+  useEffect(() => {
+    if (!isNewRecord) return;
+    const next = LC_TEMPLATE_DEFAULTS[selectedTemplate];
+    if (!next) return;
+    const prev = appliedDefaultsRef.current;
+    const merge = (data: any, defaults: Record<string, LcDefault>, previous?: Record<string, LcDefault>) => {
+      let changed = false;
+      const out = { ...data };
+      for (const [key, value] of Object.entries(defaults)) {
+        const current = data[key];
+        const stillPreviousDefault = previous?.[key] && current?.["@id"] === previous[key]["@id"];
+        if (isBlankValue(current) || stillPreviousDefault) {
+          if (current?.["@id"] !== value["@id"]) { out[key] = value; changed = true; }
+        }
+      }
+      return changed ? out : data;
+    };
+    setWorkData((d: any) => merge(d, next.work, prev?.work));
+    setInstanceData((d: any) => merge(d, next.instance, prev?.instance));
+    appliedDefaultsRef.current = next;
+  }, [selectedTemplate, isNewRecord]);
 
   // A restored draft has not been saved yet, even though it arrived as the initial record.
   useEffect(() => {

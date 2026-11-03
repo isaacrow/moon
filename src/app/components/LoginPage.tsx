@@ -14,17 +14,15 @@ import {
   Eye,
   EyeOff,
   Languages,
-  ShieldCheck,
   CheckCircle2,
   Clock,
   XCircle,
-  Trash2,
-  X,
   Sparkles,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import moonLogoWhite from '../../assets/white.png';
+import { TesterApprovalCenter } from './TesterApprovalCenter';
 
 // Spline Scene URL - 3D interactive scene
 const SPLINE_SCENE_URL = 'https://my.spline.design/3ddesigntextcopycopy-ICjwUjRH9s8O1NCNqRAWjo5g-5OJ/';
@@ -709,226 +707,64 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
         )}
       </AnimatePresence>
 
-      {/* ===== ADMINISTRATOR APPROVAL PORTAL MODAL ===== */}
-      <AnimatePresence>
-        {showAdminModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/80 backdrop-blur-md"
-              onClick={() => setShowAdminModal(false)}
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-3xl max-h-[85vh] bg-slate-900/90 border border-white/20 rounded-3xl shadow-2xl overflow-hidden flex flex-col z-10"
+      {/* ===== TESTER APPROVAL CENTER (admin password first) ===== */}
+      <TesterApprovalCenter
+        open={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
+        users={adminUsers}
+        loading={usersLoading}
+        error={adminError || usersError}
+        busyUser={busyUser}
+        onRefresh={refreshAdminUsers}
+        onApprove={handleApproveTester}
+        onReject={handleRejectTester}
+        onDelete={handleDeleteTester}
+        lockedContent={isAdminUnlocked ? undefined : (
+          <form onSubmit={handleAdminUnlock} className="max-w-sm mx-auto py-8 space-y-4 text-center">
+            <div
+              className="w-16 h-16 rounded-full mx-auto flex items-center justify-center text-amber-200"
+              style={{
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.32), rgba(255,255,255,0.10))',
+                border: '1px solid rgba(255,255,255,0.45)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8), 0 8px 24px rgba(0,0,0,0.25)',
+              }}
             >
-              {/* Header */}
-              <div className="p-6 border-b border-white/10 flex items-center justify-between bg-black/40">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-2xl bg-amber-500/20 border border-amber-400/40 text-amber-300">
-                    <ShieldCheck className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black text-white">Administrator Approval Center</h2>
-                    <p className="text-xs text-white/60">
-                      Manage tester access requests for Moon Editor (Isaac Faleh)
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setShowAdminModal(false)}
-                  className="p-2 rounded-xl bg-white/5 hover:bg-white/15 text-white/60 hover:text-white transition-all cursor-pointer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="flex-1 overflow-y-auto p-6">
-                {!isAdminUnlocked ? (
-                  <form onSubmit={handleAdminUnlock} className="max-w-md mx-auto py-8 space-y-4 text-center">
-                    <div className="w-16 h-16 rounded-full bg-amber-500/20 border border-amber-400/40 mx-auto flex items-center justify-center text-amber-300">
-                      <Lock className="h-8 w-8" />
-                    </div>
-                    <h3 className="text-lg font-bold text-white">Administrator Verification</h3>
-                    <p className="text-xs text-white/60">
-                      Enter Isaac's administrator passcode to review and approve testers.
-                    </p>
-                    <div className="relative">
-                      <Input
-                        type="password"
-                        value={adminPasscode}
-                        onChange={(e) => setAdminPasscode(e.target.value)}
-                        placeholder="Enter Super Admin password"
-                        className="bg-black/50 border-white/20 text-white text-center text-base tracking-widest h-12 rounded-xl"
-                        autoFocus
-                      />
-                    </div>
-                    {adminError && <p className="text-xs text-rose-400">{adminError}</p>}
-                    <Button
-                      type="submit"
-                      disabled={adminUnlocking || !adminPasscode}
-                      className="w-full h-11 bg-amber-500 hover:bg-amber-400 text-black font-bold uppercase rounded-xl cursor-pointer"
-                    >
-                      {adminUnlocking ? 'Verifying…' : 'Unlock Approval Center'}
-                    </Button>
-                  </form>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Summary row */}
-                    <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-wrap gap-2">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-white/60">Total Registered:</span>
-                        <span className="text-sm font-black text-white">{adminUsers.length}</span>
-                        <span className="text-xs font-bold text-amber-400 ml-3">Pending Approvals:</span>
-                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black border border-amber-500/30">
-                          {adminUsers.filter((u) => u.status === 'pending').length}
-                        </span>
-                      </div>
-
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={refreshAdminUsers}
-                        disabled={usersLoading}
-                        className="text-xs bg-white/5 border-white/20 text-white hover:bg-white/10"
-                      >
-                        {usersLoading ? 'Refreshing…' : 'Refresh List'}
-                      </Button>
-                    </div>
-
-                    {(adminError || usersError) && (
-                      <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/25 rounded-xl px-3 py-2">
-                        {adminError || usersError}
-                      </p>
-                    )}
-
-                    {/* Users List */}
-                    <div className="space-y-3">
-                      {adminUsers.map((u) => {
-                        const isPending = u.status === 'pending';
-                        const isApproved = u.status === 'approved';
-                        const isRejected = u.status === 'rejected';
-
-                        return (
-                          <div
-                            key={u.username}
-                            className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                              isPending
-                                ? 'bg-amber-500/10 border-amber-500/30'
-                                : isApproved
-                                ? 'bg-white/5 border-white/10'
-                                : 'bg-rose-500/10 border-rose-500/25'
-                            }`}
-                          >
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2.5 flex-wrap">
-                                <span className="font-black text-white text-base">{u.username}</span>
-                                {isPending && (
-                                  <span className="px-2 py-0.5 rounded-md bg-amber-400 text-black text-[10px] font-black uppercase tracking-wider animate-pulse">
-                                    Pending Approval
-                                  </span>
-                                )}
-                                {isApproved && (
-                                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-bold uppercase tracking-wider">
-                                    Approved
-                                  </span>
-                                )}
-                                {isRejected && (
-                                  <span className="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-400/30 text-[10px] font-bold uppercase tracking-wider">
-                                    Declined
-                                  </span>
-                                )}
-                                <span className="text-[10px] px-2 py-0.5 rounded bg-white/10 text-white/60 font-mono">
-                                  {u.role}
-                                </span>
-                              </div>
-
-                              <div className="text-xs text-white/70 flex items-center gap-3 flex-wrap">
-                                <span className="flex items-center gap-1">
-                                  <Mail className="h-3.5 w-3.5 text-white/40" />
-                                  {u.email}
-                                </span>
-                                <span className="flex items-center gap-1 text-cyan-300 font-medium">
-                                  <Building2 className="h-3.5 w-3.5 text-cyan-400" />
-                                  {u.institution}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div
-                              className={`flex items-center gap-2 shrink-0 ${busyUser === u.username ? 'opacity-50 pointer-events-none' : ''}`}
-                            >
-                              {isPending ? (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleApproveTester(u.username)}
-                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl h-8 px-3 cursor-pointer"
-                                  >
-                                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleRejectTester(u.username)}
-                                    className="border-rose-500/40 text-rose-300 hover:bg-rose-500/20 text-xs rounded-xl h-8 px-3 cursor-pointer"
-                                  >
-                                    <XCircle className="h-3.5 w-3.5 mr-1" />
-                                    Reject
-                                  </Button>
-                                </>
-                              ) : isRejected ? (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleApproveTester(u.username)}
-                                  className="bg-emerald-600/80 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl h-8 px-3 cursor-pointer"
-                                >
-                                  Re-Approve
-                                </Button>
-                              ) : u.role !== 'admin' ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleRejectTester(u.username)}
-                                  className="border-rose-500/40 text-rose-300 hover:bg-rose-500/20 text-xs rounded-xl h-8 px-3 cursor-pointer"
-                                  title="Revoke access"
-                                >
-                                  Revoke
-                                </Button>
-                              ) : null}
-
-                              {u.username !== 'isaac' && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleDeleteTester(u.username)}
-                                  className="text-white/40 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl h-8 w-8 p-0 cursor-pointer"
-                                  title="Delete user"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </div>
+              <Lock className="h-7 w-7" />
+            </div>
+            <h3 className="text-lg font-bold text-white">{isAr ? 'تحقق المشرف العام' : 'Super Admin verification'}</h3>
+            <p className="text-xs text-white/70">
+              {isAr ? 'أدخل كلمة مرور المشرف العام لمراجعة طلبات الفاحصين.' : "Enter the Super Admin password to review tester requests."}
+            </p>
+            <input
+              type="password"
+              value={adminPasscode}
+              onChange={(e) => setAdminPasscode(e.target.value)}
+              placeholder={isAr ? 'كلمة مرور المشرف العام' : 'Super Admin password'}
+              className="w-full h-12 px-4 text-center text-base tracking-widest text-white placeholder:text-white/50 outline-none focus:ring-2 focus:ring-white/40"
+              style={{
+                borderRadius: 16,
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.08))',
+                border: '1px solid rgba(255,255,255,0.4)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)',
+              }}
+              autoFocus
+            />
+            {adminError && <p className="text-xs text-rose-200">{adminError}</p>}
+            <button
+              type="submit"
+              disabled={adminUnlocking || !adminPasscode}
+              className="w-full h-11 font-black text-sm text-amber-950 rounded-full hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-60 cursor-pointer"
+              style={{
+                background: 'linear-gradient(180deg, #fde68a 0%, #fbbf24 55%, #f59e0b 100%)',
+                border: '1px solid rgba(254,243,199,0.9)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -2px 6px rgba(180,83,9,0.35), 0 8px 20px rgba(245,158,11,0.35)',
+              }}
+            >
+              {adminUnlocking ? (isAr ? 'جارٍ التحقق…' : 'Verifying…') : (isAr ? 'فتح مركز الاعتماد' : 'Open the Approval Center')}
+            </button>
+          </form>
         )}
-      </AnimatePresence>
+      />
     </div>
   );
 }
