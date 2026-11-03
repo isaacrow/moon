@@ -114,6 +114,30 @@ test('Arabic: Persian records use fa-Arab / fa-Latn; a Latin title alone is left
   assert.equal(typeof latinOnly[0] === 'string' ? undefined : latinOnly[0]['@language'], undefined);
 });
 
+test('LC profile defaults (content, media, carrier, issuance) export as LC vocabulary links with their classes', () => {
+  const doc: any = finishForExport({
+    '@context': 'http://id.loc.gov/ontologies/bibframe/',
+    '@graph': [
+      { '@id': 'https://mooon.site/resource/work/d1', '@type': 'bf:Work',
+        'bf:content': { '@id': 'http://id.loc.gov/vocabulary/contentTypes/txt', 'rdfs:label': 'text' } },
+      { '@id': 'https://mooon.site/resource/instance/d1', '@type': 'bf:Instance',
+        'bf:instanceOf': { '@id': 'https://mooon.site/resource/work/d1' },
+        'bf:media': { '@id': 'http://id.loc.gov/vocabulary/mediaTypes/n', 'rdfs:label': 'unmediated' },
+        'bf:carrier': { '@id': 'http://id.loc.gov/vocabulary/carriers/nc', 'rdfs:label': 'volume' },
+        'bf:issuance': { '@id': 'http://id.loc.gov/vocabulary/issuance/mono', 'rdfs:label': 'single unit' } },
+    ],
+  });
+  const graph: any[] = doc['@graph'];
+  const work = graph.find(n => [].concat(n['@type']).includes('bf:Work' as never));
+  const instance = graph.find(n => [].concat(n['@type']).includes('bf:Instance' as never));
+  const one = (v: any) => [].concat(v)[0] as any;
+  assert.equal(one(work['bf:content'])['@id'], 'http://id.loc.gov/vocabulary/contentTypes/txt');
+  assert.ok([].concat(work['@type']).includes('bf:Text' as never), 'text content makes the Work a bf:Text, as LC does');
+  assert.equal(one(instance['bf:media'])['@id'], 'http://id.loc.gov/vocabulary/mediaTypes/n');
+  assert.equal(one(instance['bf:carrier'])['@id'], 'http://id.loc.gov/vocabulary/carriers/nc');
+  assert.equal(one(instance['bf:issuance'])['@id'], 'http://id.loc.gov/vocabulary/issuance/mono');
+});
+
 test('Arabic: an existing language tag is never overwritten', () => {
   const titles: any[] = mainTitles(finishForExport(recordWith(['القبسات', { '@value': 'The Embers', '@language': 'en' }])));
   assert.equal(titles.find(t => t['@value'] === 'The Embers')?.['@language'], 'en');

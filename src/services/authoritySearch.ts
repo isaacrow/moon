@@ -15,7 +15,8 @@ export interface AuthorityResult {
 
 export type LOCScheme =
   | 'names' | 'subjects' | 'genreForms' | 'geographicAreas' | 'languages' | 'countries'
-  | 'organizations' | 'contentTypes' | 'carriers' | 'mediaTypes' | 'relators' | 'works' | 'instances';
+  | 'organizations' | 'contentTypes' | 'carriers' | 'mediaTypes' | 'relators' | 'works' | 'instances'
+  | 'audience' | 'illustrativeContent' | 'colorContent' | 'supplementaryContent';
 
 const LOC_SCHEME_PATHS: Record<LOCScheme, string> = {
   names: 'authorities/names',
@@ -30,7 +31,12 @@ const LOC_SCHEME_PATHS: Record<LOCScheme, string> = {
   mediaTypes: 'vocabulary/mediaTypes',
   relators: 'vocabulary/relators',
   works: 'resources/works',
-  instances: 'resources/instances'
+  instances: 'resources/instances',
+  // LC vocabularies used by LC's Monograph profile
+  audience: 'vocabulary/maudience',
+  illustrativeContent: 'vocabulary/millus',
+  colorContent: 'vocabulary/mcolor',
+  supplementaryContent: 'vocabulary/msupplcont'
 };
 
 const ARABIC_SCRIPT = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
@@ -400,6 +406,19 @@ const filterOptions = (options: Array<{ label: string; labelAr?: string; uri: st
     .filter(opt => opt.label.toLowerCase().includes(q) || (opt.labelAr || '').includes(query || ''))
     .map(opt => ({ label: opt.label, uri: opt.uri, type, source: (opt.uri ? 'LOC' : 'Local') as AuthorityResult['source'] }));
 };
+
+/**
+ * Mode of issuance (LC "issuance" vocabulary). Required by LC's profiles; a fixed list so it can be picked
+ * in Arabic too (LC's search does not match Arabic queries).
+ */
+export async function searchIssuance(query: string): Promise<AuthorityResult[]> {
+  return filterOptions([
+    { label: 'single unit', labelAr: 'وحدة مفردة (كتاب)', uri: 'http://id.loc.gov/vocabulary/issuance/mono' },
+    { label: 'multipart monograph', labelAr: 'كتاب متعدد الأجزاء', uri: 'http://id.loc.gov/vocabulary/issuance/mulm' },
+    { label: 'serial', labelAr: 'دورية', uri: 'http://id.loc.gov/vocabulary/issuance/serl' },
+    { label: 'integrating resource', labelAr: 'مصدر متكامل (يُحدَّث باستمرار)', uri: 'http://id.loc.gov/vocabulary/issuance/intg' }
+  ], query, 'issuance');
+}
 
 /**
  * Search for Accessibility Content (bf:contentAccessibility). LC has no vocabulary for this, so values are labels.
