@@ -21,7 +21,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { Toaster } from "./ui/sonner";
 import {
   Save, Download, Upload, ChevronLeft, ChevronDown, ChevronRight,
   Search, BookOpen, Package, Layers, Database, FileText, Code, Braces,
@@ -1387,7 +1386,6 @@ export default function WolfMoon({
         />
       )}
 
-      <Toaster position={language === "ar" ? "top-left" : "top-right"} />
 
       {/* ===== HERO NAVBAR ===== */}
       <header

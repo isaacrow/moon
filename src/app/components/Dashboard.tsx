@@ -8,6 +8,7 @@ import { Button } from './ui/button';
 import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
 import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord } from '../utils/recordStorageBackend';
+import type { BIBFRAMERecord } from '../types/bibframe';
 import { ActivityLog } from './ActivityLog';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
