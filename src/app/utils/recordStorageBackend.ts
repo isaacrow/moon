@@ -162,6 +162,34 @@ function extractNodesFromGraph(graph: any[]) {
   return { work, instance };
 }
 
+const hasTypeEnding = (node: any, suffix: string) =>
+  ([] as any[]).concat(node?.['@type'] || []).some((t) => typeof t === 'string' && t.endsWith(suffix));
+
+/** Item, Expression and AdminMetadata travel in the stored @graph after Work and Instance. */
+function extraGraphNodes(record: BIBFRAMERecord): any[] {
+  const base = record.instance?.['@id'] || `urn:moon:${Date.now()}`;
+  const nodes: any[] = [];
+  if (record.item) nodes.push(buildSafeNode(record.item, 'bf:Item', `${base}#item`));
+  if (record.expression) nodes.push(buildSafeNode(record.expression, 'bf:Expression', `${base}#expression`));
+  if (record.adminMetadata) nodes.push(buildSafeNode(record.adminMetadata, 'bf:AdminMetadata', `${base}#admin`));
+  return nodes;
+}
+
+/** Recovers the Item, Expression and AdminMetadata nodes from a stored @graph. */
+function extractExtraNodes(graph: any[], metadata: any, work: any, instance: any) {
+  const uriSet = metadata?.uriSet || {};
+  const byId = (id?: string) => (id ? graph.find((n) => n?.['@id'] === id) : undefined);
+  const item = byId(uriSet.item) || graph.find((n) => hasTypeEnding(n, 'Item'));
+  const adminMetadata = byId(uriSet.admin) || graph.find((n) => hasTypeEnding(n, 'AdminMetadata'));
+  const expression =
+    byId(uriSet.expression) || graph.find((n) => n !== work && n !== instance && hasTypeEnding(n, 'Expression'));
+  return {
+    ...(item ? { item } : {}),
+    ...(expression ? { expression } : {}),
+    ...(adminMetadata ? { adminMetadata } : {}),
+  };
+}
+
 export async function saveRecord(record: BIBFRAMERecord, cataloger?: string): Promise<SavedRecord> {
   // Helper to safely extract string from potentially nested title objects
   const extractTitleString = (titleValue: any): string => {
@@ -280,10 +308,16 @@ export async function saveRecord(record: BIBFRAMERecord, cataloger?: string): Pr
     }
   }
 
+  // A record that was saved before keeps its storage id, so saving again updates it instead of
+  // creating a copy.
+  const storageId = record.metadata?.storageId || `record-${Date.now()}`;
+  const previous = getAllRecordsLocal().find((r) => r.id === storageId);
+  record = { ...record, metadata: { ...(record.metadata || {}), storageId } as any };
+
   const savedRecord: SavedRecord = {
-    id: `record-${Date.now()}`,
+    id: storageId,
     record,
-    createdAt: new Date().toISOString(),
+    createdAt: previous?.createdAt || new Date().toISOString(),
     modifiedAt: new Date().toISOString(),
     title,
     cataloger,
@@ -312,7 +346,7 @@ export async function saveRecord(record: BIBFRAMERecord, cataloger?: string): Pr
     // Build JSON-LD document format expected by server
     const jsonldDocument = {
       '@context': 'http://id.loc.gov/ontologies/bibframe/',
-      '@graph': [safeWork, safeInstance]
+      '@graph': [safeWork, safeInstance, ...extraGraphNodes(record)]
     };
     
     // LOG: Verify @type is preserved
@@ -554,7 +588,9 @@ export async function getAllRecords(): Promise<SavedRecord[]> {
         },
         work: work,
         instance: instance,
+        ...extractExtraNodes(graph, serverRecord.metadata, work, instance),
         metadata: {
+          storageId: serverRecord.id,
           catalogingLanguage: serverRecord.metadata?.catalogingLanguage || 'en',
           descriptionConventions: serverRecord.metadata?.descriptionConventions || 'rda',
           resourceType: serverRecord.metadata?.resourceType || 'Text',
@@ -762,7 +798,10 @@ export async function getRecordById(id: string): Promise<SavedRecord | null> {
       },
       work,
       instance,
+      ...extractExtraNodes(graph, serverRecord.metadata, work, instance),
       metadata: {
+        ...(serverRecord.metadata || {}),
+        storageId: serverRecord.id,
         catalogingLanguage: serverRecord.metadata?.catalogingLanguage || 'en',
         descriptionConventions: serverRecord.metadata?.descriptionConventions || 'rda',
         resourceType: serverRecord.metadata?.resourceType || 'Text'
@@ -882,6 +921,7 @@ export async function updateRecord(id: string, record: BIBFRAMERecord, cataloger
   try {
     // records/save upserts by id, so no delete is needed (deleting first used to
     // mark the id as deleted locally and make the edited record vanish).
+    record = { ...record, metadata: { ...(record.metadata || {}), storageId: id } as any };
     const updatedRecord: SavedRecord = {
       id,
       record,
@@ -910,7 +950,7 @@ export async function updateRecord(id: string, record: BIBFRAMERecord, cataloger
     // Build JSON-LD document format
     const jsonldDocument = {
       '@context': 'http://id.loc.gov/ontologies/bibframe/',
-      '@graph': [safeWork, safeInstance]
+      '@graph': [safeWork, safeInstance, ...extraGraphNodes(record)]
     };
     
     const response = await fetch(`${API_BASE}/records/save`, {

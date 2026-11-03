@@ -177,7 +177,33 @@ interface WolfMoonProps {
   onBack?: () => void;
   initialWork?: any;
   initialInstance?: any;
+  // The full saved record being edited: its Item, Expression, AdminMetadata and storage id.
+  initialRecord?: BIBFRAMERecord | null;
   onRecordSaved?: () => void;
+  // Reopens the editor on an unsaved draft (the parent remounts with it as the initial record).
+  onRestoreDraft?: (draft: BIBFRAMERecord) => void;
+}
+
+const DRAFT_KEY = "moon_wolf_draft";
+
+interface WolfMoonDraft {
+  record: BIBFRAMERecord;
+  title: string;
+  savedAt: string;
+}
+
+function readDraft(): WolfMoonDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    const draft = raw ? JSON.parse(raw) : null;
+    return draft?.record?.work && draft?.record?.instance ? draft : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
 }
 
 // ============================== THEME CONSTANTS ==============================
@@ -331,7 +357,7 @@ function getPropertyValue(data: any, uri: string): any {
 // ============================== MAIN COMPONENT ==============================
 
 export default function WolfMoon({
-  onBack, initialWork, initialInstance, onRecordSaved
+  onBack, initialWork, initialInstance, initialRecord, onRecordSaved, onRestoreDraft
 }: WolfMoonProps) {
   const { t, i18n } = useTranslation();
   const { username, user } = useAuth();
@@ -402,6 +428,8 @@ export default function WolfMoon({
     return /^[A-Za-z0-9_-]+$/.test(existing) ? existing : generateRecordId();
   });
   const [uriSet] = useState<UriSet>(() => mintUriSet(recordId));
+  // Storage id of the saved record; set after the first save so later saves update that record.
+  const storageIdRef = useRef<string | undefined>(initialRecord?.metadata?.storageId);
 
   // ===== GRAPH STORE =====
   const [graphStore] = useState(new GraphStore());
@@ -448,6 +476,68 @@ export default function WolfMoon({
     return "Untitled Record";
   });
   const [showRecordViewer, setShowRecordViewer] = useState(false);
+
+  // ===== AUTOSAVE DRAFT =====
+  // Unsaved edits are kept in this browser every few seconds, so a refresh or crash doesn't lose them.
+  // Item and Expression edits only touch the graph store, so this polls rather than watching state.
+  const saveStatusRef = useRef(saveStatus);
+  saveStatusRef.current = saveStatus;
+  useEffect(() => {
+    if (saveStatus !== "unsaved") return;
+    let last = "";
+    const writeDraft = () => {
+      // A save clears the draft; never write it back afterwards.
+      if (saveStatusRef.current !== "unsaved") return;
+      try {
+        const draft: WolfMoonDraft = {
+          record: {
+            "@context": "http://id.loc.gov/ontologies/bibframe/",
+            work: workData,
+            instance: instanceData,
+            item: graphStore.getNode(uriSet.item) || undefined,
+            expression: enableExpression ? graphStore.getNode(uriSet.expression) || undefined : undefined,
+            adminMetadata: graphStore.getNode(uriSet.admin) || undefined,
+            metadata: { storageId: storageIdRef.current, recordId, uriSet, createdAt: initialRecord?.metadata?.createdAt },
+          },
+          title: recordTitle,
+          savedAt: new Date().toISOString(),
+        };
+        const json = JSON.stringify(draft.record);
+        if (json === last) return;
+        last = json;
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      } catch {}
+    };
+    writeDraft();
+    const timer = window.setInterval(writeDraft, 3000);
+    return () => { window.clearInterval(timer); writeDraft(); };
+  }, [saveStatus, workData, instanceData, recordTitle, enableExpression]);
+
+  // On open, offer the unsaved draft: any draft for a new record, or this record's own draft.
+  useEffect(() => {
+    if (!onRestoreDraft || (initialRecord?.metadata as any)?.restoredFromDraft) return;
+    const draft = readDraft();
+    if (!draft) return;
+    const draftMeta: any = draft.record.metadata || {};
+    const sameRecord = draftMeta.storageId
+      ? draftMeta.storageId === storageIdRef.current
+      : draftMeta.recordId === recordId;
+    if ((initialWork || initialRecord) && !sameRecord) return;
+    const when = new Date(draft.savedAt).toLocaleString();
+    toast(language === "ar" ? `توجد مسودة غير محفوظة: «${draft.title}»` : `Unsaved draft found: "${draft.title}"`, {
+      description: language === "ar" ? `آخر تعديل ${when}` : `Last edited ${when}`,
+      id: "moon-wolf-draft",
+      duration: 20000,
+      action: {
+        label: language === "ar" ? "استعادة" : "Restore",
+        onClick: () => onRestoreDraft({ ...draft.record, metadata: { ...draftMeta, restoredFromDraft: true } }),
+      },
+      cancel: {
+        label: language === "ar" ? "تجاهل" : "Discard",
+        onClick: () => clearDraft(),
+      },
+    });
+  }, []);
 
   // ===== DIALOGS =====
   const [showAuthoritySearch, setShowAuthoritySearch] = useState(false);
@@ -722,27 +812,34 @@ export default function WolfMoon({
   useEffect(() => {
     graphStore.setNode(uriSet.work, { "@id": uriSet.work, "@type": "bf:Work" });
     graphStore.setNode(uriSet.instance, { "@id": uriSet.instance, "@type": "bf:Instance" });
-    graphStore.setNode(uriSet.item, { "@id": uriSet.item, "@type": "bf:Item" });
+    // A saved record brings back its own Item, Expression and AdminMetadata instead of blank ones.
+    const savedItem = initialRecord?.item;
+    const savedExpression = initialRecord?.expression;
+    const savedAdmin = initialRecord?.adminMetadata;
+    graphStore.setNode(uriSet.item, { ...(savedItem || {}), "@id": uriSet.item, "@type": "bf:Item" });
 
-    if (template.enableExpression) {
+    if (template.enableExpression || savedExpression) {
       setEnableExpression(true);
-      graphStore.setNode(uriSet.expression, { "@id": uriSet.expression, "@type": "bf:Expression" });
+      graphStore.setNode(uriSet.expression, { ...(savedExpression || {}), "@id": uriSet.expression, "@type": savedExpression?.["@type"] || "bf:Expression" });
       graphStore.createWEMILinks(uriSet.work, uriSet.expression, uriSet.instance, uriSet.item);
     } else {
       graphStore.createWEMILinks(uriSet.work, undefined, uriSet.instance, uriSet.item);
     }
 
     const adminUri = uriSet.admin;
+    const today = new Date().toISOString().split("T")[0];
     graphStore.setNode(adminUri, {
       "@id": adminUri, "@type": "bf:AdminMetadata",
-      "bf:creationDate": new Date().toISOString().split("T")[0],
-      "bf:source": { "@id": new URL(BASE_URI).origin, "rdfs:label": "Moon Library System — Blue Moon" },
+      "bf:creationDate": today,
+      "bf:source": { "@id": new URL(BASE_URI).origin, "rdfs:label": "Moon Library System — Wolf Moon" },
       "bf:descriptionConventions": { "@id": "http://id.loc.gov/vocabulary/descriptionConventions/rda", "rdfs:label": "RDA" },
       "bf:descriptionLanguage": language === "ar"
         ? { "@id": "http://id.loc.gov/vocabulary/languages/ara", "rdfs:label": "العربية" }
         : { "@id": "http://id.loc.gov/vocabulary/languages/eng", "rdfs:label": "English" },
-      "bf:generationProcess": `Blue Moon v1.0 (${template.name})`,
+      "bf:generationProcess": `Wolf Moon v1.0 (${template.name})`,
       "bf:catalogerId": username || "anonymous",
+      // Keeps the original creation date and cataloger of a saved record; editing it records a change date.
+      ...(savedAdmin ? { ...savedAdmin, "@id": adminUri, "@type": "bf:AdminMetadata", "bf:changeDate": today } : {}),
     });
     regenerateRDF();
   }, []);
@@ -785,6 +882,11 @@ export default function WolfMoon({
       setInstanceData({ ...initialInstance, "@id": uriSet.instance, "bf:instanceOf": { "@id": uriSet.work } });
     }
   }, [initialInstance]);
+
+  // A restored draft has not been saved yet, even though it arrived as the initial record.
+  useEffect(() => {
+    if ((initialRecord?.metadata as any)?.restoredFromDraft) setSaveStatus("unsaved");
+  }, [initialRecord]);
 
   useEffect(() => {
     const currentWork = graphStore.getNode(uriSet.work) || {};
@@ -1142,13 +1244,18 @@ export default function WolfMoon({
         "@context": { bf: "http://id.loc.gov/ontologies/bibframe/", bflc: "http://id.loc.gov/ontologies/bflc/", rdfs: "http://www.w3.org/2000/01/rdf-schema#", rdf: "http://www.w3.org/1999/02/22-rdf-syntax-ns#", xsd: "http://www.w3.org/2001/XMLSchema#", madsrdf: "http://www.loc.gov/mads/rdf/v1#" },
         work: workData,
         instance: instanceData,
+        // Item, Expression and AdminMetadata live only in the graph store; without these the save dropped them.
+        item: graphStore.getNode(uriSet.item) || undefined,
+        expression: enableExpression ? graphStore.getNode(uriSet.expression) || undefined : undefined,
+        adminMetadata: graphStore.getNode(uriSet.admin) || undefined,
         metadata: {
+          storageId: storageIdRef.current,
           catalogingLanguage: language, descriptionConventions: "rda",
-          catalogingInterface: "Blue Moon",
-          resourceType: `Blue Moon (${template.name})`,
+          catalogingInterface: "Wolf Moon",
+          resourceType: `Wolf Moon (${template.name})`,
           templateId: selectedTemplate, recordId, uriSet,
           ontologyVersion: ONTOLOGY_VERSION.version,
-          createdAt: new Date().toISOString(),
+          createdAt: initialRecord?.metadata?.createdAt || new Date().toISOString(),
           catalogerId: username || "anonymous",
           hiddenFields: Array.from(hiddenFields),
           status: (username?.toLowerCase() === "isaac" || username?.toLowerCase() === "admin") ? "complete" : "pending-review",
@@ -1157,6 +1264,8 @@ export default function WolfMoon({
       };
       // The server decides the final status from the signed-in user's session.
       const saved = await saveRecord(record, username || "Anonymous");
+      storageIdRef.current = saved.id;
+      clearDraft();
       const initialStatus = saved.status || "complete";
       setSaveStatus("saved");
       if (initialStatus === "pending-review") {

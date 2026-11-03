@@ -131,6 +131,8 @@ function CatalogApp() {
 
   // Current record starts null (fresh draft)
   const [currentRecord, setCurrentRecord] = useState<BIBFRAMERecord | null>(null);
+  // Bumped when Wolf Moon restores a draft, so the editor remounts even for the same record.
+  const [draftRestores, setDraftRestores] = useState(0);
 
   // Dark mode is now handled by ThemeContext
 
@@ -172,7 +174,12 @@ function CatalogApp() {
   // Sync currentRecord when work or instance changes
   React.useEffect(() => {
     if (work && instance) {
-      setCurrentRecord({
+      // A record that was just loaded holds this Work plus its Item, Expression, AdminMetadata and
+      // storage id; rebuilding it here would throw those away. (Compared by @id: the effect above
+      // replaces the Instance object right after a load.)
+      setCurrentRecord(prev => prev?.work?.['@id'] && prev.work['@id'] === work['@id']
+        ? { ...prev, work: work as BIBFRAMEWork, instance: instance as BIBFRAMEInstance }
+        : {
         '@context': 'http://bibfra.me/vocab/lite/',
         '@type': 'Work',
         work: work as BIBFRAMEWork,
@@ -465,7 +472,8 @@ function CatalogApp() {
     
     setWork(workData);
     setInstance(instanceData);
-    setCurrentRecord(importedData);
+    // Keep the loaded record's Item, Expression, AdminMetadata and storage id for the editor.
+    setCurrentRecord({ ...(data && typeof data === 'object' ? data : {}), work: workData, instance: instanceData });
     
     // Set resource type if available
     if (data.metadata?.resourceType || importedData?.resourceType) {
@@ -1296,11 +1304,18 @@ function CatalogApp() {
     return (
       <ErrorBoundary fallbackTitle="Wolf Moon Studio Error" onReset={() => setViewMode('dashboard')}>
         <WolfMoon
-          key={`${work?.['@id'] || 'work'}-${instance?.['@id'] || 'inst'}`}
+          key={`${work?.['@id'] || 'work'}-${instance?.['@id'] || 'inst'}-${draftRestores}`}
           onBack={() => setViewMode('dashboard')}
           initialWork={work}
           initialInstance={instance}
+          initialRecord={currentRecord}
           onRecordSaved={() => toast.success('Record saved! View it in All Records.')}
+          onRestoreDraft={(draft) => {
+            setDraftRestores(n => n + 1);
+            setWork(draft.work);
+            setInstance(draft.instance);
+            setCurrentRecord(draft);
+          }}
         />
       </ErrorBoundary>
     );
