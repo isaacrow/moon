@@ -1,13 +1,17 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './app/App';
-import { WolfMoonStandaloneOpac } from './app/components/WolfMoonStandaloneOpac';
 import { ErrorBoundary } from './app/components/ErrorBoundary';
 import './styles/index.css';
 import './styles/glassmorphism.css';
 import './styles/neon-theme.css';
 import './styles/classic-theme.css';
 import './styles/liquid-glass.css';
+
+// The public OPAC is large; it loads only when an OPAC link is opened.
+const WolfMoonStandaloneOpac = React.lazy(() =>
+  import('./app/components/WolfMoonStandaloneOpac').then(m => ({ default: m.WolfMoonStandaloneOpac }))
+);
 
 // Check if visiting the separated OPAC site URL (different link / separate site)
 const isOpacSite = (() => {
@@ -29,11 +33,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary fallbackTitle={isOpacSite ? "WOF MOON OPAC Error" : "Moon Editor Error"}>
       {isOpacSite ? (
-        <WolfMoonStandaloneOpac
-          onOpenEditor={() => {
-            window.location.href = '/';
-          }}
-        />
+        <React.Suspense fallback={null}>
+          <WolfMoonStandaloneOpac
+            onOpenEditor={() => {
+              window.location.href = '/moon/';
+            }}
+          />
+        </React.Suspense>
       ) : (
         <App />
       )}

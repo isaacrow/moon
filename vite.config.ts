@@ -77,7 +77,9 @@ export default defineConfig({
     chunkSizeWarningLimit: 3500,
     rollupOptions: {
       input: {
+        // index.html only forwards to /moon/, where Moon Studio lives.
         main: path.resolve(__dirname, 'index.html'),
+        moon: path.resolve(__dirname, 'moon/index.html'),
         opac: path.resolve(__dirname, 'opac.html'),
       },
     },

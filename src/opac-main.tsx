@@ -11,7 +11,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ErrorBoundary fallbackTitle="WOF MOON OPAC Error">
       <WolfMoonStandaloneOpac
         onOpenEditor={() => {
-          window.location.href = '/';
+          window.location.href = '/moon/';
         }}
       />
     </ErrorBoundary>
