@@ -3,15 +3,13 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, ArrowLeft, Globe, BookOpen, User, ExternalLink,
-  Loader2, Calendar, Briefcase, Sparkles, Brain, FileText,
+  Loader2, Calendar, Briefcase, Sparkles, FileText,
   Copy, CheckCircle2, Info, ChevronRight, X, Layers, Compass,
-  Database, Bookmark, Check, MapPin, Share2, Award, Network, Code2,
-  Cpu, Wrench, Zap, Sliders
-} from 'lucide-react';
+  Database, Check, MapPin, Award, Network, Code2,
+  Cpu, Zap} from 'lucide-react';
 import { toast } from 'sonner';
 import {
   fetchMultiPageWebResults,
-  findAuthors,
   deepSearchAndSuggestWithGemini,
   fetchLiveAuthorImage,
   saveAuthorityProfileToMoonSystem,
@@ -31,6 +29,8 @@ import moonWhiteLogo from '../../assets/white.png';
 interface AuthorFinderProps {
   onBack?: () => void;
   onNavigate?: (view: string) => void;
+  /** Set when Moon Studio opens the finder to pick an author for the record. */
+  onSelectAuthor?: (author: any, targetType?: 'subject' | 'contributor' | 'author') => void;
 }
 
 // Moon Brand Logo SVG matching 16-9 (2).json visual reference

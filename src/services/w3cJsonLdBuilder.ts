@@ -15,7 +15,7 @@
  * 5. High-fidelity Turtle and N-Triples serialization
  */
 
-import { toTurtle, resolvePropertyUri, KNOWN_NAMESPACES, hoistNamedNodes } from './rdfGraphBuilder';
+import { toTurtle, resolvePropertyUri, hoistNamedNodes } from './rdfGraphBuilder';
 import { normalizeBibframe, finishForExport } from './bibframeNormalizer';
 import { BASE_URI } from './uriMintingService';
 import { BF_PROPERTY_DOMAINS, BF_DATATYPE_PROPERTIES, BF_CLASSES } from './bibframeTerms.generated';

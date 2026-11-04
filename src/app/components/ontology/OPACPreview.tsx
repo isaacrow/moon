@@ -4,12 +4,12 @@
  * Full BIBFRAME 2.0 & Heritage Manuscript Support
  */
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   BookOpen, Bookmark, Share2, Copy, Check, ExternalLink,
   Printer, Tag, User, Calendar, MapPin, Layers, FileText,
-  ShieldCheck, Quote, Compass, Globe, Sparkles, Download,
-  CheckCircle2, Info, ArrowRight, CornerDownRight, Hash
+  Quote, Compass, Globe, Sparkles, 
+  CheckCircle2, CornerDownRight, Hash
 } from 'lucide-react';
 
 interface OPACPreviewProps {

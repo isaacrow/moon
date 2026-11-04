@@ -229,7 +229,7 @@ export class FOLIOApiClient {
         const token = response.headers.get('x-okapi-token') || data.okapiToken || data.token || data.access_token;
         if (!token) throw new Error('FOLIO login returned success without an Okapi token.');
         this.token = token;
-        return this.token;
+        return token;
       }
     } catch (e) {
       // primary failed, try fallback below
@@ -253,7 +253,7 @@ export class FOLIOApiClient {
         if (!token) throw new Error('FOLIO login returned success without an Okapi token.');
         this.token = token;
         this.config.okapiUrl = altBase;
-        return this.token;
+        return token;
       }
     } catch (e2) {}
 

@@ -9,25 +9,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search,
   BookOpen,
-  Filter,
   ExternalLink,
   RefreshCw,
-  Layers,
   ArrowRight,
-  Database,
   Globe,
-  Tag,
   CheckCircle,
-  AlertCircle,
-  SlidersHorizontal,
-  Eye,
-  UploadCloud,
-  FileJson
-} from 'lucide-react';
+  UploadCloud} from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
-import { VuFindApiClient, VuFindSolrDoc } from '../../services/vufindApiClient';
+import { VuFindApiClient } from '../../services/vufindApiClient';
 import { toast } from 'sonner';
 import { BASE_URI } from '../../../services/uriMintingService';
 
@@ -93,9 +84,10 @@ export function WolfMoonVuFindPortal({
         }
       } catch {}
 
-      const res = await client.searchSolr(q === '*:*' ? '*' : q, 30);
-      setResults(res.docs || []);
-      setTotalCount(res.numFound || 0);
+      // The client has no searchSolr(); its search() falls back from the VuFind API to Solr itself.
+      const res = await client.search(q === '*:*' ? '*' : q, { limit: 30 });
+      setResults(res.records || []);
+      setTotalCount(res.resultCount || 0);
     } catch (err: any) {
       console.warn('Solr search note:', err);
     } finally {

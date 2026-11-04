@@ -1,8 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { 
   UserRole, 
   Provenance, 
-  EntityCluster, 
   JCricketUserProfile,
   UserNotification,
   ReviewQueueItem,
@@ -10,7 +9,7 @@ import {
   ConcurrentEditWarning
 } from '../types/jcricket';
 import { useAuth } from './AuthContext';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { publicAnonKey } from '../../../utils/supabase/info';
 
 interface JCricketContextType {
   userProfile: JCricketUserProfile | null;

@@ -8,7 +8,6 @@ import { ChevronDown, ChevronUp, Plus, X, Edit2, Link as LinkIcon, FileText } fr
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n/config';
 import { 
-  getPropertiesByDomain, 
   getCategoriesForDomain, 
   getPropertiesByCategory,
   OntologyProperty 
@@ -686,7 +685,11 @@ function SinglePropertyRenderer({
           label={translateLabel(property.label)}
           value={value}
           onChange={onChange}
-          onSearch={getAuthoritySearch()}
+          onSearch={async (q: string) => {
+            // Local vocabulary lists ({ code, label, uri }) have no source; they are Moon's own.
+            const results: any[] = await getAuthoritySearch()(q);
+            return results.map(r => ({ source: 'Local' as const, ...r }));
+          }}
           placeholder={property.inputHint || `Search ${property.label.toLowerCase()}...`}
           required={property.required}
           allowCustom

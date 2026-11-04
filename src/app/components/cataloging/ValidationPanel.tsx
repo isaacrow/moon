@@ -4,15 +4,13 @@
  * Multi-layer standards: LOC, PCC, RDA, and W3C Linked Data
  */
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   CheckCircle2, AlertCircle, AlertTriangle, X, Shield,
-  Award, Sparkles, Filter, Copy, Check, Download, FileText,
-  ExternalLink, ChevronRight, CornerDownRight, BarChart3,
-  Layers, Tag, BookOpen, Package, Building2
-} from 'lucide-react';
+  Award, Sparkles, Copy, Check, 
+  CornerDownRight
+  } from 'lucide-react';
 import { GraphStore } from '../../../services/graphStore';
-import { getPropertiesByDomain, validatePropertyValue, OntologyProperty } from '../../../services/ontologyRegistry';
 
 export interface ValidationMessage {
   level: 'error' | 'warning' | 'info' | 'success';

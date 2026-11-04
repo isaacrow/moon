@@ -8,10 +8,10 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import {
-  Brain, Sparkles, Search, Code2, Wand2, Shield, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Clock, AlertTriangle, Copy, ExternalLink,
+  Brain, Sparkles, Search, Code2, Wand2, 
+  CheckCircle2, XCircle, Clock, AlertTriangle, Copy, 
   BookOpen, Users, Languages, Calendar, Tag, FileText, Loader2, Database,
   Layers, BarChart3, RefreshCw, ThumbsUp, ThumbsDown, History, Zap
 } from "lucide-react";

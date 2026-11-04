@@ -4,7 +4,6 @@
  * Validates graph integrity before save
  */
 
-import { BIBFRAME_CORE_CLASSES, BIBFRAME_PROPERTIES, isValidPropertyForDomain, isValidRange } from './bibframeOntology';
 
 export interface ValidationError {
   severity: 'error' | 'warning';

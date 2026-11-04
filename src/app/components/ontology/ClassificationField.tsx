@@ -49,9 +49,7 @@ export function ClassificationField({ property, value = [], onChange, language =
       ? {
           '@type': 'bf:ClassificationLcc',
           'bf:classificationPortion': '',
-          'bf:itemPortion': '',
-          'bf:source': { '@id': '' },
-          'bf:status': ''
+          'bf:itemPortion': ''
         }
       : {
           '@type': 'bf:ClassificationDdc',
@@ -62,9 +60,11 @@ export function ClassificationField({ property, value = [], onChange, language =
     onChange([...safeValue, newClassification]);
   };
 
-  const updateClassification = (index: number, field: string, val: string) => {
+  const updateClassification = (index: number, field: string, val: any) => {
     const updated = [...safeValue];
     updated[index] = { ...updated[index], [field]: val };
+    // An emptied box removes the property instead of publishing an empty value.
+    if (val === '' || (val && typeof val === 'object' && !val['@id'])) delete updated[index][field];
     onChange(updated);
   };
 
@@ -140,8 +140,9 @@ export function ClassificationField({ property, value = [], onChange, language =
               <div>
                 <Label className="text-sm">{language === "ar" ? "جهة تعيين التصنيف" : "Classification assigner"}</Label>
                 <Input
-                  value={classification['bf:source']?.['@id'] || ''}
-                  onChange={(e) => updateClassification(index, 'bf:source', { '@id': e.target.value })}
+                  value={(classification['bf:assigner'] ?? classification['bf:source'])?.['@id'] || ''}
+                  // The agency that assigned the number is bf:assigner (LC: organizations/dlc); bf:source is the scheme.
+                  onChange={(e) => updateClassification(index, 'bf:assigner', { '@id': e.target.value.trim() })}
                   placeholder="Search organizations... (id.loc.gov/vocabulary/organizations)"
                   className="mt-1"
                 />

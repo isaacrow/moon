@@ -1,12 +1,11 @@
 "use client";
-import React, { useState } from "react";
+import { useState } from "react";
 import {
-  X, QrCode, Hash, Search, Replace, UserCheck, RefreshCw,
-  Clock, Check, Copy, AlertCircle, Sparkles, ExternalLink, ArrowRight, Shield
-} from "lucide-react";
+  X, QrCode, Hash, Replace, UserCheck, RefreshCw,
+  Clock, Check, Copy, Sparkles} from "lucide-react";
 import {
   generateMLCNumber, MLCNumberResult,
-  generateNAR, NAREntityData, NARRecordResult,
+  generateNAR, NARRecordResult,
   simulateFolioSync, FolioSyncRecord,
   executeFindReplace, FindReplaceMatch,
   MarvaHistoryEntry

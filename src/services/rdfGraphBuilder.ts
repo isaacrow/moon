@@ -580,7 +580,7 @@ export function validateGraphConnectivity(jsonld: any): { connected: boolean; or
   }
 
   const graph = jsonld['@graph'];
-  const nodeIds = new Set(graph.filter((n: any) => n && typeof n === 'object').map((n: any) => n['@id']).filter(Boolean));
+  const nodeIds = new Set<string>(graph.filter((n: any) => n && typeof n === 'object').map((n: any) => n['@id']).filter(Boolean));
   const referencedIds = new Set<string>();
   const orphans: string[] = [];
 

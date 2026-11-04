@@ -13,7 +13,6 @@
  */
 import { BIBFRAMERecord } from '../types/bibframe';
 import { MOON_API, moonHeaders, moonFetch } from './moonApi';
-import { realLocExamples } from './realLocExamples';
 
 export type RecordStatus = 'complete' | 'pending-review' | 'needs-review';
 

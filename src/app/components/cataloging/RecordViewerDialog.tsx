@@ -3,7 +3,7 @@
  * Shows BIBFRAME records in OPAC, Mind Map, and MARC 21 views
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
   Dialog, 
   DialogContent, 
@@ -12,7 +12,7 @@ import {
   DialogDescription 
 } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { BookOpen, Network, FileText, Download, X } from 'lucide-react';
+import { BookOpen, Network, FileText, Download } from 'lucide-react';
 import { Button } from '../ui/button';
 
 interface RecordViewerDialogProps {

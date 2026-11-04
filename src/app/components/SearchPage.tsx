@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
   SearchIcon, 
@@ -11,14 +11,8 @@ import {
   User,
   Building,
   Tag,
-  ArrowRight,
-  Edit,
   Download
 } from 'lucide-react';
-import { Input } from './ui/input';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Card } from './ui/card';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { SavedRecord, searchRecords, deleteRecord, getAllRecords } from '../utils/recordStorageBackend';
+import { SavedRecord, searchRecords, deleteRecord } from '../utils/recordStorageBackend';
 import { BIBFRAMERecord } from '../types/bibframe';
 import '../../styles/glassmorphism.css';
 import { toBibframeJsonLdString } from '../../services/bibframeNormalizer';
@@ -110,18 +104,18 @@ export function SearchPage({ onLoadRecord, onNewRecord }: SearchPageProps) {
       
       // Add Work node
       const workNode: any = {
+        ...savedRecord.record.work,
         '@id': savedRecord.record.work['@id'] || `http://moon.local/work/${savedRecord.id}`,
-        '@type': savedRecord.record.work['@type'] || ['http://id.loc.gov/ontologies/bibframe/Work', 'bf:Work'],
-        ...savedRecord.record.work
+        '@type': savedRecord.record.work['@type'] || ['http://id.loc.gov/ontologies/bibframe/Work', 'bf:Work']
       };
       graphNodes.push(workNode);
       
       // Add Instance node
       const instanceNode: any = {
+        ...savedRecord.record.instance,
         '@id': savedRecord.record.instance['@id'] || `http://moon.local/instance/${savedRecord.id}`,
         '@type': savedRecord.record.instance['@type'] || ['http://id.loc.gov/ontologies/bibframe/Instance', 'bf:Instance'],
-        'instanceOf': savedRecord.record.work['@id'] || `http://moon.local/work/${savedRecord.id}`,
-        ...savedRecord.record.instance
+        'instanceOf': savedRecord.record.instance['instanceOf'] ?? (savedRecord.record.work['@id'] || `http://moon.local/work/${savedRecord.id}`)
       };
       graphNodes.push(instanceNode);
       
@@ -530,7 +524,7 @@ export function SearchPage({ onLoadRecord, onNewRecord }: SearchPageProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      <style jsx>{`
+      <style>{`
         @keyframes fadeInUp {
           from {
             opacity: 0;

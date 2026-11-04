@@ -19,27 +19,19 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, BookOpen, User, Tag, Layers, Network, ExternalLink,
   Download, Copy, Check, ChevronRight, ChevronLeft, ArrowLeft,
-  Share2, BookMarked, Globe, Sparkles, Building, MapPin, Hash,
-  Library, Clock, RefreshCw, Filter, List, LayoutGrid, Eye,
-  Sliders, Calendar, ArrowUpDown, ChevronDown, CheckCircle2,
-  FileText, Code, Database, Compass, Award, Quote, Info, X,
-  Printer, ArrowUpRight, BookCheck, Bookmark, CornerDownLeft
-} from 'lucide-react';
+  BookMarked, Globe, Sparkles, Building, MapPin, 
+  Library, Clock, RefreshCw, Filter, 
+  Sliders, ChevronDown, CheckCircle2,
+  FileText, Code, Database, Compass, Quote, X,
+  Printer, ArrowUpRight, BookCheck, Bookmark} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { Toaster } from './ui/sonner';
 import {
   wolfMoonOpacService,
   OpacWorkEntity,
-  OpacPersonEntity,
-  OpacSubjectEntity,
-  OpacPublisherEntity,
-  OpacInstanceEntity,
-  OpacFacets,
-  DeepSearchParsedQuery,
   FederatedDeepSearchResult,
   VirtualShelfItem,
-  WemiClusterNode,
   resolveWorkCover,
   normalizeArabic
 } from '../../services/wolfMoonOpacService';
@@ -179,6 +171,11 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
         const canonicalUri = `moon:person:${matched.id}:${matched.birthDate || 'era'}-${matched.deathDate || 'now'}`;
         profile = {
           query: authorName,
+          // Matched in Moon's own authority index: no web sources were consulted.
+          confidence: 'high',
+          possibleIdentities: [],
+          provider: 'Moon authority index',
+          totalWebSourcesAnalyzed: 0,
           primarySuggestion: matched.nameArabic,
           suggestedNameArabic: matched.nameArabic,
           suggestedNameEnglish: matched.nameEnglish,
@@ -210,6 +207,11 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
         const canonicalUri = generateCanonicalMoonUri(authorName);
         profile = {
           query: authorName,
+          // Not in the authority index: a profile built from the catalog alone.
+          confidence: 'low',
+          possibleIdentities: [],
+          provider: 'Moon catalog',
+          totalWebSourcesAnalyzed: 0,
           primarySuggestion: authorName,
           suggestedNameArabic: authorName,
           suggestedNameEnglish: '',

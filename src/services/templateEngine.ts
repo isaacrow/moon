@@ -4,7 +4,6 @@
  * Supports dynamic form generation
  */
 
-import { PropertyDomain } from './bibframePropertyRegistry';
 
 export interface TemplateField {
   property: string; // Short name (e.g., 'bf:title')

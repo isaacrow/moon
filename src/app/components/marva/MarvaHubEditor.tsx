@@ -1,11 +1,10 @@
 "use client";
-import React, { useState } from "react";
+import { useState } from "react";
 import {
-  Layers, Plus, Search, ExternalLink, Link2, Check, Sparkles,
-  BookOpen, Hash, Music, Globe, User, Copy, Info
-} from "lucide-react";
+  Layers, Plus, Search, Link2, Check, 
+  Copy} from "lucide-react";
 import {
-  BibframeHub, generateHubAAP, normalizeAAP, createQuickHubStub, SAMPLE_LC_HUBS
+  BibframeHub, createQuickHubStub, SAMPLE_LC_HUBS
 } from "../../../services/hubService";
 
 interface MarvaHubEditorProps {

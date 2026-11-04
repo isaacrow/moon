@@ -8,9 +8,8 @@
  * - controlledVocabulary (whether it requires URI linking)
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { OntologyProperty } from '../../services/bibframeOntologyEngine';
-import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { LocNameSearch } from './LocNameSearch';

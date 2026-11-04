@@ -3,7 +3,7 @@
  * Professional interface for catalogers
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import { ChevronLeft, ChevronRight, Check, AlertCircle, BookOpen, Package, Building2, Archive } from 'lucide-react';
 
 export type WizardStep = 'work' | 'instance' | 'publication' | 'item';

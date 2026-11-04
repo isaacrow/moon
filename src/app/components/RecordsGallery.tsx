@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getAllRecords, deleteRecord, SavedRecord } from '../utils/recordStorageBackend';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
-import { ImageWithFallback } from './figma/ImageWithFallback';
 import { BookOpen, Calendar, User, FileType, Trash2, Edit, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 

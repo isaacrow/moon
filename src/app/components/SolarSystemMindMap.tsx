@@ -10,11 +10,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  BookOpen, Package, User, Tag, MapPin, Hash, FileText, Globe,
-  Languages, Calendar, Building2, Layers, X, ZoomIn, ZoomOut,
+  BookOpen, Package, User, Tag, Hash, FileText, 
+  Building2, Layers, X, ZoomIn, ZoomOut,
   RotateCcw, Pause, Play, Orbit, Sparkles, Quote, Copy, Check,
-  ExternalLink, Compass, Shield, Database, Bookmark
-} from "lucide-react";
+  ExternalLink, Shield} from "lucide-react";
 
 interface SolarSystemMindMapProps {
   workData: any;
@@ -240,9 +239,9 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
       return { id: `subj-${idx}`, label: label.length > 18 ? label.substring(0, 16) + "..." : label, color: "#34d399", uri };
     });
     if (subjectItems.length === 0) {
-      subjectItems.push({ id: "subj-1", label: "الفلسفة الإسلامية", color: "#34d399" });
-      subjectItems.push({ id: "subj-2", label: "علم الكلام", color: "#6ee7b7" });
-      subjectItems.push({ id: "subj-3", label: "الحدوث الدهري", color: "#a7f3d0" });
+      subjectItems.push({ id: "subj-1", label: "الفلسفة الإسلامية", color: "#34d399", uri: "" });
+      subjectItems.push({ id: "subj-2", label: "علم الكلام", color: "#6ee7b7", uri: "" });
+      subjectItems.push({ id: "subj-3", label: "الحدوث الدهري", color: "#a7f3d0", uri: "" });
     }
 
     nodes.push({

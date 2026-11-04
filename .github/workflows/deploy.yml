@@ -69,6 +69,10 @@ jobs:
       - name: Test
         run: npm test
 
+      # Type errors block the deploy; unused code is reported by `npm run lint:unused` without blocking.
+      - name: Type check
+        run: npm run typecheck
+
       - name: Build
         run: |
           npx vite build 2>&1 | tee build.log || true

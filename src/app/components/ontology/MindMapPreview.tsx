@@ -7,7 +7,7 @@
 
 import React, { useState, useMemo } from 'react';
 import {
-  BookOpen, Package, User, Tag, Hash, FileText, Globe,
+  BookOpen, Package, User, Tag, Hash, FileText, 
   Layers, Building2, Quote, Shield, ExternalLink, Copy, Check,
   ZoomIn, ZoomOut, RotateCcw, X, Sparkles
 } from 'lucide-react';
