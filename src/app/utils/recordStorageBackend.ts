@@ -1121,3 +1121,37 @@ export async function approveRecord(id: string, approverName: string = 'Super Ad
 
   return records[index];
 }
+
+/**
+ * Send a pending record back to its cataloger (Super Admin action): it becomes "needs-review",
+ * stays out of the OPAC, and the cataloger can fix it and save again (which resubmits it).
+ */
+export async function sendBackRecord(id: string, reviewerName: string = 'Super Admin'): Promise<void> {
+  let ok = false, status = 0, data: any = null;
+  try {
+    ({ ok, status, data } = await moonFetch(`/records/${encodeURIComponent(id)}/reject`, { body: {} }));
+  } catch {
+    throw new Error('Could not reach the Moon server. Please check your connection and try again.');
+  }
+  if (!ok || !data?.success) {
+    throw new Error(status === 403 ? 'Only the Super Admin can review records.' : data?.error || `Server returned ${status}`);
+  }
+
+  const records = getAllRecordsLocal();
+  const index = records.findIndex(r => r.id === id);
+  if (index >= 0) {
+    records[index] = {
+      ...records[index],
+      status: 'needs-review',
+      record: { ...records[index].record, metadata: { ...records[index].record?.metadata, status: 'needs-review' } as any },
+    };
+    try { localStorage.setItem('bibframe_saved_records', JSON.stringify(records)); } catch {}
+  }
+  logActivity({
+    user: reviewerName,
+    action: 'update',
+    recordId: id,
+    recordTitle: records[index]?.title || id,
+    details: `Record sent back to its cataloger by ${reviewerName} for changes`,
+  });
+}

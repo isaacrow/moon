@@ -1117,6 +1117,9 @@ class WolfMoonOpacService {
               const parsedArr = JSON.parse(raw);
               if (Array.isArray(parsedArr)) {
                 for (const item of parsedArr) {
+                  // Same rule as the server's records: unapproved records stay out of the OPAC.
+                  const status = item?.status || item?.record?.metadata?.status || item?.metadata?.status || 'complete';
+                  if (status !== 'complete') continue;
                   const p = this.parseBibframeDocumentToOpacWork(item);
                   if (p && !gatheredWorks.some(gw => gw.id === p.id || gw.title === p.title)) {
                     gatheredWorks.push(p);

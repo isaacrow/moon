@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { BASE_URI } from '../services/uriMintingService';
+import { getRecordById } from './utils/recordStorageBackend';
 import './i18n/config';
 
 // Every screen loads on demand, so the login page doesn't download the editor.
@@ -26,11 +27,37 @@ const ActivityLog = React.lazy(() => import('./components/ActivityLog').then(m =
 type ViewMode = 'dashboard' | 'wolf-moon' | 'author-finder' | 'all-records' | 'search' | 'activity-log';
 const VIEW_MODES: ViewMode[] = ['dashboard', 'wolf-moon', 'author-finder', 'all-records', 'search', 'activity-log'];
 
-// Old links to retired editors (?view=blue-moon, ?view=moon-sand, ...) open the dashboard.
-function initialViewMode(): ViewMode {
+// Each screen has its own address, so a refresh or a shared link opens the same screen:
+// /dashboard/, /moon/ (Moon Studio), /records/, /search/, /authors/, /activity/.
+const VIEW_PATHS: Record<ViewMode, string> = {
+  'dashboard': 'dashboard',
+  'wolf-moon': 'moon',
+  'all-records': 'records',
+  'search': 'search',
+  'author-finder': 'authors',
+  'activity-log': 'activity',
+};
+export const ROUTED_PATHS = Object.values(VIEW_PATHS);
+
+/** The site's root ("/" on mooon.site): everything before the screen's folder in the current path. */
+function siteRoot(): string {
+  const parts = window.location.pathname.split('/');
+  const i = parts.findIndex((p) => ROUTED_PATHS.includes(p));
+  return i >= 0 ? parts.slice(0, i).join('/') + '/' : window.location.pathname.replace(/[^/]*$/, '');
+}
+
+function viewFromLocation(): ViewMode {
   if (typeof window === 'undefined') return 'dashboard';
+  // Old links (?view=wolf-moon, ...) still work; retired editors (?view=blue-moon, ...) open the dashboard.
   const v = new URLSearchParams(window.location.search).get('view') as ViewMode | null;
-  return v && VIEW_MODES.includes(v) ? v : 'dashboard';
+  if (v && VIEW_MODES.includes(v)) return v;
+  const folder = window.location.pathname.split('/').filter(Boolean).reverse().find((p) => ROUTED_PATHS.includes(p));
+  const match = (Object.keys(VIEW_PATHS) as ViewMode[]).find((m) => VIEW_PATHS[m] === folder);
+  return match || 'dashboard';
+}
+
+function urlFor(view: ViewMode, recordId?: string): string {
+  return `${siteRoot()}${VIEW_PATHS[view]}/${recordId ? `?record=${encodeURIComponent(recordId)}` : ''}`;
 }
 
 function getMainTitle(node: any): string {
@@ -56,7 +83,21 @@ function ScreenLoading() {
 
 function CatalogApp() {
   const { darkMode, setDarkMode } = useTheme();
-  const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>(viewFromLocation);
+
+  // Shows a screen and puts its address in the browser (Back/Forward and refresh follow it).
+  const navigate = (view: ViewMode, recordId?: string, replace = false) => {
+    setViewMode(view);
+    const url = urlFor(view, recordId);
+    if (url !== window.location.pathname + window.location.search) {
+      window.history[replace ? 'replaceState' : 'pushState'](null, '', url);
+    }
+  };
+  useEffect(() => {
+    const onPop = () => setViewMode(viewFromLocation());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   // Fresh, clean BIBFRAME record with no pre-entered data
   const [work, setWork] = useState<Partial<BIBFRAMEWork>>(() => ({
@@ -96,29 +137,31 @@ function CatalogApp() {
     }
   }, [work, instance]);
 
-  const openInEditor = (record: any, title: string) => {
+  const openInEditor = (record: any, title: string, replaceUrl = false) => {
     setWork(record.work);
     setInstance(record.instance);
     // Keep the loaded record's Item, Expression, AdminMetadata and storage id for the editor.
     setCurrentRecord({ ...record, work: record.work, instance: record.instance });
-    setViewMode('wolf-moon');
+    // A saved record's address (/moon/?record=…) reopens it after a refresh.
+    navigate('wolf-moon', record.metadata?.storageId, replaceUrl);
     toast.success(`Loaded into Moon Studio: ${title}`);
   };
 
   // A saved record from the record list (SavedRecord with .record in work/instance form).
-  const handleLoadRecordFromGallery = (savedRecord: any) => {
+  const handleLoadRecordFromGallery = (savedRecord: any, replaceUrl = false) => {
     try {
       const record = savedRecord?.record;
       if (!record) throw new Error('No record data found');
+      const withId = (r: any) => ({ ...r, metadata: { ...(r.metadata || {}), storageId: r.metadata?.storageId || savedRecord.id } });
       if (record.work && record.instance) {
-        openInEditor(record, savedRecord.title);
+        openInEditor(withId(record), savedRecord.title, replaceUrl);
         return;
       }
       const graph = record['@graph'];
       const workNode = Array.isArray(graph) ? graph.find(isWorkNode) : null;
       const instanceNode = Array.isArray(graph) ? graph.find(isInstanceNode) : null;
       if (!workNode || !instanceNode) throw new Error('Invalid BIBFRAME graph: missing Work or Instance');
-      openInEditor({ ...record, work: workNode, instance: instanceNode }, savedRecord.title);
+      openInEditor(withId({ ...record, work: workNode, instance: instanceNode }), savedRecord.title, replaceUrl);
     } catch (error) {
       console.error('Failed to load record:', error);
       toast.error(`Failed to load record: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -157,10 +200,22 @@ function CatalogApp() {
     setWork({ '@type': 'bf:Work', '@id': newWorkId });
     setInstance({ '@type': 'bf:Instance', '@id': `${BASE_URI}/instance/${Date.now()}`, 'bf:instanceOf': { '@id': newWorkId } });
     setCurrentRecord(null);
-    setViewMode('wolf-moon');
+    navigate('wolf-moon');
   };
 
-  const toDashboard = () => setViewMode('dashboard');
+  // Opening /moon/?record=… (a refresh or a shared link) reopens that saved record.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('record');
+    if (viewMode !== 'wolf-moon' || !id) return;
+    getRecordById(id).then((saved) => {
+      if (saved) handleLoadRecordFromGallery(saved, true);
+      else toast.error('That record could not be found; starting a new record.');
+    });
+    // Only on first load: later navigation sets the record itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toDashboard = () => navigate('dashboard');
 
   const withNav = (content: React.ReactNode, className = '') => (
     <div className={`${darkMode ? 'dark' : ''} ${className}`}>
@@ -185,7 +240,10 @@ function CatalogApp() {
             initialWork={work}
             initialInstance={instance}
             initialRecord={currentRecord}
-            onRecordSaved={() => toast.success('Record saved! View it in All Records.')}
+            onRecordSaved={(storageId) => {
+              // From now on a refresh reopens this record instead of an empty one.
+              if (storageId) window.history.replaceState(null, '', urlFor('wolf-moon', storageId));
+            }}
             onRestoreDraft={(draft) => {
               setDraftRestores(n => n + 1);
               setWork(draft.work);
@@ -215,7 +273,11 @@ function CatalogApp() {
     default:
       screen = withNav(
         <Dashboard
-          onNavigate={(view) => setViewMode(VIEW_MODES.includes(view as ViewMode) ? (view as ViewMode) : 'dashboard')}
+          onNavigate={(view) => {
+            // Opening Moon Studio from the dashboard always starts a new record, never the last one opened.
+            if (view === 'wolf-moon') handleNewRecord();
+            else navigate(VIEW_MODES.includes(view as ViewMode) ? (view as ViewMode) : 'dashboard');
+          }}
           onLoadRecord={handleLoadRecord}
         />,
         'liquid-glass-spatial-canvas min-h-screen py-2'

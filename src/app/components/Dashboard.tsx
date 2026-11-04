@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Badge } from './ui/badge';
 import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
-import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord } from '../utils/recordStorageBackend';
+import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, sendBackRecord } from '../utils/recordStorageBackend';
 import type { BIBFRAMERecord } from '../types/bibframe';
 import { ActivityLog } from './ActivityLog';
 import { toast } from 'sonner';
@@ -117,6 +117,21 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
 
   
   const isIsaac = user?.username?.toLowerCase() === 'isaac' || isSuperAdmin || user?.username?.toLowerCase() === 'admin';
+
+  const handleSendBackRecord = async (e: React.MouseEvent, recordId: string, recordTitle: string) => {
+    e.stopPropagation();
+    try {
+      await sendBackRecord(recordId, user?.username || 'isaac');
+      toast.success(`"${recordTitle}" was sent back to its cataloger for changes.`);
+      setSavedRecords(prev => prev.map(r => r.id === recordId ? {
+        ...r,
+        status: 'needs-review',
+        record: { ...r.record, metadata: { ...r.record?.metadata, status: 'needs-review' } as any }
+      } : r));
+    } catch (err) {
+      toast.error('Could not send the record back', { description: err instanceof Error ? err.message : undefined });
+    }
+  };
 
   const handleApproveRecord = async (e: React.MouseEvent, recordId: string, recordTitle: string) => {
     e.stopPropagation();
@@ -672,6 +687,15 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                         <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
                         <span>Pending Review</span>
                       </span>
+                    ) : record.status === 'needs-review' ? (
+                      <span
+                        className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold"
+                        style={{ borderRadius: '120px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#b91c1c' }}
+                        title="Sent back by the Super Admin: fix it and save again to resubmit"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5 text-red-600" />
+                        <span>Needs Changes</span>
+                      </span>
                     ) : (
                       <span
                         className="flex items-center gap-1.5 px-3.5 py-1 text-xs font-bold"
@@ -700,6 +724,17 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         <span>Approve</span>
+                      </button>
+                    )}
+                    {isIsaac && record.status === 'pending-review' && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleSendBackRecord(e, record.id, record.title)}
+                        className="px-3 py-1 bg-white/70 hover:bg-white text-red-700 border border-red-300 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                        title="Send back to the cataloger for changes"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        <span>Send back</span>
                       </button>
                     )}
                     
