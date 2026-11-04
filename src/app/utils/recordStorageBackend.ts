@@ -425,6 +425,200 @@ export async function saveRecord(record: BIBFRAMERecord, cataloger?: string, opt
   }
 }
 
+/** One record as the server lists it (JSON-LD @graph), in the app's work/instance form. */
+function fromServerRecord(serverRecord: any): SavedRecord {
+  // Normalize @graph immediately - ONE structure everywhere
+  const graph = serverRecord.document?.['@graph'] || serverRecord['@graph'];
+  
+  if (!graph || !Array.isArray(graph)) {
+    console.error("No @graph found in record:", serverRecord.id);
+    throw new Error(`Invalid record ${serverRecord.id}: missing @graph`);
+  }
+
+  // Extract Work and Instance - throw error if invalid (NO TEMPLATE FALLBACK)
+  let work: any;
+  let instance: any;
+  
+  try {
+    const nodes = extractNodesFromGraph(graph);
+    work = nodes.work;
+    instance = nodes.instance;
+  } catch (error) {
+    console.error(`Failed to extract nodes from record ${serverRecord.id}:`, error);
+    // Try recovery from relationships if extraction failed
+    const potentialInstance = graph.find((n: any) => n['bf:instanceOf']);
+    if (potentialInstance) {
+      instance = potentialInstance;
+      if (!instance['@type']) instance['@type'] = 'bf:Instance';
+      
+      const workId = instance['bf:instanceOf']['@id'];
+      if (workId) {
+        const potentialWork = graph.find((n: any) => n['@id'] === workId);
+        if (potentialWork) {
+          work = potentialWork;
+          if (!work['@type']) work['@type'] = 'bf:Work';
+        }
+      }
+    }
+    
+    // If still no work/instance, this record is corrupted
+    if (!work || !instance) {
+      throw new Error(`Corrupted record ${serverRecord.id}: cannot recover Work or Instance`);
+    }
+  }
+  
+  // Helper to safely extract string from potentially nested title objects
+  const extractTitleString = (titleValue: any): string => {
+    if (!titleValue) return '';
+    if (typeof titleValue === 'string') return titleValue;
+    
+    // If it's an object, try to extract string value
+    if (typeof titleValue === 'object') {
+      // First try common BIBFRAME properties
+      if (typeof titleValue['bf:mainTitle'] === 'string') return titleValue['bf:mainTitle'];
+      if (typeof titleValue['rdfs:label'] === 'string') return titleValue['rdfs:label'];
+      if (typeof titleValue['mainTitle'] === 'string') return titleValue['mainTitle'];
+      
+      // If bf:mainTitle is itself an object with nested values
+      if (titleValue['bf:mainTitle'] && typeof titleValue['bf:mainTitle'] === 'object') {
+        if (titleValue['bf:mainTitle']['@value']) return String(titleValue['bf:mainTitle']['@value']);
+        if (titleValue['bf:mainTitle']['rdfs:label']) return String(titleValue['bf:mainTitle']['rdfs:label']);
+      }
+    }
+    
+    return '';
+  };
+
+  // Enhanced title extraction - check Title node first
+  let title = serverRecord.title || 'Untitled Record';
+  
+  // Ensure title is a string even if serverRecord.title is an object
+  if (typeof title === 'object') {
+    const extracted = extractTitleString(title);
+    title = extracted || 'Untitled Record';
+  }
+  
+  // If title is still default, try to extract from Title node in graph
+  if (title === 'Untitled Record') {
+    const titleNode = graph.find((n: any) => n['@type'] === 'bf:Title');
+    if (titleNode) {
+      // Check for mainTitle and subtitle separately
+      let mainTitle = '';
+      let subtitle = '';
+      
+      if (titleNode.mainTitle) mainTitle = String(titleNode.mainTitle);
+      if (titleNode.subtitle) subtitle = String(titleNode.subtitle);
+      
+      // Combine mainTitle and subtitle
+      if (mainTitle) {
+        title = subtitle ? `${mainTitle} ${subtitle}` : mainTitle;
+        console.log(`📖 Extracted title from Title node: "${title}" (record: ${serverRecord.id})`);
+      } else {
+        const extracted = extractTitleString(titleNode);
+        title = extracted || 'Untitled Record';
+      }
+    }
+  }
+  
+  // Fallback to instance title property (might be URI reference to Title node)
+  if (title === 'Untitled Record') {
+    const instanceTitleRef = instance['title'];
+    if (instanceTitleRef && typeof instanceTitleRef === 'string') {
+      // It's a URI reference - find the actual Title node
+      const titleNode = graph.find((n: any) => n['@id'] === instanceTitleRef);
+      if (titleNode) {
+        let mainTitle = '';
+        let subtitle = '';
+        
+        if (titleNode.mainTitle) mainTitle = String(titleNode.mainTitle);
+        if (titleNode.subtitle) subtitle = String(titleNode.subtitle);
+        
+        if (mainTitle) {
+          title = subtitle ? `${mainTitle} ${subtitle}` : mainTitle;
+        }
+      }
+    } else if (instanceTitleRef) {
+      const extracted = extractTitleString(instanceTitleRef);
+      if (extracted) title = extracted;
+    }
+  }
+  
+  // Fallback to work title property (might be URI reference to Title node)
+  if (title === 'Untitled Record') {
+    const workTitleRef = work['title'];
+    if (workTitleRef && typeof workTitleRef === 'string') {
+      // It's a URI reference - find the actual Title node
+      const titleNode = graph.find((n: any) => n['@id'] === workTitleRef);
+      if (titleNode) {
+        let mainTitle = '';
+        let subtitle = '';
+        
+        if (titleNode.mainTitle) mainTitle = String(titleNode.mainTitle);
+        if (titleNode.subtitle) subtitle = String(titleNode.subtitle);
+        
+        if (mainTitle) {
+          title = subtitle ? `${mainTitle} ${subtitle}` : mainTitle;
+        }
+      }
+    } else if (workTitleRef) {
+      const extracted = extractTitleString(workTitleRef);
+      if (extracted) title = extracted;
+    }
+  }
+  
+  if (title === 'Untitled Record' && instance['rdfs:label']) {
+    title = String(instance['rdfs:label']);
+  }
+  if (title === 'Untitled Record' && work['rdfs:label']) {
+    title = String(work['rdfs:label']);
+  }
+  
+  const status = normalizeStatus(serverRecord.status || serverRecord.metadata?.status);
+
+  // CRITICAL FIX: Convert @graph format to work/instance format
+  const convertedRecord: BIBFRAMERecord = {
+    '@context': serverRecord.document?.['@context'] || {
+      'bf': 'http://id.loc.gov/ontologies/bibframe/',
+      'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+      'rdfs': 'http://www.w3.org/2000/01/rdf-schema#',
+    },
+    work: work,
+    instance: instance,
+    ...extractExtraNodes(graph, serverRecord.metadata, work, instance),
+    metadata: {
+      storageId: serverRecord.id,
+      catalogingLanguage: serverRecord.metadata?.catalogingLanguage || 'en',
+      descriptionConventions: serverRecord.metadata?.descriptionConventions || 'rda',
+      resourceType: serverRecord.metadata?.resourceType || 'Text',
+      catalogingInterface: serverRecord.metadata?.catalogingInterface,
+      templateId: serverRecord.metadata?.templateId,
+      recordId: serverRecord.metadata?.recordId,
+      uriSet: serverRecord.metadata?.uriSet,
+      ontologyVersion: serverRecord.metadata?.ontologyVersion,
+      createdAt: serverRecord.metadata?.createdAt,
+      catalogerId: serverRecord.metadata?.catalogerId,
+      status,
+      serverVersion: serverRecord.version,
+    } as any
+  };
+
+  return {
+    id: serverRecord.id,
+    // Store the converted work/instance format
+    record: convertedRecord,
+    title: title,
+    createdAt: serverRecord.createdAt || serverRecord.metadata?.createdAt || serverRecord.saved || new Date().toISOString(),
+    modifiedAt: serverRecord.saved || serverRecord.metadata?.modifiedAt || new Date().toISOString(),
+    cataloger: serverRecord.cataloger || serverRecord.metadata?.cataloger || serverRecord.metadata?.catalogerId,
+    resourceType: serverRecord.metadata?.resourceType,
+    status,
+    approvedBy: serverRecord.approvedBy,
+    approvedAt: serverRecord.approvedAt,
+    version: serverRecord.version,
+    publishedVersion: serverRecord.publishedVersion,
+  };
+}
+
 /**
  * Every record from the server, merged with this browser's local copies. With `published`, only what
  * the public catalogue shows: each published record at its published version (an edit waiting for
@@ -447,198 +641,7 @@ export async function getAllRecords(options: { published?: boolean } = {}): Prom
     // Convert server format to SavedRecord format
     const convertedRecords: SavedRecord[] = supabaseRecords
       .filter((serverRecord: any) => serverRecord && !deletedIds.has(serverRecord.id))
-      .map((serverRecord: any) => {
-      // Normalize @graph immediately - ONE structure everywhere
-      const graph = serverRecord.document?.['@graph'] || serverRecord['@graph'];
-      
-      if (!graph || !Array.isArray(graph)) {
-        console.error("No @graph found in record:", serverRecord.id);
-        throw new Error(`Invalid record ${serverRecord.id}: missing @graph`);
-      }
-
-      // Extract Work and Instance - throw error if invalid (NO TEMPLATE FALLBACK)
-      let work: any;
-      let instance: any;
-      
-      try {
-        const nodes = extractNodesFromGraph(graph);
-        work = nodes.work;
-        instance = nodes.instance;
-      } catch (error) {
-        console.error(`Failed to extract nodes from record ${serverRecord.id}:`, error);
-        // Try recovery from relationships if extraction failed
-        const potentialInstance = graph.find((n: any) => n['bf:instanceOf']);
-        if (potentialInstance) {
-          instance = potentialInstance;
-          if (!instance['@type']) instance['@type'] = 'bf:Instance';
-          
-          const workId = instance['bf:instanceOf']['@id'];
-          if (workId) {
-            const potentialWork = graph.find((n: any) => n['@id'] === workId);
-            if (potentialWork) {
-              work = potentialWork;
-              if (!work['@type']) work['@type'] = 'bf:Work';
-            }
-          }
-        }
-        
-        // If still no work/instance, this record is corrupted
-        if (!work || !instance) {
-          throw new Error(`Corrupted record ${serverRecord.id}: cannot recover Work or Instance`);
-        }
-      }
-      
-      // Helper to safely extract string from potentially nested title objects
-      const extractTitleString = (titleValue: any): string => {
-        if (!titleValue) return '';
-        if (typeof titleValue === 'string') return titleValue;
-        
-        // If it's an object, try to extract string value
-        if (typeof titleValue === 'object') {
-          // First try common BIBFRAME properties
-          if (typeof titleValue['bf:mainTitle'] === 'string') return titleValue['bf:mainTitle'];
-          if (typeof titleValue['rdfs:label'] === 'string') return titleValue['rdfs:label'];
-          if (typeof titleValue['mainTitle'] === 'string') return titleValue['mainTitle'];
-          
-          // If bf:mainTitle is itself an object with nested values
-          if (titleValue['bf:mainTitle'] && typeof titleValue['bf:mainTitle'] === 'object') {
-            if (titleValue['bf:mainTitle']['@value']) return String(titleValue['bf:mainTitle']['@value']);
-            if (titleValue['bf:mainTitle']['rdfs:label']) return String(titleValue['bf:mainTitle']['rdfs:label']);
-          }
-        }
-        
-        return '';
-      };
-
-      // Enhanced title extraction - check Title node first
-      let title = serverRecord.title || 'Untitled Record';
-      
-      // Ensure title is a string even if serverRecord.title is an object
-      if (typeof title === 'object') {
-        const extracted = extractTitleString(title);
-        title = extracted || 'Untitled Record';
-      }
-      
-      // If title is still default, try to extract from Title node in graph
-      if (title === 'Untitled Record') {
-        const titleNode = graph.find((n: any) => n['@type'] === 'bf:Title');
-        if (titleNode) {
-          // Check for mainTitle and subtitle separately
-          let mainTitle = '';
-          let subtitle = '';
-          
-          if (titleNode.mainTitle) mainTitle = String(titleNode.mainTitle);
-          if (titleNode.subtitle) subtitle = String(titleNode.subtitle);
-          
-          // Combine mainTitle and subtitle
-          if (mainTitle) {
-            title = subtitle ? `${mainTitle} ${subtitle}` : mainTitle;
-            console.log(`📖 Extracted title from Title node: "${title}" (record: ${serverRecord.id})`);
-          } else {
-            const extracted = extractTitleString(titleNode);
-            title = extracted || 'Untitled Record';
-          }
-        }
-      }
-      
-      // Fallback to instance title property (might be URI reference to Title node)
-      if (title === 'Untitled Record') {
-        const instanceTitleRef = instance['title'];
-        if (instanceTitleRef && typeof instanceTitleRef === 'string') {
-          // It's a URI reference - find the actual Title node
-          const titleNode = graph.find((n: any) => n['@id'] === instanceTitleRef);
-          if (titleNode) {
-            let mainTitle = '';
-            let subtitle = '';
-            
-            if (titleNode.mainTitle) mainTitle = String(titleNode.mainTitle);
-            if (titleNode.subtitle) subtitle = String(titleNode.subtitle);
-            
-            if (mainTitle) {
-              title = subtitle ? `${mainTitle} ${subtitle}` : mainTitle;
-            }
-          }
-        } else if (instanceTitleRef) {
-          const extracted = extractTitleString(instanceTitleRef);
-          if (extracted) title = extracted;
-        }
-      }
-      
-      // Fallback to work title property (might be URI reference to Title node)
-      if (title === 'Untitled Record') {
-        const workTitleRef = work['title'];
-        if (workTitleRef && typeof workTitleRef === 'string') {
-          // It's a URI reference - find the actual Title node
-          const titleNode = graph.find((n: any) => n['@id'] === workTitleRef);
-          if (titleNode) {
-            let mainTitle = '';
-            let subtitle = '';
-            
-            if (titleNode.mainTitle) mainTitle = String(titleNode.mainTitle);
-            if (titleNode.subtitle) subtitle = String(titleNode.subtitle);
-            
-            if (mainTitle) {
-              title = subtitle ? `${mainTitle} ${subtitle}` : mainTitle;
-            }
-          }
-        } else if (workTitleRef) {
-          const extracted = extractTitleString(workTitleRef);
-          if (extracted) title = extracted;
-        }
-      }
-      
-      if (title === 'Untitled Record' && instance['rdfs:label']) {
-        title = String(instance['rdfs:label']);
-      }
-      if (title === 'Untitled Record' && work['rdfs:label']) {
-        title = String(work['rdfs:label']);
-      }
-      
-      const status = normalizeStatus(serverRecord.status || serverRecord.metadata?.status);
-
-      // CRITICAL FIX: Convert @graph format to work/instance format
-      const convertedRecord: BIBFRAMERecord = {
-        '@context': serverRecord.document?.['@context'] || {
-          'bf': 'http://id.loc.gov/ontologies/bibframe/',
-          'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-          'rdfs': 'http://www.w3.org/2000/01/rdf-schema#',
-        },
-        work: work,
-        instance: instance,
-        ...extractExtraNodes(graph, serverRecord.metadata, work, instance),
-        metadata: {
-          storageId: serverRecord.id,
-          catalogingLanguage: serverRecord.metadata?.catalogingLanguage || 'en',
-          descriptionConventions: serverRecord.metadata?.descriptionConventions || 'rda',
-          resourceType: serverRecord.metadata?.resourceType || 'Text',
-          catalogingInterface: serverRecord.metadata?.catalogingInterface,
-          templateId: serverRecord.metadata?.templateId,
-          recordId: serverRecord.metadata?.recordId,
-          uriSet: serverRecord.metadata?.uriSet,
-          ontologyVersion: serverRecord.metadata?.ontologyVersion,
-          createdAt: serverRecord.metadata?.createdAt,
-          catalogerId: serverRecord.metadata?.catalogerId,
-          status,
-          serverVersion: serverRecord.version,
-        } as any
-      };
-
-      return {
-        id: serverRecord.id,
-        // Store the converted work/instance format
-        record: convertedRecord,
-        title: title,
-        createdAt: serverRecord.createdAt || serverRecord.metadata?.createdAt || serverRecord.saved || new Date().toISOString(),
-        modifiedAt: serverRecord.saved || serverRecord.metadata?.modifiedAt || new Date().toISOString(),
-        cataloger: serverRecord.cataloger || serverRecord.metadata?.cataloger || serverRecord.metadata?.catalogerId,
-        resourceType: serverRecord.metadata?.resourceType,
-        status,
-        approvedBy: serverRecord.approvedBy,
-        approvedAt: serverRecord.approvedAt,
-        version: serverRecord.version,
-        publishedVersion: serverRecord.publishedVersion,
-      };
-    });
+      .map(fromServerRecord);
 
     if (options.published) return convertedRecords;
     
@@ -1032,21 +1035,46 @@ export async function updateRecord(id: string, record: BIBFRAMERecord, cataloger
   }
 }
 
-export async function searchRecords(query: string): Promise<SavedRecord[]> {
-  const records = await getAllRecords();
-  
-  if (!query) return records;
-  
-  const lowerQuery = query.toLowerCase();
-  
-  return records.filter((record) => {
-    const titleMatch = record.title.toLowerCase().includes(lowerQuery);
-    const creatorMatch = record.record.work['bf:creator']?.some((creator) =>
-      creator.label?.toLowerCase().includes(lowerQuery)
-    );
-    const catalogerMatch = record.cataloger?.toLowerCase().includes(lowerQuery);
-    return titleMatch || creatorMatch || catalogerMatch;
-  });
+export interface RecordSearchFilters {
+  status?: string;
+  cataloger?: string;
+  language?: string;
+  template?: string;
+}
+
+export interface RecordSearchResult {
+  records: SavedRecord[];
+  /** All matches, not just this page. */
+  total: number;
+  /** How many matches fall under each status, cataloger, language and template. */
+  facets: Record<'status' | 'cataloger' | 'language' | 'template', Record<string, number>>;
+}
+
+/**
+ * Searches records on the server: every word must match, however it is spelled (أ/إ/آ and ا, ة and ه,
+ * diacritics and romanization marks all match), with filters and paging. Signed out, or with
+ * `published`, only what the public catalogue shows.
+ */
+export async function searchRecords(
+  query: string,
+  options: RecordSearchFilters & { limit?: number; offset?: number; published?: boolean } = {},
+): Promise<RecordSearchResult> {
+  const params = new URLSearchParams({ q: query });
+  for (const key of ['status', 'cataloger', 'language', 'template'] as const) {
+    if (options[key]) params.set(key, options[key]!);
+  }
+  params.set('limit', String(options.limit ?? 50));
+  params.set('offset', String(options.offset ?? 0));
+  if (options.published) params.set('view', 'published');
+  const response = await fetch(`${API_BASE}/records/search?${params}`, { headers: moonHeaders() });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error || `Search failed: ${response.statusText}`);
+  const deletedIds = getDeletedRecordIds();
+  return {
+    records: (data.records || []).filter((r: any) => r && !deletedIds.has(r.id)).map(fromServerRecord),
+    total: data.total ?? 0,
+    facets: data.facets || { status: {}, cataloger: {}, language: {}, template: {} },
+  };
 }
 
 export interface ActivityLogItem {

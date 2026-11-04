@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
   SearchIcon, 
@@ -23,10 +23,30 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { SavedRecord, searchRecords, deleteRecord } from '../utils/recordStorageBackend';
+import { SavedRecord, searchRecords, deleteRecord, type RecordSearchFilters, type RecordSearchResult } from '../utils/recordStorageBackend';
 import { BIBFRAMERecord } from '../types/bibframe';
 import '../../styles/glassmorphism.css';
 import { toBibframeJsonLdString } from '../../services/bibframeNormalizer';
+
+const PAGE_SIZE = 50;
+
+// Labels for filter values; anything not listed shows as stored.
+const FILTER_LABELS: Record<keyof RecordSearchFilters, { en: string; ar: string; values: Record<string, { en: string; ar: string }> }> = {
+  status: { en: 'Status', ar: 'الحالة', values: {
+    complete: { en: 'Published', ar: 'منشور' },
+    'pending-review': { en: 'Pending review', ar: 'قيد المراجعة' },
+    'needs-review': { en: 'Returned', ar: 'معاد للتعديل' },
+  } },
+  language: { en: 'Language', ar: 'اللغة', values: {
+    ara: { en: 'Arabic', ar: 'العربية' }, eng: { en: 'English', ar: 'الإنجليزية' },
+    per: { en: 'Persian', ar: 'الفارسية' }, fre: { en: 'French', ar: 'الفرنسية' }, tur: { en: 'Turkish', ar: 'التركية' },
+  } },
+  template: { en: 'Template', ar: 'القالب', values: {
+    'monograph-complete': { en: 'Monograph', ar: 'كتاب' }, serial: { en: 'Serial', ar: 'دورية' },
+    manuscript: { en: 'Manuscript', ar: 'مخطوط' }, music: { en: 'Music', ar: 'موسيقى' }, map: { en: 'Map', ar: 'خريطة' },
+  } },
+  cataloger: { en: 'Cataloger', ar: 'المفهرس', values: {} },
+};
 
 interface SearchPageProps {
   onLoadRecord: (record: BIBFRAMERecord) => void;
@@ -34,27 +54,52 @@ interface SearchPageProps {
 }
 
 export function SearchPage({ onLoadRecord, onNewRecord }: SearchPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lang: 'en' | 'ar' = i18n.language === 'ar' ? 'ar' : 'en';
   const [query, setQuery] = useState('');
+  const [filters, setFilters] = useState<RecordSearchFilters>({});
   const [results, setResults] = useState<SavedRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [facets, setFacets] = useState<RecordSearchResult['facets']>({ status: {}, cataloger: {}, language: {}, template: {} });
+  const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<string | null>(null);
+  // Only the latest search's answer is shown, even if an earlier one returns later.
+  const latestSearch = useRef(0);
+
+  // The server does the searching: every word must match, Arabic spellings folded. Typing waits a
+  // moment before asking, so each keystroke isn't a request.
+  const runSearch = async (append = false) => {
+    const id = ++latestSearch.current;
+    setLoading(true);
+    try {
+      const found = await searchRecords(query, { ...filters, limit: PAGE_SIZE, offset: append ? results.length : 0 });
+      if (id !== latestSearch.current) return;
+      setResults(append ? [...results, ...found.records] : found.records);
+      setTotal(found.total);
+      setFacets(found.facets);
+      setSearchError(null);
+    } catch (error) {
+      if (id === latestSearch.current) setSearchError(error instanceof Error ? error.message : 'Search failed');
+    } finally {
+      if (id === latestSearch.current) setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Load all records initially
-    loadRecords();
-  }, []);
+    const timer = window.setTimeout(() => runSearch(false), query ? 250 : 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, filters]);
 
-  const loadRecords = async () => {
-    const allRecords = await searchRecords('');
-    setResults(allRecords);
-  };
+  const handleSearch = (searchQuery: string) => setQuery(searchQuery);
 
-  const handleSearch = async (searchQuery: string) => {
-    setQuery(searchQuery);
-    const foundRecords = await searchRecords(searchQuery);
-    setResults(foundRecords);
-  };
+  const setFilter = (key: keyof RecordSearchFilters, value: string) =>
+    setFilters((f) => ({ ...f, [key]: value || undefined }));
+
+  const filterLabel = (key: keyof RecordSearchFilters, value: string) =>
+    FILTER_LABELS[key].values[value]?.[lang] || value;
 
   const handleDelete = (id: string) => {
     setRecordToDelete(id);
@@ -65,8 +110,7 @@ export function SearchPage({ onLoadRecord, onNewRecord }: SearchPageProps) {
     if (recordToDelete) {
       try {
         await deleteRecord(recordToDelete);
-        const updatedRecords = await searchRecords(query);
-        setResults(updatedRecords);
+        await runSearch(false);
       } catch (error) {
         alert(error instanceof Error ? error.message : 'Failed to delete record');
       }
@@ -305,14 +349,44 @@ export function SearchPage({ onLoadRecord, onNewRecord }: SearchPageProps) {
             </div>
           </div>
 
-          {/* Results Count */}
-          <div className="mt-6 flex items-center gap-2">
+          {/* Filters (each with how many current matches it has) and Results Count */}
+          <div className="mt-6 flex flex-wrap items-center gap-2" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
             <div className="glass-panel px-4 py-2 flex items-center gap-2">
               <BookOpen className="h-4 w-4" style={{ color: '#575757' }} />
               <span className="font-bold" style={{ color: '#575757' }}>
-                {results.length} {t('recordsFound')}
+                {total} {t('recordsFound')}
               </span>
             </div>
+            {(['status', 'language', 'template', 'cataloger'] as const).map((key) => {
+              const options = Object.entries(facets[key] || {}).sort((a, b) => b[1] - a[1]);
+              if (options.length === 0 && !filters[key]) return null;
+              return (
+                <label key={key} className="glass-panel px-3 py-1.5 flex items-center gap-2 text-sm" style={{ color: '#575757' }}>
+                  <span className="font-semibold">{FILTER_LABELS[key][lang]}</span>
+                  <select
+                    value={filters[key] || ''}
+                    onChange={(e) => setFilter(key, e.target.value)}
+                    className="bg-transparent font-bold outline-none cursor-pointer"
+                    style={{ color: '#575757' }}
+                  >
+                    <option value="">{lang === 'ar' ? 'الكل' : 'All'}</option>
+                    {options.map(([value, n]) => (
+                      <option key={value} value={value}>{filterLabel(key, value)} ({n})</option>
+                    ))}
+                    {filters[key] && !facets[key]?.[filters[key]!] && (
+                      <option value={filters[key]}>{filterLabel(key, filters[key]!)} (0)</option>
+                    )}
+                  </select>
+                </label>
+              );
+            })}
+            {Object.values(filters).some(Boolean) && (
+              <button type="button" onClick={() => setFilters({})} className="glass-button px-3 py-1.5 text-sm font-semibold" style={{ color: '#575757' }}>
+                {lang === 'ar' ? 'مسح التصفية' : 'Clear filters'}
+              </button>
+            )}
+            {loading && <span className="text-sm" style={{ color: '#575757', opacity: 0.7 }}>{lang === 'ar' ? 'جارٍ البحث…' : 'Searching…'}</span>}
+            {searchError && <span className="text-sm font-semibold text-red-600">{searchError}</span>}
           </div>
         </div>
 
@@ -342,7 +416,9 @@ export function SearchPage({ onLoadRecord, onNewRecord }: SearchPageProps) {
               const creator = workNode?.['bf:contributor']?.[0] || workNode?.['bf:creator']?.[0];
               const publisher = instanceNode?.['bf:provisionActivity']?.[0]?.['bf:agent']?.['rdfs:label'];
               const date = instanceNode?.['bf:provisionActivity']?.[0]?.['bf:date'];
-              const displayTitle = extractTitle(savedRecord.record);
+              const extracted = extractTitle(savedRecord.record);
+              // The server's title when the record's own nodes don't spell one out.
+              const displayTitle = extracted !== 'Untitled Record' ? extracted : (savedRecord.title && savedRecord.title !== 'Untitled' ? savedRecord.title : extracted);
 
               return (
                 <div
@@ -494,6 +570,23 @@ export function SearchPage({ onLoadRecord, onNewRecord }: SearchPageProps) {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Paging: the server sends 50 at a time */}
+        {results.length < total && (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => runSearch(true)}
+              disabled={loading}
+              className="glass-button px-8 py-3 text-base font-semibold hover:scale-105 transition-transform disabled:opacity-60"
+              style={{ color: '#575757' }}
+            >
+              {loading
+                ? (lang === 'ar' ? 'جارٍ التحميل…' : 'Loading…')
+                : (lang === 'ar' ? `عرض المزيد (${results.length} من ${total})` : `Load more (${results.length} of ${total})`)}
+            </button>
           </div>
         )}
       </div>

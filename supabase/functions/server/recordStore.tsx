@@ -309,3 +309,41 @@ export async function editingLeave(id: string, username: string): Promise<void> 
   const { error } = await sb().rpc("moon_editing_leave", { p_id: id, p_user: username });
   if (error) throw new Error(`[records] editing leave ${id} failed: ${error.message}`);
 }
+
+export interface SearchOptions {
+  query?: string;
+  published?: boolean;
+  status?: string;
+  cataloger?: string;
+  language?: string;
+  template?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SearchResult {
+  total: number;
+  records: Array<StoredRecord & { language?: string; template?: string }>;
+  facets: Record<"status" | "cataloger" | "language" | "template", Record<string, number>>;
+}
+
+/**
+ * One page of records matching every word of the query, however it is spelled (Arabic letter variants,
+ * diacritics and romanization marks are folded), with filters and per-filter counts. With
+ * `published`, searches what the public catalogue shows. Records still only in the key-value table
+ * are not searched; after the move there are none.
+ */
+export async function searchRecords(o: SearchOptions): Promise<SearchResult> {
+  const { data, error } = await sb().rpc("moon_search_records", {
+    p_query: o.query ?? "",
+    p_published: !!o.published,
+    p_status: o.status || null,
+    p_cataloger: o.cataloger || null,
+    p_language: o.language || null,
+    p_template: o.template || null,
+    p_limit: o.limit ?? 50,
+    p_offset: o.offset ?? 0,
+  });
+  if (error) throw new Error(`[records] search failed: ${error.message}`);
+  return data as SearchResult;
+}
