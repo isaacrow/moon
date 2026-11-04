@@ -28,6 +28,7 @@ import * as observability from "./observability.tsx";
 import * as loadTesting from "./loadTesting.tsx";
 import recordRoutes from "./recordRoutes.tsx";
 import accountRoutes, { getSession, isAdminSession } from "./accountRoutes.tsx";
+import * as recordStore from "./recordStore.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
@@ -638,9 +639,7 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
       ? (requestedStatus === 'pending-review' ? 'pending-review' : 'complete')
       : 'pending-review';
 
-    const recordKey = `bibframe:record:${id}`;
-    const existingRaw = await kv.get(recordKey);
-    const existing = existingRaw ? (typeof existingRaw === 'string' ? JSON.parse(existingRaw) : existingRaw) : null;
+    const existing = await recordStore.getRecord(id);
     // A cataloger edits their own records; anyone else's are the Super Admin's to change.
     if (existing && !isAdmin && existing.cataloger && existing.cataloger !== session.username) {
       return c.json({ error: 'This record belongs to another cataloger' }, 403);
@@ -648,8 +647,8 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     const now = new Date().toISOString();
     const cataloger = isAdmin && existing?.cataloger ? existing.cataloger : session.username;
 
-    // Store entire document as JSON-LD with metadata
-    await kv.set(recordKey, JSON.stringify({
+    // Each save is a new version of the record.
+    const version = await recordStore.saveRecord({
       id,
       title: title || existing?.title || 'Untitled',
       document,
@@ -661,9 +660,9 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
         ? { approvedBy: isAdmin ? session!.username : existing?.approvedBy, approvedAt: now }
         : {}),
       saved: now,
-    }));
+    }, session.username);
 
-    console.log(`[RECORDS] Saved record ${id} "${title || 'Untitled'}" (${status}) by ${cataloger} with ${document['@graph'].length} nodes`);
+    console.log(`[RECORDS] Saved record ${id} v${version} "${title || 'Untitled'}" (${status}) by ${cataloger} with ${document['@graph'].length} nodes`);
 
     return c.json({
       success: true,
@@ -671,6 +670,7 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
       title: title || 'Untitled',
       status,
       cataloger,
+      version,
       nodeCount: document['@graph'].length,
       saved: now,
     });
@@ -684,15 +684,12 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
 app.get("/make-server-49c0e13c/records/:id", async (c) => {
   try {
     const id = c.req.param('id');
-    const recordKey = `bibframe:record:${id}`;
-    
-    const data = await kv.get(recordKey);
-    
-    if (!data) {
+    const record = await recordStore.getRecord(id);
+
+    if (!record) {
       return c.json({ error: 'Record not found' }, 404);
     }
-    
-    const record = JSON.parse(data);
+
     // Pending and returned records are visible only to signed-in catalogers; the public sees published ones.
     if (!isPublished(record) && !(await getSession(c))) {
       return c.json({ error: 'Record not found' }, 404);
@@ -709,25 +706,24 @@ app.get("/make-server-49c0e13c/records/:id", async (c) => {
 // 📋 List All Records
 app.get("/make-server-49c0e13c/records", async (c) => {
   try {
-    const records = await kv.getByPrefix('bibframe:record:');
+    const records = await recordStore.listRecords();
     const signedIn = !!(await getSession(c));
 
     const recordList = records
-      .map((r: string) => JSON.parse(r))
       // Without a session only published records are listed.
-      .filter((record: any) => signedIn || isPublished(record))
-      .map((record: any) => ({
+      .filter((record) => signedIn || isPublished(record))
+      .map((record) => ({
         id: record.id,
         title: record.title || 'Untitled',
         document: record.document,
         metadata: record.metadata,
-        // Records saved before the review workflow existed are treated as published.
-        status: record.status || record.metadata?.status || 'complete',
-        cataloger: record.cataloger || record.metadata?.catalogerId,
+        status: record.status,
+        cataloger: record.cataloger,
         approvedBy: record.approvedBy,
         approvedAt: record.approvedAt,
         createdAt: record.createdAt || record.saved,
         saved: record.saved,
+        version: record.version,
         nodeCount: record.document?.['@graph']?.length || 0,
       }));
 
@@ -756,27 +752,16 @@ async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
       return c.json({ success: false, error: 'Super Admin session required' }, 403);
     }
     const id = c.req.param('id');
-    const recordKey = `bibframe:record:${id}`;
-    const raw = await kv.get(recordKey);
-    if (!raw) {
+    const record = await recordStore.reviewRecord(id, decision, admin.username);
+    if (!record) {
       return c.json({ success: false, error: 'Record not found' }, 404);
     }
-    const record = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    const now = new Date().toISOString();
-    record.status = decision;
-    record.metadata = { ...(record.metadata || {}), status: decision };
-    record.reviewedBy = admin.username;
-    record.reviewedAt = now;
-    if (decision === 'complete') {
-      record.approvedBy = admin.username;
-      record.approvedAt = now;
-    }
-    await kv.set(recordKey, JSON.stringify(record));
-    console.log(`[RECORDS] ${admin.username} set record ${id} -> ${decision}`);
+    console.log(`[RECORDS] ${admin.username} set record ${id} -> ${decision} (v${record.version})`);
     return c.json({
       success: true,
       id,
       status: decision,
+      version: record.version,
       approvedBy: record.approvedBy,
       approvedAt: record.approvedAt,
     });
@@ -793,23 +778,21 @@ app.post("/make-server-49c0e13c/records/:id/reject", (c) => reviewRecord(c, 'nee
 app.delete("/make-server-49c0e13c/records/:id", async (c) => {
   try {
     const id = c.req.param('id');
-    const recordKey = `bibframe:record:${id}`;
 
     // Only the Super Admin or the record's own cataloger may delete it.
     const session = await getSession(c);
     if (!session) {
       return c.json({ error: 'Please sign in to delete records' }, 401);
     }
-    const raw = await kv.get(recordKey);
-    if (raw && session.role !== 'admin') {
-      const existing = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      const owner = String(existing.cataloger || existing.metadata?.catalogerId || '').toLowerCase();
+    const existing = await recordStore.getRecord(id);
+    if (existing && session.role !== 'admin') {
+      const owner = String(existing.cataloger || '').toLowerCase();
       if (owner !== session.username.toLowerCase()) {
         return c.json({ error: 'Only the Super Admin or the record\'s cataloger can delete it' }, 403);
       }
     }
 
-    await kv.del(recordKey);
+    await recordStore.deleteRecord(id);
     console.log(`[RECORDS] ${session.username} deleted record ${id}`);
     
     return c.json({ success: true, id });
