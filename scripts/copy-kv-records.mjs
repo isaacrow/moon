@@ -1,8 +1,10 @@
 // Copies BIBFRAME records from the key-value table (kv_store_49c0e13c, keys bibframe:record:<id>) into
-// public.records, each with a version 1 in public.record_versions. The key-value rows are never changed.
+// public.records, each with a version 1 in public.record_versions. A record already copied whose
+// key-value row was saved later (an edit made before the server wrote to the tables) gets that newer
+// state as its next version ("synced from kv_store"). The key-value rows are never changed.
 //
 //   node scripts/copy-kv-records.mjs --dry-run  back up, then run the copy and roll it back: nothing is kept
-//   node scripts/copy-kv-records.mjs --apply    back up, then copy for real (records already copied are skipped)
+//   node scripts/copy-kv-records.mjs --apply    back up, then copy for real (records already up to date are skipped)
 //
 // Both modes first write every key-value record row, untouched, to backups/kv-records-<time>.json, and
 // write a summary of what was (or would be) copied and skipped to backups/copy-report-<time>.md.
@@ -69,21 +71,30 @@ export function toRecordRow(key, value) {
   };
 }
 
-/** SQL that inserts one batch of rows and their version 1, skipping records that are already there. */
+/**
+ * SQL for one batch: `synced` gives already-copied records whose key-value row is newer their next
+ * version; `records` and `versions` insert the rest with a version 1, skipping records already there.
+ */
 export function copySql(rows) {
   const json = JSON.stringify(rows);
   if (json.includes('$moon$')) throw new Error('A record contains the text $moon$, which this script uses as a quote');
   const ids = rows.map((r) => quote(r.id)).join(', ');
+  const batch = `jsonb_to_recordset($moon$${json}$moon$::jsonb) as x(
+  id text, title text, status text, cataloger text, document jsonb, metadata jsonb,
+  created_at timestamptz, updated_at timestamptz, approved_by text, approved_at timestamptz,
+  reviewed_by text, reviewed_at timestamptz)`;
   return {
+    synced: `public.moon_save_record(x.id, x.title, x.status, x.cataloger, x.document, x.metadata,
+  x.cataloger, x.updated_at, 'synced from kv_store', x.approved_by, x.approved_at)
+from ${batch}
+join public.records r on r.id = x.id
+where r.deleted_at is null and x.updated_at > r.updated_at`,
     records: `insert into public.records
   (id, title, status, cataloger, document, metadata, current_version, created_at, updated_at,
    approved_by, approved_at, reviewed_by, reviewed_at)
 select id, title, status, cataloger, document, metadata, 1, coalesce(created_at, now()),
   coalesce(updated_at, created_at, now()), approved_by, approved_at, reviewed_by, reviewed_at
-from jsonb_to_recordset($moon$${json}$moon$::jsonb) as x(
-  id text, title text, status text, cataloger text, document jsonb, metadata jsonb,
-  created_at timestamptz, updated_at timestamptz, approved_by text, approved_at timestamptz,
-  reviewed_by text, reviewed_at timestamptz)
+from ${batch}
 on conflict (id) do nothing`,
     versions: `insert into public.record_versions (record_id, version, title, status, document, metadata, saved_by, saved_at, note)
 select id, 1, title, status, document, metadata, cataloger, updated_at, 'migrated from kv_store'
@@ -112,33 +123,36 @@ function batches(rows) {
 
 /** Runs one batch inside a block that always fails at the end, so Postgres rolls everything back. */
 async function dryRunBatch(batch) {
-  const { records, versions } = copySql(batch);
+  const { synced, records, versions } = copySql(batch);
   const block = `do $do$
-declare nr integer; nv integer;
+declare ns integer; nr integer; nv integer;
 begin
+  perform ${synced};
+  get diagnostics ns = row_count;
   ${records};
   get diagnostics nr = row_count;
   ${versions};
   get diagnostics nv = row_count;
-  raise exception '${DRY_RUN_MARK} records=% versions=%', nr, nv;
+  raise exception '${DRY_RUN_MARK} synced=% records=% versions=%', ns, nr, nv;
 end
 $do$`;
   try {
     await sql(block);
   } catch (e) {
-    const m = String(e.message).match(new RegExp(`${DRY_RUN_MARK} records=(\\d+) versions=(\\d+)`));
-    if (m) return { records: Number(m[1]), versions: Number(m[2]) };
+    const m = String(e.message).match(new RegExp(`${DRY_RUN_MARK} synced=(\\d+) records=(\\d+) versions=(\\d+)`));
+    if (m) return { synced: Number(m[1]), records: Number(m[2]), versions: Number(m[3]) };
     throw e;
   }
   throw new Error('The dry run did not roll back as expected; stopping.');
 }
 
 async function applyBatch(batch) {
-  const { records, versions } = copySql(batch);
+  const { synced, records, versions } = copySql(batch);
+  const [{ n: syncedCount }] = await sql(`with s as (select ${synced}) select count(*)::int as n from s`);
   const before = await counts(batch);
   await sql(`begin;\n${records};\n${versions};\ncommit;`);
   const after = await counts(batch);
-  return { records: after.records - before.records, versions: after.versions - before.versions };
+  return { synced: syncedCount, records: after.records - before.records, versions: after.versions - before.versions };
 }
 
 async function counts(batch) {
@@ -172,10 +186,10 @@ for (const { key, value } of kvRows) {
 }
 
 const [existing] = await sql('select (select count(*) from public.records)::int as records, (select count(*) from public.record_versions)::int as versions');
-let copied = { records: 0, versions: 0 };
+let copied = { synced: 0, records: 0, versions: 0 };
 for (const batch of batches(rows)) {
   const n = mode === 'apply' ? await applyBatch(batch) : await dryRunBatch(batch);
-  copied = { records: copied.records + n.records, versions: copied.versions + n.versions };
+  copied = { synced: copied.synced + n.synced, records: copied.records + n.records, versions: copied.versions + n.versions };
 }
 
 const byStatus = {};
@@ -187,6 +201,7 @@ const report = [
   `- Key-value records found: **${kvRows.length}** (backup: \`${backupFile}\`)`,
   `- Already in the records table before this run: ${existing.records} records, ${existing.versions} versions`,
   `- ${verb}: **${copied.records} records** and **${copied.versions} versions**`,
+  `- ${mode === 'apply' ? 'Updated' : 'Would update'} with a newer key-value save: **${copied.synced} records** (one new version each)`,
   `- Ready to copy by status: ${Object.entries(byStatus).map(([s, n]) => `${s} ${n}`).join(', ') || 'none'}`,
   `- Skipped: **${skipped.length}**`,
   ...skipped.map((s) => `  - \`${s.key}\`: ${s.reason}`),
