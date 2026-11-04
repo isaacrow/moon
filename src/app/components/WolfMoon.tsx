@@ -1379,7 +1379,13 @@ export default function WolfMoon({
       clearDraft();
       const initialStatus = saved.status || "complete";
       setSaveStatus("saved");
-      if (initialStatus === "pending-review") {
+      if (initialStatus === "pending-review" && saved.publishedVersion) {
+        // An edit to a published record: the catalogue keeps showing the published version meanwhile.
+        toast.info(
+          language === "ar" ? "تم حفظ التعديل وهو قيد المراجعة بانتظار اعتماد المشرف العام (isaac)" : "Edit saved and waiting for review by the Super Admin (isaac)",
+          { description: language === "ar" ? `يبقى الإصدار ${saved.publishedVersion} المنشور ظاهرًا في الفهرس العام حتى اعتماد التعديل.` : `The catalogue keeps showing the published version (v${saved.publishedVersion}) until your edit is approved.` },
+        );
+      } else if (initialStatus === "pending-review") {
         toast.info(language === "ar" ? "تم حفظ التسجيلة وهي قيد المراجعة بانتظار اعتماد المشرف العام (isaac)" : "Record saved! Status: Pending review by Super Admin (isaac)", { description: title });
       } else {
         toast.success(language === "ar" ? "تم حفظ التسجيلة واعتمادها في الفهرس العام!" : "Record saved and approved into catalog!", { description: title });

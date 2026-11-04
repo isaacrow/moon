@@ -22,11 +22,11 @@ export class HistoryError extends Error {
 
 const path = (id: string) => `/records/${encodeURIComponent(id)}`;
 
-/** Versions newest first, plus the number of the current one. */
-export async function fetchVersions(id: string): Promise<{ current: number | null; versions: RecordVersionSummary[] }> {
+/** Versions newest first, plus the current one and the one the public catalogue shows. */
+export async function fetchVersions(id: string): Promise<{ current: number | null; published: number | null; versions: RecordVersionSummary[] }> {
   const { ok, status, data } = await moonFetch(`${path(id)}/versions`);
   if (!ok) throw new HistoryError(data?.error || 'Could not load the history', status);
-  return { current: data.current ?? null, versions: data.versions || [] };
+  return { current: data.current ?? null, published: data.published ?? null, versions: data.versions || [] };
 }
 
 export async function fetchVersion(id: string, version: number): Promise<RecordVersion> {

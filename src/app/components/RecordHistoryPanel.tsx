@@ -27,7 +27,7 @@ type Compare = "previous" | "current";
 const L = {
   en: {
     title: "Version history", loading: "Loading history…", empty: "Save the record to start its history.",
-    signIn: "Sign in to see this record's history.", current: "current", by: "by",
+    signIn: "Sign in to see this record's history.", current: "current", live: "in catalogue", by: "by",
     previous: "What changed in this version", vsCurrent: "Compared with the current version",
     firstVersion: "This is the first version: there is nothing earlier to compare it with.",
     sameAsCurrent: "This is the current version.", noChanges: "No field changed.",
@@ -40,7 +40,7 @@ const L = {
   },
   ar: {
     title: "سجل الإصدارات", loading: "جارٍ تحميل السجل…", empty: "احفظ التسجيلة ليبدأ سجل إصداراتها.",
-    signIn: "سجّل الدخول لعرض سجل هذه التسجيلة.", current: "الحالي", by: "بواسطة",
+    signIn: "سجّل الدخول لعرض سجل هذه التسجيلة.", current: "الحالي", live: "في الفهرس", by: "بواسطة",
     previous: "ما الذي تغيّر في هذا الإصدار", vsCurrent: "مقارنة بالإصدار الحالي",
     firstVersion: "هذا هو الإصدار الأول: لا يوجد إصدار سابق للمقارنة.",
     sameAsCurrent: "هذا هو الإصدار الحالي.", noChanges: "لم يتغيّر أي حقل.",
@@ -72,6 +72,7 @@ export function RecordHistoryPanel({ recordId, theme, language, hasUnsavedChange
   const l = L[language] || L.en;
   const [versions, setVersions] = useState<RecordVersionSummary[] | null>(null);
   const [current, setCurrent] = useState<number | null>(null);
+  const [published, setPublished] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [compare, setCompare] = useState<Compare>("previous");
@@ -85,6 +86,7 @@ export function RecordHistoryPanel({ recordId, theme, language, hasUnsavedChange
       const h = await fetchVersions(recordId);
       setVersions(h.versions);
       setCurrent(h.current);
+      setPublished(h.published);
       setSelected((s) => s ?? h.versions[0]?.version ?? null);
     } catch (e) {
       setVersions([]);
@@ -166,9 +168,14 @@ export function RecordHistoryPanel({ recordId, theme, language, hasUnsavedChange
                 <span className="text-xs font-black" style={{ color: theme.text }}>
                   v{v.version} · {noteLabel(v.note, l)}
                 </span>
-                {v.version === current && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ color: theme.accent, border: `1px solid ${theme.accent}` }}>{l.current}</span>
-                )}
+                <span className="flex items-center gap-1">
+                  {v.version === published && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ color: theme.success, border: `1px solid ${theme.success}` }}>{l.live}</span>
+                  )}
+                  {v.version === current && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ color: theme.accent, border: `1px solid ${theme.accent}` }}>{l.current}</span>
+                  )}
+                </span>
               </div>
               <div className="text-[11px] mt-0.5 flex items-center gap-1.5 flex-wrap" style={dim}>
                 <span style={{ color: statusColor(v.status) }}>●</span>
