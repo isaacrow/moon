@@ -3,21 +3,75 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  # Pull requests run the checks only; nothing deploys until the change is on main.
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
 concurrency:
-  group: 'pages'
+  group: ${{ github.event_name == 'pull_request' && format('check-{0}', github.ref) || 'pages' }}
   cancel-in-progress: true
 
 jobs:
+  # Tests, type check and build. Both deploys wait for this job, so a red test or a
+  # build error stops the site and the edge function from going out.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Installs exactly what package-lock.json pins, so every build uses the same packages.
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      # BIBFRAME conformance and serializer tests: a record that is not valid BIBFRAME never deploys.
+      - name: Test
+        run: npm test
+
+      # Type errors block the deploy; unused code is reported by `npm run lint:unused` without blocking.
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: |
+          set -o pipefail
+          npx vite build 2>&1 | tee build.log
+          echo "### Vite Build Output" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat build.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+      - name: Upload site
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
   # Deploys the Supabase edge function (accounts, approvals, records API).
   # Needs the SUPABASE_ACCESS_TOKEN repository secret; skipped when it is missing.
   deploy-edge-function:
+    needs: check
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -46,58 +100,16 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN == ''
         run: echo "::warning::SUPABASE_ACCESS_TOKEN secret not set - edge function was not deployed."
 
-  build-and-deploy:
+  deploy-pages:
+    needs: check
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        run: |
-          rm -f package-lock.json
-          npm install --legacy-peer-deps
-
-      # BIBFRAME conformance and serializer tests: a record that is not valid BIBFRAME never deploys.
-      - name: Test
-        run: npm test
-
-      # Type errors block the deploy; unused code is reported by `npm run lint:unused` without blocking.
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Build
-        run: |
-          npx vite build 2>&1 | tee build.log || true
-          echo "### Vite Build Output" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat build.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          if [ ! -d "./dist" ]; then exit 1; fi
-        env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
-
       - name: Setup Pages
         uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: './dist'
 
       - name: Deploy to GitHub Pages
         id: deployment

@@ -53,14 +53,14 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
 
   // Extract Core Title Data
   const titleObj = workData['bf:title'] || workData.title || instanceData['bf:title'] || instanceData.title;
-  const mainTitle = extractString(titleObj?.['bf:mainTitle'] || titleObj?.mainTitle || titleObj || 'القبسات');
+  const mainTitle = extractString(titleObj?.['bf:mainTitle'] || titleObj?.mainTitle || titleObj || '');
   const subtitle = extractString(titleObj?.['bf:subtitle'] || titleObj?.subtitle || '');
   const respStatement = extractString(
     instanceData['bf:responsibilityStatement'] ||
     instanceData.responsibilityStatement ||
     instanceData.statementOfResponsibility ||
     workData.responsibilityStatement ||
-    'للميرداماد محمد باقر الحسيني الاسترآبادي.'
+    ''
   );
 
   // Extract Contributors
@@ -68,13 +68,13 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
   const contributors = useMemo(() => {
     return rawContribs.map((c: any) => {
       const agent = c['bf:agent'] || c.agent || c;
-      const name = extractString(agent?.['rdfs:label'] || agent?.label || agent?.name || agent || 'الميرداماد، محمد باقر بن محمد، توفي 1041 هجري');
-      const role = extractString(c['bf:role']?.['rdfs:label'] || c.role?.label || c.role || 'مؤلف / Author');
+      const name = extractString(agent?.['rdfs:label'] || agent?.label || agent?.name || agent || '');
+      const role = extractString(c['bf:role']?.['rdfs:label'] || c.role?.label || c.role || '');
       const uri = agent?.['@id'] || agent?.id || (typeof agent === 'string' && agent.startsWith('http') ? agent : '');
       return { name, role, uri };
     });
   }, [rawContribs]);
-  const primaryCreator = contributors[0] || { name: 'الميرداماد، محمد باقر بن محمد، توفي 1041 هجري', role: 'مؤلف / Author', uri: 'http://id.loc.gov/authorities/names/n85043844' };
+  const primaryCreator = contributors[0] || { name: '', role: '', uri: '' };
 
   // Classification & Shelfmark
   const lccObj = workData['bf:classification'] || workData.classification || workData.classificationLcc || instanceData['bf:classification'] || instanceData.shelfMark;
@@ -86,12 +86,19 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
       if (portion || item) return [portion, item].filter(Boolean).join(' ');
       if (lccObj['rdfs:label']) return lccObj['rdfs:label'];
     }
-    return 'B753.D363 Q23 1650';
+    return '';
   }, [lccObj]);
 
+  // Dewey number, if the record has one
+  const ddcNumber = useMemo(() => {
+    if (typeof workData.classificationDdc === 'string') return workData.classificationDdc;
+    const all = extractArray(workData['bf:classification'] || workData.classification);
+    const ddc = all.find((c: any) => c && typeof c === 'object' && String(c['@type'] || '').includes('Ddc'));
+    return ddc ? extractString(ddc['bf:classificationPortion'] || ddc.classificationPortion || '') : '';
+  }, [workData]);
+
   // System IDs
-  const systemId = extractString(instanceData.identifier || instanceData.lccn || 'b125923');
-  const sirsiId = '(Sirsi) a209527';
+  const systemId = extractString(instanceData.identifier || instanceData.lccn || '');
 
   // Dates & Production
   const dateStr = extractString(
@@ -100,29 +107,25 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
     instanceData.publicationDate ||
     workData['bf:originDate'] ||
     workData.originDate ||
-    '1061 هـ. = [1650]'
+    ''
   );
   const placeStr = extractString(
     instanceData['bf:provisionActivity']?.['bf:place']?.['rdfs:label'] ||
     instanceData['bf:provisionActivity']?.place ||
     workData['bf:originPlace']?.['rdfs:label'] ||
     workData.originPlace ||
-    'إيران (أصفهان) / Iran'
+    ''
   );
 
   // Physical description & Extent
-  const extentStr = extractString(instanceData['bf:extent'] || instanceData.extent || '344 ورقة (18 سطرًا)');
-  const dimensionsStr = extractString(instanceData['bf:dimensions'] || instanceData.dimensions || '21 × 15 سم');
+  const extentStr = extractString(instanceData['bf:extent'] || instanceData.extent || '');
+  const dimensionsStr = extractString(instanceData['bf:dimensions'] || instanceData.dimensions || '');
 
   // Codicological details (from 340, 351, or custom fields)
   const codicologyNotes = useMemo(() => {
-    const arr: { label: string; value: string }[] = [
-      { label: 'نوع المادة / Material', value: 'ورق مخطوط شرقي أصيل (Oriental Paper)' },
-      { label: 'المداد والخط / Script & Ink', value: 'خط النستعليق الفاخر بحبر أسود وعناوين محمرة (Nastaliq)' },
-      { label: 'نظام الترتيب / Collation', value: 'مرتبة بنظام التعقيبات في أسفل كل ورقة' },
-      { label: 'المسطرة والأسطر / Lines', value: '18 سطرًا في الصفحة الواحدة' },
-      { label: 'المقاس والأبعاد / Size', value: dimensionsStr },
-    ];
+    // Only what the record itself says; nothing is filled in from a sample manuscript.
+    const arr: { label: string; value: string }[] = [];
+    if (dimensionsStr) arr.push({ label: 'المقاس والأبعاد / Size', value: dimensionsStr });
     return arr;
   }, [dimensionsStr]);
 
@@ -148,16 +151,6 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
       }
     });
 
-    if (!incipit) {
-      incipit = 'الحمد لله الواحد الاحد الصمد المصمود مهيمن كل وجود وجاعل كل موجود، والصلاة على من اقتفاه من زمرة الانبياء، واصطفاه من رسل الرسل فابتعثه بالذكر الحكيم والكتاب المبين...';
-    }
-    if (!explicit) {
-      explicit = 'ولا تخلنا اللهم مع ذلك من عواطف رأفتك وسوابغ رحمتك ولطايف كفايتك وحوط عنايتك وحسن كلائتك بجودك ومنك وفضلك وطولك يا أرحم الراحمين.';
-    }
-    if (citations.length === 0) {
-      citations.push('الذريعة الى تصانيف الشيعة، الجزء 17، الصفحه 32، الرقم 183.');
-      citations.push('مكتبة مجلس الشورى : 4662، طهران، ايران (ir).');
-    }
 
     return { incipit, explicit, citations, general };
   }, [rawNotes]);
@@ -172,12 +165,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
         return { label, uri };
       });
     }
-    return [
-      { label: 'الفلسفة الإسلامية -- متون مبكرة (Islamic Philosophy)', uri: 'http://id.loc.gov/authorities/subjects/sh85101006' },
-      { label: 'علم الكلام -- الشيعة الإمامية (Imamite Shiite Theology)', uri: 'http://id.loc.gov/authorities/subjects/sh85121400' },
-      { label: 'الحدوث والقدم (Metatemporal Creation / Huduth-i Dahri)', uri: '' },
-      { label: 'مخطوطات إسلامية نادرة (Rare Islamic Manuscripts)', uri: 'http://id.loc.gov/authorities/subjects/sh85080720' },
-    ];
+    return [];
   }, [rawSubjects]);
 
   // Summary
@@ -185,7 +173,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
     workData['bf:summary']?.['rdfs:label'] ||
     workData['bf:summary'] ||
     workData.summary ||
-    'كتاب القبسات هو أعظم مصنفات الميرداماد في الحكمة المتعالية وفلسفة ما بعد الطبيعة، يطرح فيه نظريته الفلسفية الشهيرة في (الحدوث الدهري) ومراتب الأكوان والسرمد والدهر والزمان، ويناقش أدلة حكماء المشاء والمتكلمين في خلق العالم وأصل الوجود.'
+    ''
   );
 
   // Table of Contents
@@ -195,30 +183,20 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
     if (typeof rawToc === 'string' && rawToc.includes('--')) {
       return rawToc.split('--').map(s => s.trim());
     }
-    return [
-      'القبسة الأولى: في تقدّم الدهر على الزمان وتشعّب مراتب الأكوان',
-      'القبسة الثانية: في حقيقة الجوهر والعرض وثبوت المُفارقات',
-      'القبسة الثالثة: في إثبات الواجب تعالى وتوحيده الذاتي والصفاتي',
-      'القبسة الرابعة: في القضاء والقدر ومراتب الإرادة الربانية',
-      'القبسة الخامسة: في إبطال التسلسل وتناهي العلل والمعلولات',
-      'القبسة السادسة: في نظام الخير والشر ورفع شبهات الثنوية',
-      'القبسة السابعة: في أحكام النفس الإنسانية ومراتب تجردها',
-      'القبسة الثامنة: في المعاد الروحاني والجسماني وسر التناسخ',
-      'القبسة التاسعة: في حقيقة الملائكة والنفوس الفلكية',
-      'القبسة العاشرة: في مناجاة الموحّدين والاعتصام بالفيض الإلهي',
-    ];
+    if (typeof rawToc === 'string' && rawToc.trim()) return [rawToc.trim()];
+    return [];
   }, [rawToc]);
 
   // Generate Citations
   const citations = useMemo(() => {
     const authorName = primaryCreator.name.split('،')[0].trim();
     const fullAuthor = primaryCreator.name;
-    const yr = '1650';
+    const yr = (dateStr.match(/[0-9]{4}/) || [''])[0];
     return {
       chicago: `${fullAuthor}. ${mainTitle}. مخطوط، ${dateStr}. ${callNumber}. مركز الفهرسة ونظم المعلومات، IQ-KaCCS.`,
       apa: `${authorName}. (${yr}). ${mainTitle} [مخطوط]. خزانة المخطوطات، العتبة العباسية المقدسة (IQ-KaCCS). ${callNumber}`,
       mla: `${authorName}. "${mainTitle}." مخطوط، ${dateStr}. مكتبة ودار المخطوطات، الرقم: ${callNumber}.`,
-      bibtex: `@manuscript{mirdamad_${yr}_qabasat,
+      bibtex: `@manuscript{record_${yr},
   author = {${authorName}},
   title = {${mainTitle}},
   year = {${yr}},
@@ -226,7 +204,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
   organization = {IQ-KaCCS, Library of Holy Abbas Shrine}
 }`,
       marc: `100 1# $a ${primaryCreator.name} $e مؤلف.
-245 12 $a ${mainTitle} / $c ${respStatement || 'للميرداماد محمد باقر الحسيني الاسترآبادي.'}
+245 12 $a ${mainTitle} / $c ${respStatement}
 264 #0 $c ${dateStr}
 300 ## $a ${extentStr} ; $c ${dimensionsStr}
 050 #4 $a ${callNumber}`,
@@ -261,18 +239,11 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
           {/* Main Title & Badges */}
           <div className="space-y-3 flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                <Sparkles className="h-3 w-3" /> مخطوطة نادرة / Rare Manuscript
-              </span>
-              <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                336: نص مصور (txt)
-              </span>
-              <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30">
-                338: مصدر الكتروني (ck)
-              </span>
-              <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-purple-500/15 text-purple-300 border border-purple-500/30">
-                1061 هـ / 1650 م
-              </span>
+              {dateStr && (
+                <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                  {dateStr}
+                </span>
+              )}
             </div>
 
             <h1 className="text-2xl md:text-4xl font-extrabold tracking-tight font-serif text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-200 to-purple-300 leading-snug" dir="rtl">
@@ -332,7 +303,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
               </div>
               <div className="text-xs text-slate-400 mt-1 flex items-center gap-1">
                 <Hash className="h-3 w-3 text-slate-500" />
-                <span>الرقم الآلي: <strong>{systemId}</strong> | {sirsiId}</span>
+                <span>الرقم الآلي: <strong>{systemId || '—'}</strong></span>
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
                 مكتبة العتبة العباسية المقدسة (IQ-KaCCS)
@@ -480,7 +451,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
                 <span className="font-mono text-[11px] opacity-75">MARC 500 / bf:Note</span>
               </div>
               <p className="font-serif text-sm md:text-base leading-relaxed text-slate-200 text-right" dir="rtl">
-                «{parsedNotes.incipit}»
+                {parsedNotes.incipit ? `«${parsedNotes.incipit}»` : '—'}
               </p>
             </div>
           </div>
@@ -510,7 +481,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
                   </button>
                 </div>
                 <div className="p-4 rounded-lg bg-black/20 border border-slate-700/50 font-serif text-sm md:text-base leading-relaxed text-slate-200 text-right" dir="rtl">
-                  «{parsedNotes.incipit}»
+                  {parsedNotes.incipit ? `«${parsedNotes.incipit}»` : '—'}
                 </div>
               </div>
 
@@ -533,7 +504,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
                   </button>
                 </div>
                 <div className="p-4 rounded-lg bg-black/20 border border-slate-700/50 font-serif text-sm md:text-base leading-relaxed text-slate-200 text-right" dir="rtl">
-                  «{parsedNotes.explicit}»
+                  {parsedNotes.explicit ? `«${parsedNotes.explicit}»` : '—'}
                 </div>
               </div>
             </div>
@@ -613,10 +584,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
                   تصنيف مكتبة الكونغرس (LCC)
                 </div>
                 <div className="text-xl font-mono font-extrabold text-blue-400">
-                  {callNumber}
-                </div>
-                <div className="text-xs text-slate-400">
-                  B753: الفلسفة الإسلامية المبكرة والوسيطة
+                  {callNumber || '—'}
                 </div>
               </div>
 
@@ -625,10 +593,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
                   التصنيف العشري (DDC)
                 </div>
                 <div className="text-xl font-mono font-extrabold text-purple-400">
-                  181.07
-                </div>
-                <div className="text-xs text-slate-400">
-                  181.07: الفلسفة الإسلامية والحكمة المتعالية
+                  {ddcNumber || '—'}
                 </div>
               </div>
             </div>
@@ -641,7 +606,7 @@ export function OPACPreview({ workData = {}, instanceData = {}, theme = 'glass',
             <div className={`p-5 rounded-xl border space-y-4 ${isDark ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200'}`}>
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-                  <Layers className="h-4 w-4 text-purple-400" /> فهرس محتويات المخطوط والقبسات العشر (Table of Contents)
+                  <Layers className="h-4 w-4 text-purple-400" /> فهرس المحتويات (Table of Contents)
                 </h4>
                 <span className="text-xs text-slate-400">{tocList.length} أبواب ومباحث</span>
               </div>

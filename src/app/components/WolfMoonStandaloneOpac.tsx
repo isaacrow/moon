@@ -42,6 +42,7 @@ import {
 } from '../../services/authorFinderService';
 import { VERIFIED_IRAQI_AUTHORS } from '../../services/iraqiAuthorAIService';
 import { WolfMoonVuFindPortal } from './cataloging/WolfMoonVuFindPortal';
+import { FOLIO_ENABLED, VUFIND_ENABLED } from '../utils/integrations';
 import '../../styles/liquid-glass.css';
 
 // Navigation Views
@@ -71,7 +72,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
       if (subject) return { mode: 'subject', subjectIdOrLabel: subject };
       if (dir === 'persons') return { mode: 'all-persons' };
       if (dir === 'subjects') return { mode: 'all-subjects' };
-      if (p.get('view') === 'vufind') return { mode: 'vufind', initialQuery: q || undefined };
+      if (VUFIND_ENABLED && p.get('view') === 'vufind') return { mode: 'vufind', initialQuery: q || undefined };
       if (q) return { mode: 'search', query: q };
     }
     return { mode: 'home' };
@@ -621,7 +622,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
               <Database className="w-3.5 h-3.5 text-teal-600" />
               <span>مصفوفة VuFind + الرف</span>
             </button>
-            <button
+            {VUFIND_ENABLED && <button
               type="button"
               onClick={() => navigateTo({ mode: 'vufind', initialQuery: searchQuery || undefined })}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -633,7 +634,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
             >
               <Search className="w-3.5 h-3.5 text-teal-400" />
               <span>بوابة VuFind الكاملة</span>
-            </button>
+            </button>}
           </div>
 
           {/* Right Utility Actions: VuFind Bookbag + AI Authority + Return to Editor */}
@@ -682,22 +683,28 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
       <div className="bg-slate-900 text-slate-100 border-b border-slate-800 px-4 py-2 text-xs font-medium">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold text-[11px]">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>FOLIO ILS ({telemetry.totalFolioInstances || totalCount} عنوان • {telemetry.totalFolioItems || 12} نسخة)</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 font-bold text-[11px]">
-              <Database className="w-3 h-3" />
-              <span>Solr biblio ({federatedSearchData?.solrLiveCount ?? telemetry.totalSolrDocs ?? totalCount} وثيقة)</span>
-            </span>
+            {telemetry.folioConnected && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold text-[11px]">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>FOLIO ILS ({telemetry.totalFolioInstances} عنوان • {telemetry.totalFolioItems} نسخة)</span>
+              </span>
+            )}
+            {VUFIND_ENABLED && federatedSearchData?.solrLiveCount != null && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 font-bold text-[11px]">
+                <Database className="w-3 h-3" />
+                <span>Solr biblio ({federatedSearchData.solrLiveCount} وثيقة)</span>
+              </span>
+            )}
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-bold text-[11px]">
               <Layers className="w-3 h-3" />
               <span>Share-VDE WEMI ({federatedSearchData?.workClusters?.length || totalCount} عنقود Hub)</span>
             </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 font-bold text-[11px]">
-              <Network className="w-3 h-3" />
-              <span>SPARQL ({telemetry.totalTriples || 334} ثلاثية RDF)</span>
-            </span>
+            {telemetry.sparqlConnected && telemetry.totalTriples > 0 && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 font-bold text-[11px]">
+                <Network className="w-3 h-3" />
+                <span>SPARQL ({telemetry.totalTriples} ثلاثية RDF)</span>
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 text-[11px]">
             <button
@@ -707,15 +714,17 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
               <Bookmark className="w-3 h-3" />
               <span>حقيبة المقارنة ({bookbagIds.length})</span>
             </button>
-            <a
-              href="http://localhost:8085"
-              target="_blank"
-              rel="noreferrer"
-              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono flex items-center gap-1 transition-colors"
-            >
-              <span>VuFind (:8085)</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
+            {VUFIND_ENABLED && (
+              <a
+                href="http://localhost:8085"
+                target="_blank"
+                rel="noreferrer"
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono flex items-center gap-1 transition-colors"
+              >
+                <span>VuFind (:8085)</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
             <button
               onClick={handleManualRefresh}
               disabled={isRefreshing}
@@ -1168,7 +1177,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                             <div className="truncate">
                               <div className="font-bold text-slate-900 truncate">{rec.title}</div>
                               <div className="text-[10px] text-slate-500 font-mono truncate">
-                                {rec.callnumber || 'B753'} • {rec.format || 'Book'}
+                                {rec.callnumber || '—'} • {rec.format || 'Book'}
                               </div>
                             </div>
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 ${
@@ -1277,7 +1286,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                     <span>عرض كافة النتائج في صفحة الفهرس الشامل</span>
                     <span>←</span>
                   </button>
-                  <button
+                  {VUFIND_ENABLED && <button
                     onClick={() => {
                       setIsSearchOverlayOpen(false);
                       navigateTo({ mode: 'vufind', initialQuery: searchQuery.trim() });
@@ -1286,7 +1295,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                   >
                     <span>فتح النتائج في بوابة VuFind 11.0</span>
                     <span>←</span>
-                  </button>
+                  </button>}
                 </div>
               </motion.div>
             )}
@@ -1308,7 +1317,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                 <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5 flex-wrap">
                   <span>الفهرس الدلالي الموحد (Share-VDE • LIBRIS XL • VuFind)</span>
                   <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-mono font-bold border border-blue-200/80">
-                    {catalogSearchResults.length} عمل فكري ({telemetry.totalFolioItems || 12} نسخة FOLIO)
+                    {catalogSearchResults.length} عمل فكري{telemetry.folioConnected ? ` (${telemetry.totalFolioItems} نسخة FOLIO)` : ''}
                   </span>
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-600 font-medium mt-1">
@@ -2193,10 +2202,15 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                           <BookMarked className="w-3.5 h-3.5 text-amber-600" />
                           <span>محفوظات نادرة — للمطالعة المرجعية في القاعة</span>
                         </span>
+                      ) : activeWork.instances.every(i => i.holdingStatus === 'not_connected') ? (
+                        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1 shadow-xs">
+                          <Library className="w-3.5 h-3.5 text-slate-500" />
+                          <span>لا نسخ مسجلة (No copies recorded)</span>
+                        </span>
                       ) : (
                         <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1 shadow-xs">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>متاح للإعارة الفورية عبر FOLIO ILS</span>
+                          <span>{FOLIO_ENABLED ? 'متاح للإعارة الفورية عبر FOLIO ILS' : 'متاح على الرف (Available)'}</span>
                         </span>
                       )}
                       {activeWork.classificationLcc && (
@@ -2204,8 +2218,8 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                           {activeWork.classificationLcc}
                         </span>
                       )}
-                      {/* Direct 1-Click Circulation Action in Header */}
-                      {activeWork.instances.some(i => i.holdingStatus === 'checked_out' || i.holdingStatus === 'paged') ? (
+                      {/* Direct 1-Click Circulation Action in Header (only with a live FOLIO and real copies) */}
+                      {!FOLIO_ENABLED || currentInstanceItems.length === 0 ? null : activeWork.instances.some(i => i.holdingStatus === 'checked_out' || i.holdingStatus === 'paged') ? (
                         <button
                           onClick={() => handleCirculationAction({
                             itemId: currentInstanceItems[0]?.id,
@@ -2419,7 +2433,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                       <span>شجرة الكيانات (WEMI)</span>
                     </button>
 
-                    <a
+                    {VUFIND_ENABLED && <a
                       href={`/vufind/Record/${activeWork.id}`}
                       target="_blank"
                       rel="noreferrer"
@@ -2429,7 +2443,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                       <Search className="w-3.5 h-3.5 text-teal-600" />
                       <span>عرض في VuFind</span>
                       <ExternalLink className="w-2.5 h-2.5 text-teal-500" />
-                    </a>
+                    </a>}
                   </div>
 
                   {/* Permalink Copy */}
@@ -2684,10 +2698,12 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                       <Library className="w-5 h-5 text-emerald-600" />
                       <span>النسخ والمقتنيات المادية الحية (FOLIO ILS Holdings & Items - bf:Item)</span>
                     </h2>
-                    <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 font-bold text-xs border border-emerald-200 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>متصل لحظياً بنظام الإعارة FOLIO (:8080)</span>
-                    </span>
+                    {telemetry.folioConnected && (
+                      <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 font-bold text-xs border border-emerald-200 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>متصل لحظياً بنظام الإعارة FOLIO (:8080)</span>
+                      </span>
+                    )}
                   </div>
 
                   {currentInstanceItems && currentInstanceItems.length > 0 ? (
@@ -2728,11 +2744,11 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                             </div>
                             <div>
                               <span className="font-bold text-slate-500 block">الباركود (FOLIO Barcode):</span>
-                              <span className="font-mono text-slate-800">{item.barcode || '3192400001'}</span>
+                              <span className="font-mono text-slate-800">{item.barcode || '—'}</span>
                             </div>
                             <div>
                               <span className="font-bold text-slate-500 block">الوصف المادي:</span>
-                              <span className="text-slate-800">{item.extent || currentInstance?.extent || 'مجلد مطبوع'}</span>
+                              <span className="text-slate-800">{item.extent || currentInstance?.extent || '—'}</span>
                             </div>
                             <div>
                               <span className="font-bold text-slate-500 block">حالة الإعارة في FOLIO:</span>
@@ -2747,7 +2763,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                           </div>
 
                           {/* Live FOLIO Circulation Action Bar */}
-                          <div className="pt-2 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
+                          {FOLIO_ENABLED && <div className="pt-2 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
                             <div className="text-[11px] text-slate-500 font-mono">
                               FOLIO Item ID: {item.id}
                             </div>
@@ -2794,7 +2810,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
                                 </>
                               )}
                             </div>
-                          </div>
+                          </div>}
 
                           {item.acquisitionSource && (
                             <div className="text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-slate-700">
@@ -3355,7 +3371,7 @@ export function WolfMoonStandaloneOpac({ onOpenEditor }: { onOpenEditor?: () => 
         )}
 
         {/* -------------------- VIEW H: VUFIND DISCOVERY OPAC -------------------- */}
-        {navState.mode === 'vufind' && (
+        {VUFIND_ENABLED && navState.mode === 'vufind' && (
           <div className="space-y-6">
             <WolfMoonVuFindPortal
               onImportToEditor={() => {
@@ -4076,6 +4092,7 @@ function WorkCardComponent({
   const authorAvatar = work.primaryCreator?.avatarUrl;
   const isCheckedOut = work.instances.some(i => i.holdingStatus === 'checked_out') || work.holdingItems?.some(it => it.status === 'checked_out');
   const isPaged = work.instances.some(i => i.holdingStatus === 'paged') || work.holdingItems?.some(it => it.status === 'paged');
+  const noCopies = work.instances.every(i => i.holdingStatus === 'not_connected');
 
   return (
     <div className="p-5 rounded-3xl bg-white/85 hover:bg-white backdrop-blur-xl border border-slate-200/90 shadow-[0_4px_20px_rgba(15,23,42,0.03)] hover:shadow-[0_16px_36px_rgba(15,23,42,0.09)] transition-all duration-300 flex flex-col justify-between group overflow-hidden">
@@ -4103,15 +4120,15 @@ function WorkCardComponent({
                 </span>
                 {isCheckedOut ? (
                   <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[9px] font-bold border border-rose-200">
-                    معار — FOLIO
+                    معار
                   </span>
                 ) : isPaged ? (
                   <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold border border-amber-200">
-                    محجوز — FOLIO
+                    محجوز
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold border border-emerald-200">
-                    متاح — FOLIO
+                    {noCopies ? 'لا نسخ مسجلة' : 'متاح'}
                   </span>
                 )}
               </div>
@@ -4143,15 +4160,15 @@ function WorkCardComponent({
               <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
                 {isCheckedOut ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-rose-600/95 text-white text-[9px] font-bold shadow-xs">
-                    معار FOLIO
+                    معار
                   </span>
                 ) : isPaged ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-600/95 text-white text-[9px] font-bold shadow-xs">
-                    محجوز FOLIO
+                    محجوز
                   </span>
                 ) : (
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-600/95 text-white text-[9px] font-bold shadow-xs">
-                    متاح FOLIO
+                    {noCopies ? 'لا نسخ مسجلة' : 'متاح'}
                   </span>
                 )}
               </div>
@@ -4292,7 +4309,7 @@ function WorkCardComponent({
                       {inst.carrierType || 'طبعة'} — {inst.publisher || inst.title}
                     </div>
                     <div className="text-[10px] text-slate-500 font-mono">
-                      {inst.publicationYear || 'د.ت'} • {inst.callNumber || inst.shelfLocation || 'B753'}
+                      {inst.publicationYear || 'د.ت'} • {inst.callNumber || inst.shelfLocation || '—'}
                     </div>
                   </div>
                   {onCirculationAction && (
@@ -4521,12 +4538,12 @@ function LibrisSplitInspectorView({
                       #{idx + 1} • bf:Work
                     </span>
                     <span className="font-mono text-[10px] text-blue-700 font-bold" dir="ltr">
-                      {w.classificationLcc || w.instances[0]?.callNumber || 'B753'}
+                      {w.classificationLcc || w.instances[0]?.callNumber || '—'}
                     </span>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                       isOut ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
                     }`}>
-                      {isOut ? 'معار FOLIO' : 'متاح FOLIO'}
+                      {isOut ? 'معار' : w.instances.every(i => i.holdingStatus === 'not_connected') ? 'لا نسخ مسجلة' : 'متاح'}
                     </span>
                   </div>
 
@@ -4777,13 +4794,13 @@ function VuFindIntegratedMatrixView({
             مصفوفة اكتشاف VuFind وخدمات Solr المدمجة داخل الفهرس الدلالي
           </h2>
         </div>
-        <button
+        {VUFIND_ENABLED && <button
           onClick={onOpenFullVuFind}
           className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer self-start sm:self-auto shadow-xs"
         >
           <ExternalLink className="w-3.5 h-3.5" />
           <span>فتح واجهة VuFind المستقلة</span>
-        </button>
+        </button>}
       </div>
 
       {/* Live Solr Facet Pills */}
@@ -4815,7 +4832,7 @@ function VuFindIntegratedMatrixView({
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="px-2.5 py-0.5 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 font-mono text-[10px] font-bold" dir="ltr">
-                    Solr ID: {w.id} • Call: {w.classificationLcc || w.instances[0]?.callNumber || 'B753'}
+                    Solr ID: {w.id} • Call: {w.classificationLcc || w.instances[0]?.callNumber || '—'}
                   </span>
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                     isOut ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
