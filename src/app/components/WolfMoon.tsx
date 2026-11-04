@@ -124,6 +124,7 @@ import { BIBFRAMERecord } from "../types/bibframe";
 
 // ===== ASSETS & CONFIG =====
 import { projectId, publicAnonKey } from "../../../utils/supabase/info";
+import { moonHeaders } from "../utils/moonApi";
 import {
   generateCutter, parseCallNumber, formatCallNumber,
   EXAMPLE_CALL_NUMBERS, EXAMPLE_NAMES,
@@ -692,7 +693,7 @@ export default function WolfMoon({
             if (localTemplates.length > 0) {
               fetch(TEMPLATES_API, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${publicAnonKey}` },
+                headers: moonHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({ templates: localTemplates }),
               }).catch(() => {});
             }
@@ -725,7 +726,8 @@ export default function WolfMoon({
     // Persist to backend (fire-and-forget with error logging)
     fetch(TEMPLATES_API, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${publicAnonKey}` },
+      // The session header: only signed-in catalogers change the shared templates.
+      headers: moonHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ templates }),
     }).then(res => {
       if (!res.ok) console.log("Backend field template save failed:", res.status);

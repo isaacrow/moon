@@ -28,7 +28,8 @@ import {
   Moon, Sun, Languages, Orbit, Share2, Copy, Check, Radio,
   Import, Plus
 } from "lucide-react";
-import { projectId, publicAnonKey } from "../../../utils/supabase/info";
+import { projectId } from "../../../utils/supabase/info";
+import { moonHeaders } from "../utils/moonApi";
 import "../../styles/glassmorphism.css";
 
 // ============================== TYPES ==============================
@@ -179,7 +180,7 @@ const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-49c0
 async function apiPost(path: string, body: any) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${publicAnonKey}` },
+    headers: { "Content-Type": "application/json", ...moonHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
@@ -188,7 +189,7 @@ async function apiPost(path: string, body: any) {
 
 async function apiGet(path: string) {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${publicAnonKey}` },
+    headers: { ...moonHeaders() },
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
@@ -197,7 +198,7 @@ async function apiGet(path: string) {
 async function importRecordToLocal(record: DiscoveryRecord): Promise<any> {
   const res = await fetch(`${API_BASE}/moon/discovery/import`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${publicAnonKey}` },
+    headers: { "Content-Type": "application/json", ...moonHeaders() },
     body: JSON.stringify(record),
   });
   if (!res.ok) {
@@ -210,7 +211,7 @@ async function importRecordToLocal(record: DiscoveryRecord): Promise<any> {
 async function downloadRdf(recordId: string, format: RdfFormat) {
   const formatPath = format === "jsonld" ? "jsonld" : format === "turtle" ? "turtle" : "ntriples";
   const res = await fetch(`${API_BASE}/ld/resource/${encodeURIComponent(recordId)}/${formatPath}`, {
-    headers: { Authorization: `Bearer ${publicAnonKey}` },
+    headers: { ...moonHeaders() },
   });
   if (!res.ok) throw new Error("Download failed");
   const text = await res.text();
@@ -514,7 +515,7 @@ export default function LinkedDataDiscovery({ onBack, glassTheme: externalTheme,
     try {
       const formatPath = format === "turtle" ? "turtle" : format === "ntriples" ? "ntriples" : "jsonld";
       const res = await fetch(`${API_BASE}/ld/resource/${encodeURIComponent(record.id)}/${formatPath}`, {
-        headers: { Authorization: `Bearer ${publicAnonKey}` },
+        headers: { ...moonHeaders() },
       });
       if (!res.ok) {
         console.error("RDF preview fetch failed:", res.status, await res.text());
