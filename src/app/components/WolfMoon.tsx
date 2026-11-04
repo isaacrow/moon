@@ -30,7 +30,7 @@ import {
   Copy, ExternalLink, Settings, RefreshCw, Plus, X, Info, Home,
   Orbit, Languages, Scissors, 
   Sliders, LayoutGrid, List, Lock, Box,
-  Trash2
+  Trash2, History
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import moonLogoWhite from "../../assets/white.png";
@@ -78,7 +78,7 @@ import {
 } from "../../services/w3cJsonLdBuilder";
 
 // ===== APP UTILS =====
-import { saveRecord, getAllRecordsLocal } from "../utils/recordStorageBackend";
+import { saveRecord, getAllRecordsLocal, getRecordById } from "../utils/recordStorageBackend";
 
 // ===== COMPONENTS =====
 import { OntologyField } from "./ontology/OntologyField";
@@ -97,6 +97,7 @@ const RecordViewerDialog = React.lazy(() => import("./cataloging/RecordViewerDia
 const AuthorityGraph = React.lazy(() => import("./AuthorityGraph").then(m => ({ default: m.AuthorityGraph })));
 const LinkedDataDiscovery = React.lazy(() => import("./LinkedDataDiscovery"));
 const Marc21Viewer = React.lazy(() => import("./Marc21Viewer").then(m => ({ default: m.Marc21Viewer })));
+const RecordHistoryPanel = React.lazy(() => import("./RecordHistoryPanel"));
 const BlueMoonAIPanel = React.lazy(() => import("./BlueMoonAIPanel").then(m => ({ default: m.BlueMoonAIPanel })));
 const MarvaToolsModal = React.lazy(() => import("./marva/MarvaToolsModal").then(m => ({ default: m.MarvaToolsModal })));
 const MarvaHubEditor = React.lazy(() => import("./marva/MarvaHubEditor").then(m => ({ default: m.MarvaHubEditor })));
@@ -141,7 +142,7 @@ import {
 
 // ============================== TYPES ==============================
 
-type OutputTab = "editor" | "jsonld" | "w3c-jsonld" | "rdf-xml" | "turtle" | "ntriples" | "marc" | "marc21-viewer" | "triples" | "opac" | "mindmap" | "validation" | "relationships" | "authority-graph" | "discovery" | "scriptshifter" | "lc-cutter" | "ai-engine" | "hubs" | "remerge-marc" | "marva-tools";
+type OutputTab = "editor" | "history" | "jsonld" | "w3c-jsonld" | "rdf-xml" | "turtle" | "ntriples" | "marc" | "marc21-viewer" | "triples" | "opac" | "mindmap" | "validation" | "relationships" | "authority-graph" | "discovery" | "scriptshifter" | "lc-cutter" | "ai-engine" | "hubs" | "remerge-marc" | "marva-tools";
 type MarvaLoadType = "work-instance" | "work-only" | "instance-only" | "hub-only" | "item-only";
 type SaveStatus = "saved" | "unsaved" | "saving" | "error";
 
@@ -167,6 +168,8 @@ interface WolfMoonProps {
   onRecordSaved?: () => void;
   // Reopens the editor on an unsaved draft (the parent remounts with it as the initial record).
   onRestoreDraft?: (draft: BIBFRAMERecord) => void;
+  // Reopens the editor on the saved record as the server now has it (after a revert).
+  onReloadRecord?: (record: BIBFRAMERecord) => void;
 }
 
 const DRAFT_KEY = "moon_wolf_draft";
@@ -370,7 +373,7 @@ function getPropertyValue(data: any, uri: string): any {
 // ============================== MAIN COMPONENT ==============================
 
 export default function WolfMoon({
-  onBack, initialWork, initialInstance, initialRecord, onRecordSaved, onRestoreDraft
+  onBack, initialWork, initialInstance, initialRecord, onRecordSaved, onRestoreDraft, onReloadRecord
 }: WolfMoonProps) {
   const { t, i18n } = useTranslation();
   const { username, user } = useAuth();
@@ -1741,8 +1744,10 @@ export default function WolfMoon({
             { key: "rdf-xml" as OutputTab, icon: <Code className="h-3.5 w-3.5" />, label: "RDF/XML", color: "#10b981" },
             { key: "turtle" as OutputTab, icon: <Code className="h-3.5 w-3.5" />, label: t("turtle"), color: "#a78bfa" },
             { key: "ntriples" as OutputTab, icon: <FileText className="h-3.5 w-3.5" />, label: t("nTriples"), color: "#fb923c" },
-            { key: "marc21-viewer" as OutputTab, icon: <BookOpen className="h-3.5 w-3.5" />, label: "MARC 21 View", color: "#f43f5e" }
-          ] as const).map(tab => {
+            { key: "marc21-viewer" as OutputTab, icon: <BookOpen className="h-3.5 w-3.5" />, label: "MARC 21 View", color: "#f43f5e" },
+            // A record has a history once it has been saved.
+            ...(storageIdRef.current ? [{ key: "history" as OutputTab, icon: <History className="h-3.5 w-3.5" />, label: language === "ar" ? "السجل" : "History", color: "#fbbf24" }] : [])
+          ]).map(tab => {
             const isSelected = activeTab === tab.key;
             return (
               <button
@@ -2344,6 +2349,24 @@ export default function WolfMoon({
         )}
 
         {/* ===== VALIDATION ===== */}
+        {activeTab === "history" && storageIdRef.current && (
+          <React.Suspense fallback={<LazyPanelFallback />}>
+            <RecordHistoryPanel
+              recordId={storageIdRef.current}
+              theme={BM}
+              language={language}
+              hasUnsavedChanges={saveStatus === "unsaved"}
+              onReverted={async () => {
+                // Reload the editor on the reverted record; unsaved edits were confirmed away.
+                const saved = await getRecordById(storageIdRef.current!);
+                if (!saved) return;
+                clearDraft();
+                onReloadRecord?.(saved.record);
+              }}
+            />
+          </React.Suspense>
+        )}
+
         {activeTab === "validation" && (
           <div className="space-y-4">
             {graphValidation && (

@@ -89,7 +89,11 @@ export async function listRecords(): Promise<StoredRecord[]> {
 }
 
 /** Saves a record as its next version and returns the version number. */
-export async function saveRecord(record: StoredRecord & { saved: string }, savedBy: string): Promise<number> {
+export async function saveRecord(
+  record: StoredRecord & { saved: string },
+  savedBy: string,
+  note = "save",
+): Promise<number> {
   const { data, error } = await sb().rpc("moon_save_record", {
     p_id: record.id,
     p_title: record.title,
@@ -99,7 +103,7 @@ export async function saveRecord(record: StoredRecord & { saved: string }, saved
     p_metadata: record.metadata || {},
     p_saved_by: savedBy,
     p_saved_at: record.saved,
-    p_note: "save",
+    p_note: note,
     p_approved_by: record.approvedBy ?? null,
     p_approved_at: record.approvedAt ?? null,
   });
@@ -150,4 +154,74 @@ export async function deleteRecord(id: string): Promise<void> {
   const { error } = await sb().rpc("moon_delete_record", { p_id: id, p_at: new Date().toISOString() });
   if (error) throw new Error(`[records] delete ${id} failed: ${error.message}`);
   await kv.del(kvKey(id));
+}
+
+export interface VersionSummary {
+  version: number;
+  title: string;
+  status: string;
+  savedBy?: string;
+  savedAt: string;
+  note?: string;
+}
+
+/** A record's versions, newest first, without their documents. */
+export async function listVersions(id: string): Promise<VersionSummary[]> {
+  const { data, error } = await sb()
+    .from("record_versions")
+    .select("version, title, status, saved_by, saved_at, note")
+    .eq("record_id", id)
+    .order("version", { ascending: false });
+  if (error) throw new Error(`[records] versions of ${id} failed: ${error.message}`);
+  return (data || []).map((v: any) => ({
+    version: v.version,
+    title: v.title,
+    status: v.status,
+    savedBy: v.saved_by ?? undefined,
+    savedAt: v.saved_at,
+    note: v.note ?? undefined,
+  }));
+}
+
+/** One version with its document, or null. */
+export async function getVersion(id: string, version: number): Promise<(VersionSummary & { document: any }) | null> {
+  const { data, error } = await sb()
+    .from("record_versions")
+    .select("*")
+    .eq("record_id", id)
+    .eq("version", version)
+    .maybeSingle();
+  if (error) throw new Error(`[records] version ${version} of ${id} failed: ${error.message}`);
+  if (!data) return null;
+  return {
+    version: data.version,
+    title: data.title,
+    status: data.status,
+    savedBy: data.saved_by ?? undefined,
+    savedAt: data.saved_at,
+    note: data.note ?? undefined,
+    document: data.document,
+  };
+}
+
+/**
+ * Makes an earlier version current again, as a new version: nothing in the history is lost, and a
+ * revert can itself be reverted. The status follows the same rule as a save. Returns the new version.
+ */
+export async function revertRecord(
+  current: StoredRecord,
+  to: { version: number; title: string; document: any },
+  by: string,
+  status: string,
+): Promise<number> {
+  const now = new Date().toISOString();
+  return saveRecord({
+    ...current,
+    title: to.title,
+    document: to.document,
+    status,
+    metadata: { ...(current.metadata || {}), status },
+    ...(status === "complete" ? { approvedBy: by, approvedAt: now } : {}),
+    saved: now,
+  }, by, `revert to v${to.version}`);
 }

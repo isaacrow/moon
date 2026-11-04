@@ -192,6 +192,12 @@ function CatalogApp() {
               setInstance(draft.instance);
               setCurrentRecord(draft);
             }}
+            onReloadRecord={(record) => {
+              setDraftRestores(n => n + 1);
+              setWork(record.work);
+              setInstance(record.instance);
+              setCurrentRecord(record);
+            }}
           />
         </ErrorBoundary>
       );
