@@ -18,6 +18,7 @@
 import { AISuggestionProfile, saveAuthorityProfileToMoonSystem } from './authorFinderService';
 import { getAllRecords, getDeletedRecordIds } from '../app/utils/recordStorageBackend';
 import { realLocExamples } from '../app/utils/realLocExamples';
+import { FOLIO_ENABLED, VUFIND_ENABLED } from '../app/utils/integrations';
 import { buildW3CJsonLd, BIBFRAME_JSONLD_CONTEXT } from './w3cJsonLdBuilder';
 import { finishForExport } from './bibframeNormalizer';
 import { toTurtle } from './rdfGraphBuilder';
@@ -985,11 +986,12 @@ class WolfMoonOpacService {
   private publishersMap: Map<string, OpacPublisherEntity> = new Map();
   private initialized: boolean = false;
   private subscribers: (() => void)[] = [];
+  // Nothing counts as connected until a live server has answered.
   private telemetry: OpacEcosystemTelemetry = {
-    folioConnected: true,
-    solrConnected: true,
-    vufindConnected: true,
-    sparqlConnected: true,
+    folioConnected: false,
+    solrConnected: false,
+    vufindConnected: false,
+    sparqlConnected: false,
     totalFolioInstances: 0,
     totalFolioItems: 0,
     totalSolrDocs: 0,
@@ -1117,6 +1119,8 @@ class WolfMoonOpacService {
               const parsedArr = JSON.parse(raw);
               if (Array.isArray(parsedArr)) {
                 for (const item of parsedArr) {
+                  // Drafts and records waiting for review stay out of the public catalogue.
+                  if ((item?.status || 'complete') !== 'complete') continue;
                   const p = this.parseBibframeDocumentToOpacWork(item);
                   if (p && !gatheredWorks.some(gw => gw.id === p.id || gw.title === p.title)) {
                     gatheredWorks.push(p);
@@ -1161,7 +1165,7 @@ class WolfMoonOpacService {
 
     // 3. Connect to LIVE FOLIO OPAC CATALOG (/api/opac/catalog) & Enrich Holdings/Items + Convert FOLIO-only Instances
     try {
-      const catalogUrls = ['/folio-api/api/opac/catalog', 'http://localhost:8080/api/opac/catalog'];
+      const catalogUrls = FOLIO_ENABLED ? ['/folio-api/api/opac/catalog', 'http://localhost:8080/api/opac/catalog'] : [];
       let folioCatalog: any = null;
       for (const u of catalogUrls) {
         try {
@@ -1341,7 +1345,7 @@ class WolfMoonOpacService {
 
     // 3b. Query Apache Solr (biblio core) to update telemetry & ensure Solr-indexed works are represented
     try {
-      const solrUrls = ['/solr/biblio/select?q=*:*&rows=50&wt=json', 'http://localhost:8983/solr/biblio/select?q=*:*&rows=50&wt=json'];
+      const solrUrls = !VUFIND_ENABLED ? [] : ['/solr/biblio/select?q=*:*&rows=50&wt=json', 'http://localhost:8983/solr/biblio/select?q=*:*&rows=50&wt=json'];
       for (const sUrl of solrUrls) {
         try {
           const sRes = await fetch(sUrl);
@@ -1398,29 +1402,16 @@ class WolfMoonOpacService {
       console.warn('Error reading local authority profiles for OPAC:', e);
     }
 
-    // 5. Ensure no instance is left with 'not_connected' when FOLIO is online
+    // 5. An instance with copies is available; one without copies shows "no copies recorded".
+    //    Copies are never made up: no invented shelf marks or barcodes.
     for (const w of gatheredWorks) {
       for (const inst of w.instances) {
-        if (!inst.holdingStatus || inst.holdingStatus === 'not_connected') {
+        const hasCopies = (inst.items && inst.items.length > 0) ||
+          (w.holdingItems || []).some(it => !it.instanceId || it.instanceId === inst.id);
+        if (!hasCopies) {
+          inst.holdingStatus = 'not_connected';
+        } else if (!inst.holdingStatus || inst.holdingStatus === 'not_connected') {
           inst.holdingStatus = 'available';
-        }
-        if (!inst.items || inst.items.length === 0) {
-          const autoItem: OpacHoldingItem = {
-            id: `item-${inst.id}-1`,
-            uri: getEntityIri('item', `${inst.id}-1`),
-            instanceId: inst.id,
-            folioInstanceId: inst.folioInstanceId || w.id,
-            heldBy: inst.shelfLocation || 'المكتبة المركزية — القاعة الرئيسية',
-            shelfMark: inst.callNumber || w.classificationLcc || 'PJ7862 .A1',
-            barcode: `31924${String(Math.abs(w.id.split('').reduce((a, b) => a + b.charCodeAt(0), 0))).padStart(9, '0')}`,
-            copyNumber: 'c.1',
-            synthetic: true,
-            status: inst.holdingStatus === 'reference_only' ? 'reference_only' : 'available'
-          };
-          inst.items = [autoItem];
-          if (!w.holdingItems || w.holdingItems.length === 0) {
-            w.holdingItems = [autoItem];
-          }
         }
       }
     }
@@ -3161,7 +3152,7 @@ class WolfMoonOpacService {
     let vufindFacets: Record<string, Record<string, number>> = {};
     try {
       const qParam = encodeURIComponent(parsed.freeText || rawQuery || '*:*');
-      const vfUrls = [
+      const vfUrls = !VUFIND_ENABLED ? [] : [
         `/vufind/?api=search&lookfor=${qParam}`,
         `http://localhost:8085/?api=search&lookfor=${qParam}`,
         `http://localhost:8080/vufind?api=search&lookfor=${qParam}`

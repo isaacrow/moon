@@ -72,36 +72,33 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
   const [copied, setCopied] = useState(false);
 
   // Extract Work & Instance fields
-  const titleVal = extractStr(workData['bf:title']?.['bf:mainTitle'] || workData['bf:title']?.mainTitle || workData.title, 'القبسات');
+  const titleVal = extractStr(workData['bf:title']?.['bf:mainTitle'] || workData['bf:title']?.mainTitle || workData.title, '—');
   
   const rawContribs = extractArr(workData['bf:contribution'] || workData.contribution || []);
   const agentObj = rawContribs[0]?.['bf:agent'] || rawContribs[0]?.agent || {};
-  const creatorName = extractStr(agentObj['rdfs:label'] || agentObj.name || workData.creator, 'الميرداماد، محمد باقر الحسيني');
-  const creatorRole = extractStr(rawContribs[0]?.['bf:role']?.['rdfs:label'] || rawContribs[0]?.role, 'مؤلف / Author');
-  const creatorUri = agentObj['@id'] || workData.creatorUri || 'http://id.loc.gov/authorities/names/n85043844';
+  const creatorName = extractStr(agentObj['rdfs:label'] || agentObj.name || workData.creator, '—');
+  const creatorRole = extractStr(rawContribs[0]?.['bf:role']?.['rdfs:label'] || rawContribs[0]?.role, '');
+  const creatorUri = agentObj['@id'] || workData.creatorUri || '';
 
-  const rawClass = workData['bf:classification'] || workData.classification || workData.classificationLcc || instanceData['bf:classification'] || 'B753.D363 Q23 1650';
+  const rawClass = workData['bf:classification'] || workData.classification || workData.classificationLcc || instanceData['bf:classification'] || '';
   const callNo = typeof rawClass === 'object'
-    ? [rawClass['bf:classificationPortion'], rawClass['bf:itemPortion']].filter(Boolean).join(' ') || rawClass['rdfs:label'] || 'B753.D363 Q23 1650'
-    : String(rawClass);
+    ? [rawClass['bf:classificationPortion'], rawClass['bf:itemPortion']].filter(Boolean).join(' ') || rawClass['rdfs:label'] || '—'
+    : String(rawClass || '—');
 
   const rawSubjects = extractArr(workData['bf:subject'] || workData.subject || []);
-  const subject1 = rawSubjects[0] ? extractStr(rawSubjects[0]['rdfs:label'] || rawSubjects[0], 'الفلسفة الإسلامية') : 'الفلسفة الإسلامية';
-  const subject2 = rawSubjects[1] ? extractStr(rawSubjects[1]['rdfs:label'] || rawSubjects[1], 'علم الكلام') : 'علم الكلام';
+  const subject1 = rawSubjects[0] ? extractStr(rawSubjects[0]['rdfs:label'] || rawSubjects[0], '—') : '—';
+  const subject1Uri = rawSubjects[0]?.['@id'] || '';
+  const subject2 = rawSubjects[1] ? extractStr(rawSubjects[1]['rdfs:label'] || rawSubjects[1], '—') : '—';
 
-  const dateVal = extractStr(instanceData['bf:provisionActivity']?.['bf:date'] || instanceData['bf:provisionActivity']?.date || workData['bf:originDate'] || '1061 هـ = [1650]');
-  const extentVal = extractStr(instanceData['bf:extent'] || instanceData.extent, '344 ورقة (18 سطرًا)');
-  const dimsVal = extractStr(instanceData['bf:dimensions'] || instanceData.dimensions, '21 × 15 سم');
-  const carrierVal = extractStr(instanceData['bf:carrier'] || instanceData.carrier, 'مصدر الكتروني (ck)');
+  const dateVal = extractStr(instanceData['bf:provisionActivity']?.['bf:date'] || instanceData['bf:provisionActivity']?.date || workData['bf:originDate'] || '—');
+  const extentVal = extractStr(instanceData['bf:extent'] || instanceData.extent, '—');
+  const dimsVal = extractStr(instanceData['bf:dimensions'] || instanceData.dimensions, '');
+  const carrierVal = extractStr(instanceData['bf:carrier'] || instanceData.carrier, '');
 
   const rawNotes = extractArr(workData['bf:note'] || workData.note || instanceData['bf:note'] || []);
-  let incipitText = 'أوله : الحمد لله الواحد الاحد الصمد المصمود مهيمن كل وجود...';
-  let explicitText = 'آخره : ولا تخلنا اللهم مع ذلك من عواطف رأفتك...';
-  rawNotes.forEach(n => {
-    const s = extractStr(n?.['rdfs:label'] || n);
-    if (s.startsWith('أوله') || s.includes('الحمد لله')) incipitText = s;
-    if (s.startsWith('آخره') || s.includes('ولا تخلنا')) explicitText = s;
-  });
+  const noteTexts = rawNotes.map(n => extractStr(n?.['rdfs:label'] || n)).filter(Boolean);
+  const incipitText = noteTexts.find(s => s.startsWith('أوله')) || '';
+  const explicitText = noteTexts.find(s => s.startsWith('آخره')) || '';
 
   // Construct Layout Coordinates for 1400x900 Canvas
   const { nodes, links } = useMemo(() => {
@@ -126,7 +123,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
       {
         id: 'instance',
         label: 'bf:Instance',
-        sublabel: 'مخطوطة أصلية 1061 هـ',
+        sublabel: dateVal,
         group: 'instance',
         x: 880,
         y: 440,
@@ -134,7 +131,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#06b6d4',
         icon: <Package className="h-6 w-6" />,
         predicate: 'bf:hasInstance',
-        fullText: `Instance Manifestation: 1061 H / 1650 M (${carrierVal})`,
+        fullText: `Instance: ${dateVal}${carrierVal ? ` (${carrierVal})` : ''}`,
         uri: instanceData['@id'] || '',
       },
 
@@ -142,7 +139,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
       {
         id: 'item',
         label: 'bf:Item',
-        sublabel: 'IQ-KaCCS (b125923)',
+        sublabel: itemUri ? 'bf:Item' : 'لا نسخ مسجلة',
         group: 'item',
         x: 1200,
         y: 440,
@@ -150,7 +147,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#f43f5e',
         icon: <Building2 className="h-5 w-5" />,
         predicate: 'bf:hasItem',
-        fullText: 'Physical/Digital Item: خزانة المخطوطات، العتبة العباسية المقدسة (IQ-KaCCS) -- الباركود: b125923',
+        fullText: itemUri ? `Item: ${itemUri}` : 'No copies recorded for this record.',
         uri: itemUri,
       },
 
@@ -179,7 +176,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#8b5cf6',
         icon: <User className="h-4 w-4" />,
         predicate: 'bf:contribution -> bf:agent',
-        fullText: `${creatorName} (${creatorRole})\nLOC Authority: ${creatorUri}`,
+        fullText: [creatorRole ? `${creatorName} (${creatorRole})` : creatorName, creatorUri && `Authority: ${creatorUri}`].filter(Boolean).join('\n'),
         uri: creatorUri,
       },
       {
@@ -193,7 +190,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#f59e0b',
         icon: <Hash className="h-4 w-4" />,
         predicate: 'bf:classification',
-        fullText: `Library of Congress Classification: ${callNo} (DDC: 181.07)`,
+        fullText: `Library of Congress Classification: ${callNo}`,
       },
       {
         id: 'subject1-node',
@@ -207,7 +204,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         icon: <Tag className="h-4 w-4" />,
         predicate: 'bf:subject (LCSH)',
         fullText: `LCSH Topic: ${subject1}`,
-        uri: 'http://id.loc.gov/authorities/subjects/sh85101006',
+        uri: subject1Uri,
       },
       {
         id: 'subject2-node',
@@ -235,7 +232,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#2dd4bf',
         icon: <Package className="h-4 w-4" />,
         predicate: 'bf:provisionActivity',
-        fullText: `تاريخ الإنتاج والنسخ: ${dateVal} -- أصفهان / إيران`,
+        fullText: `تاريخ الإنتاج والنسخ: ${dateVal}`,
       },
       {
         id: 'extent-node',
@@ -248,12 +245,12 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#fb7185',
         icon: <Layers className="h-4 w-4" />,
         predicate: 'bf:extent & bf:dimensions',
-        fullText: `عدد الأوراق: ${extentVal} -- المقاس: ${dimsVal}`,
+        fullText: dimsVal ? `عدد الأوراق: ${extentVal} -- المقاس: ${dimsVal}` : `عدد الأوراق: ${extentVal}`,
       },
       {
         id: 'codicology-node',
-        label: 'Script & Ink / الخط',
-        sublabel: 'خط النستعليق / حبر أسود',
+        label: 'Notes / الملاحظات',
+        sublabel: noteTexts.length ? `${noteTexts.length} ملاحظات` : '—',
         group: 'manuscript',
         x: 960,
         y: 670,
@@ -261,12 +258,12 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#eab308',
         icon: <FileText className="h-4 w-4" />,
         predicate: 'MARC 340 / bf:Note',
-        fullText: 'خط النستعليق الفاخر بحبر أسود، وعناوين محمرة، مرتبة بنظام التعقيبات على ورق شرقي',
+        fullText: noteTexts.join('\n') || '—',
       },
       {
         id: 'incipit-node',
         label: 'Incipit / أول المخطوط',
-        sublabel: 'الحمد لله الواحد الأحد...',
+        sublabel: incipitText ? incipitText.slice(0, 24) + '...' : '—',
         group: 'manuscript',
         x: 980,
         y: 220,
@@ -274,14 +271,14 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#f59e0b',
         icon: <Quote className="h-4 w-4" />,
         predicate: 'bf:note (Incipit)',
-        fullText: `${incipitText}\n\n${explicitText}`,
+        fullText: [incipitText, explicitText].filter(Boolean).join('\n\n') || '—',
       },
 
       // Admin Node
       {
         id: 'admin-node',
         label: 'AdminMetadata',
-        sublabel: 'IQ-KaCCS / RDA',
+        sublabel: 'bf:AdminMetadata',
         group: 'admin',
         x: 1200,
         y: 660,
@@ -289,7 +286,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
         color: '#64748b',
         icon: <Shield className="h-4 w-4" />,
         predicate: 'bf:adminMetadata',
-        fullText: 'RDA Cataloging Rules -- Agency: IQ-KaCCS -- Control 008: 120203s1650 xx ara',
+        fullText: 'Cataloging agency, rules and dates from the record\'s bf:adminMetadata.',
       },
     ];
 
@@ -316,7 +313,7 @@ export function MindMapPreview({ workData = {}, instanceData = {}, theme = 'dark
     ];
 
     return { nodes: nList, links: lList };
-  }, [titleVal, creatorName, creatorRole, creatorUri, callNo, subject1, subject2, dateVal, extentVal, dimsVal, carrierVal, incipitText, explicitText, workData, instanceData]);
+  }, [titleVal, creatorName, creatorRole, creatorUri, callNo, subject1, subject1Uri, subject2, dateVal, extentVal, dimsVal, carrierVal, incipitText, explicitText, noteTexts, itemUri, workData, instanceData]);
 
   // Cubic Bezier Path calculation between two nodes
   const getPathD = (fromId: string, toId: string) => {

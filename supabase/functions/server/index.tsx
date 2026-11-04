@@ -693,6 +693,10 @@ app.get("/make-server-49c0e13c/records/:id", async (c) => {
     }
     
     const record = JSON.parse(data);
+    // Pending and returned records are visible only to signed-in catalogers; the public sees published ones.
+    if (!isPublished(record) && !(await getSession(c))) {
+      return c.json({ error: 'Record not found' }, 404);
+    }
     console.log(`[RECORDS] Loaded record ${id}`);
     
     return c.json(record);
@@ -706,10 +710,13 @@ app.get("/make-server-49c0e13c/records/:id", async (c) => {
 app.get("/make-server-49c0e13c/records", async (c) => {
   try {
     const records = await kv.getByPrefix('bibframe:record:');
-    
-    const recordList = records.map((r: string) => {
-      const record = JSON.parse(r);
-      return {
+    const signedIn = !!(await getSession(c));
+
+    const recordList = records
+      .map((r: string) => JSON.parse(r))
+      // Without a session only published records are listed.
+      .filter((record: any) => signedIn || isPublished(record))
+      .map((record: any) => ({
         id: record.id,
         title: record.title || 'Untitled',
         document: record.document,
@@ -722,9 +729,8 @@ app.get("/make-server-49c0e13c/records", async (c) => {
         createdAt: record.createdAt || record.saved,
         saved: record.saved,
         nodeCount: record.document?.['@graph']?.length || 0,
-      };
-    });
-    
+      }));
+
     // Sort by saved date, newest first
     recordList.sort((a: any, b: any) => new Date(b.saved).getTime() - new Date(a.saved).getTime());
     
@@ -736,6 +742,11 @@ app.get("/make-server-49c0e13c/records", async (c) => {
     return c.json({ error: 'Failed to list records' }, 500);
   }
 });
+
+// Records saved before the review workflow existed have no status and count as published.
+function isPublished(record: any): boolean {
+  return (record?.status || record?.metadata?.status || 'complete') === 'complete';
+}
 
 // ✅ Approve / reject a pending record (Super Admin only)
 async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
@@ -2635,77 +2646,6 @@ app.get("/make-server-49c0e13c/moon/search",
   } catch (error) {
     console.error('[MOON API] Search error:', error);
     return c.json({ error: 'Search failed' }, 500);
-  }
-});
-
-// 🐢 Export Record as Turtle (GET /moon/records/:id/turtle)
-app.get("/make-server-49c0e13c/moon/records/:id/turtle", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const record = await moonRecords.getMoonRecord(id);
-    
-    if (!record) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    
-    const turtle = await moonRecords.convertToTurtle(record.document);
-    return c.text(turtle, 200, { 'Content-Type': 'text/turtle' });
-  } catch (error) {
-    console.error('[MOON API] Turtle export error:', error);
-    return c.json({ error: 'Failed to export as Turtle' }, 500);
-  }
-});
-
-// 📄 Export Record as N-Triples (GET /moon/records/:id/ntriples)
-app.get("/make-server-49c0e13c/moon/records/:id/ntriples", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const record = await moonRecords.getMoonRecord(id);
-    
-    if (!record) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    
-    const ntriples = await moonRecords.convertToNTriples(record.document);
-    return c.text(ntriples, 200, { 'Content-Type': 'application/n-triples' });
-  } catch (error) {
-    console.error('[MOON API] N-Triples export error:', error);
-    return c.json({ error: 'Failed to export as N-Triples' }, 500);
-  }
-});
-
-// 📊 Export Record as JSON-LD (GET /moon/records/:id/jsonld)
-app.get("/make-server-49c0e13c/moon/records/:id/jsonld", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const record = await moonRecords.getMoonRecord(id);
-    
-    if (!record) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    
-    return c.json(record.document, 200, { 'Content-Type': 'application/ld+json' });
-  } catch (error) {
-    console.error('[MOON API] JSON-LD export error:', error);
-    return c.json({ error: 'Failed to export as JSON-LD' }, 500);
-  }
-});
-
-// 🕸️ Extract RDF Triples for Graph Visualization (GET /moon/records/:id/triples)
-app.get("/make-server-49c0e13c/moon/records/:id/triples", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const record = await moonRecords.getMoonRecord(id);
-    
-    if (!record) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    
-    const triples = await moonRecords.extractTriples(record.document);
-    return c.json({ triples, count: triples.length });
-  } catch (error) {
-    console.error('[MOON API] Triple extraction error:', error);
-    return c.json({ error: 'Failed to extract triples' }, 500);
   }
 });
 
