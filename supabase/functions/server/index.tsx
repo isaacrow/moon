@@ -774,6 +774,81 @@ async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
 app.post("/make-server-49c0e13c/records/:id/approve", (c) => reviewRecord(c, 'complete'));
 app.post("/make-server-49c0e13c/records/:id/reject", (c) => reviewRecord(c, 'needs-review'));
 
+// 🕓 Version history: every save, approval, return and revert of a record (signed-in catalogers only,
+// since earlier versions can include unpublished states).
+app.get("/make-server-49c0e13c/records/:id/versions", async (c) => {
+  try {
+    if (!(await getSession(c))) {
+      return c.json({ error: 'Sign in to see a record\'s history' }, 401);
+    }
+    const id = c.req.param('id');
+    const record = await recordStore.getRecord(id);
+    if (!record) {
+      return c.json({ error: 'Record not found' }, 404);
+    }
+    const versions = await recordStore.listVersions(id);
+    return c.json({ id, current: record.version ?? null, versions });
+  } catch (error) {
+    console.error('List versions error:', error);
+    return c.json({ error: 'Failed to load the record\'s history' }, 500);
+  }
+});
+
+app.get("/make-server-49c0e13c/records/:id/versions/:version", async (c) => {
+  try {
+    if (!(await getSession(c))) {
+      return c.json({ error: 'Sign in to see a record\'s history' }, 401);
+    }
+    const version = Number(c.req.param('version'));
+    if (!Number.isInteger(version) || version < 1) {
+      return c.json({ error: 'Invalid version' }, 400);
+    }
+    const found = await recordStore.getVersion(c.req.param('id'), version);
+    return found ? c.json(found) : c.json({ error: 'Version not found' }, 404);
+  } catch (error) {
+    console.error('Load version error:', error);
+    return c.json({ error: 'Failed to load the version' }, 500);
+  }
+});
+
+// ↩️ Revert: an earlier version becomes current again, saved as a new version. The same people who may
+// save the record may revert it, and the same review rule applies: a cataloger's revert waits for approval.
+app.post("/make-server-49c0e13c/records/:id/revert", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) {
+      return c.json({ error: 'Sign in to revert records' }, 401);
+    }
+    const id = c.req.param('id');
+    const { version } = await c.req.json().catch(() => ({}));
+    if (!Number.isInteger(version) || version < 1) {
+      return c.json({ error: 'Version number required' }, 400);
+    }
+    const current = await recordStore.getRecord(id);
+    if (!current) {
+      return c.json({ error: 'Record not found' }, 404);
+    }
+    const isAdmin = session.role === 'admin';
+    if (!isAdmin && current.cataloger && current.cataloger !== session.username) {
+      return c.json({ error: 'This record belongs to another cataloger' }, 403);
+    }
+    if (version === current.version) {
+      return c.json({ error: 'That version is already the current one' }, 400);
+    }
+    const target = await recordStore.getVersion(id, version);
+    if (!target) {
+      return c.json({ error: 'Version not found' }, 404);
+    }
+    const status = isAdmin ? 'complete' : 'pending-review';
+    const newVersion = await recordStore.revertRecord(current, target, session.username, status);
+    console.log(`[RECORDS] ${session.username} reverted record ${id} to v${version} as v${newVersion}`);
+    return c.json({ success: true, id, version: newVersion, revertedTo: version, status });
+  } catch (error) {
+    console.error('Revert record error:', error);
+    return c.json({ error: 'Failed to revert the record' }, 500);
+  }
+});
+
 // 🗑️ Delete Record
 app.delete("/make-server-49c0e13c/records/:id", async (c) => {
   try {
