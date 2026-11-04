@@ -1422,23 +1422,37 @@ export default function WolfMoon({
     }
   };
 
-  // Reports this cataloger as editing the record every half minute while they are active (a key or
-  // click in the last two minutes, page visible), and shows who else is. Going quiet or leaving the
-  // record drops them from others' warnings within a minute and a half.
+  // Reports this cataloger as editing the record every 15 seconds while they are active (a key or
+  // click in the last two minutes, page visible), and shows who else is: both the one who opened the
+  // record first and the one who came after see the warning, and someone arriving also gets a toast.
+  // Going quiet or leaving the record drops them from others' warnings within a minute and a half.
   useEffect(() => {
     if (!storageId || !username) return;
     let lastActivity = Date.now();
     let stopped = false;
+    let known: Set<string> | null = null;
     const onActivity = () => { lastActivity = Date.now(); };
     const activity = ["keydown", "pointerdown", "input"] as const;
     activity.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
     const beat = async () => {
       if (document.visibilityState !== "visible" || Date.now() - lastActivity > 120_000) return;
       const editors = await reportEditing(storageId).catch(() => null);
-      if (!stopped && editors) setOtherEditors(editors);
+      if (stopped || !editors) return;
+      // Someone who opened the record after this cataloger: say so right away, not only in the banner.
+      if (known) {
+        for (const e of editors) {
+          if (!known.has(e.username)) {
+            toast.warning(language === "ar" ? `فتح ${e.username} هذه التسجيلة الآن` : `${e.username} just opened this record`, {
+              description: language === "ar" ? "إذا حفظتما معًا فستُسأل أي النسختين تبقى." : "If you both save, you'll be asked which version to keep.",
+            });
+          }
+        }
+      }
+      known = new Set(editors.map((e) => e.username));
+      setOtherEditors(editors);
     };
     beat();
-    const timer = window.setInterval(beat, 30_000);
+    const timer = window.setInterval(beat, 15_000);
     const leave = () => reportStoppedEditing(storageId);
     window.addEventListener("pagehide", leave);
     return () => {
@@ -1448,7 +1462,7 @@ export default function WolfMoon({
       window.removeEventListener("pagehide", leave);
       leave();
     };
-  }, [storageId, username]);
+  }, [storageId, username, language]);
 
   const loadLatestVersion = async () => {
     if (!storageIdRef.current) return;
