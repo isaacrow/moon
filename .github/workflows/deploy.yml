@@ -67,10 +67,31 @@ jobs:
         with:
           path: './dist'
 
+  # Applies new supabase/migrations/*.sql files to the live database before the server that uses them
+  # deploys. Each file runs once, in a transaction; see scripts/apply-migrations.mjs.
+  migrate-database:
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: gfbagczwhvxxstbfrfhu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply migrations
+        run: node scripts/apply-migrations.mjs
+
   # Deploys the Supabase edge function (accounts, approvals, records API).
   # Needs the SUPABASE_ACCESS_TOKEN repository secret; skipped when it is missing.
   deploy-edge-function:
-    needs: check
+    needs: [check, migrate-database]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     env:
