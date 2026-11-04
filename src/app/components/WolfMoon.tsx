@@ -78,7 +78,10 @@ import {
 } from "../../services/w3cJsonLdBuilder";
 
 // ===== APP UTILS =====
-import { saveRecord, getAllRecordsLocal, getRecordById } from "../utils/recordStorageBackend";
+import { saveRecord, getAllRecordsLocal, getRecordById, RecordConflictError, toServerDocument } from "../utils/recordStorageBackend";
+import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils/recordEditing";
+import { EditingWarning } from "./EditingWarning";
+import type { SaveConflict } from "./SaveConflictDialog";
 
 // ===== COMPONENTS =====
 import { OntologyField } from "./ontology/OntologyField";
@@ -98,6 +101,7 @@ const AuthorityGraph = React.lazy(() => import("./AuthorityGraph").then(m => ({ 
 const LinkedDataDiscovery = React.lazy(() => import("./LinkedDataDiscovery"));
 const Marc21Viewer = React.lazy(() => import("./Marc21Viewer").then(m => ({ default: m.Marc21Viewer })));
 const RecordHistoryPanel = React.lazy(() => import("./RecordHistoryPanel"));
+const SaveConflictDialog = React.lazy(() => import("./SaveConflictDialog"));
 const BlueMoonAIPanel = React.lazy(() => import("./BlueMoonAIPanel").then(m => ({ default: m.BlueMoonAIPanel })));
 const MarvaToolsModal = React.lazy(() => import("./marva/MarvaToolsModal").then(m => ({ default: m.MarvaToolsModal })));
 const MarvaHubEditor = React.lazy(() => import("./marva/MarvaHubEditor").then(m => ({ default: m.MarvaHubEditor })));
@@ -446,6 +450,13 @@ export default function WolfMoon({
   const [uriSet] = useState<UriSet>(() => mintUriSet(recordId));
   // Storage id of the saved record; set after the first save so later saves update that record.
   const storageIdRef = useRef<string | undefined>(initialRecord?.metadata?.storageId);
+  // The same id as state, so effects (who is editing) start once a new record is first saved.
+  const [storageId, setStorageId] = useState<string | undefined>(initialRecord?.metadata?.storageId);
+  // The server version this editor started from. A save sends it, so a newer save by someone else is
+  // never overwritten silently; the server answers with a conflict instead.
+  const baseVersionRef = useRef<number | undefined>((initialRecord?.metadata as any)?.serverVersion);
+  const [saveConflict, setSaveConflict] = useState<(SaveConflict & { myDocument: any }) | null>(null);
+  const [otherEditors, setOtherEditors] = useState<ActiveEditor[]>([]);
 
   // ===== GRAPH STORE =====
   const [graphStore] = useState(new GraphStore());
@@ -1343,7 +1354,8 @@ export default function WolfMoon({
 
   // ============================== SAVE ==============================
 
-  const handleSave = async () => {
+  // overwriteVersion: set when the cataloger chose "Keep my edits" over a conflicting save.
+  const handleSave = async (overwriteVersion?: number) => {
     try {
       setSaveStatus("saving");
       let title = recordTitle;
@@ -1374,8 +1386,20 @@ export default function WolfMoon({
         },
       };
       // The server decides the final status from the signed-in user's session.
-      const saved = await saveRecord(record, username || "Anonymous");
+      let saved;
+      try {
+        saved = await saveRecord(record, username || "Anonymous", { baseVersion: overwriteVersion ?? baseVersionRef.current });
+      } catch (error) {
+        if (!(error instanceof RecordConflictError)) throw error;
+        // Someone saved meanwhile: nothing was saved; let the cataloger compare and choose.
+        setSaveStatus("unsaved");
+        setSaveConflict({ currentVersion: error.currentVersion, savedBy: error.savedBy, savedAt: error.savedAt, myDocument: toServerDocument(record) });
+        return;
+      }
       storageIdRef.current = saved.id;
+      setStorageId(saved.id);
+      baseVersionRef.current = saved.version;
+      setSaveConflict(null);
       clearDraft();
       const initialStatus = saved.status || "complete";
       setSaveStatus("saved");
@@ -1396,6 +1420,43 @@ export default function WolfMoon({
       setSaveStatus("error");
       toast.error("Save failed", { description: error instanceof Error ? error.message : "Unknown error" });
     }
+  };
+
+  // Reports this cataloger as editing the record every half minute while they are active (a key or
+  // click in the last two minutes, page visible), and shows who else is. Going quiet or leaving the
+  // record drops them from others' warnings within a minute and a half.
+  useEffect(() => {
+    if (!storageId || !username) return;
+    let lastActivity = Date.now();
+    let stopped = false;
+    const onActivity = () => { lastActivity = Date.now(); };
+    const activity = ["keydown", "pointerdown", "input"] as const;
+    activity.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+    const beat = async () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastActivity > 120_000) return;
+      const editors = await reportEditing(storageId).catch(() => null);
+      if (!stopped && editors) setOtherEditors(editors);
+    };
+    beat();
+    const timer = window.setInterval(beat, 30_000);
+    const leave = () => reportStoppedEditing(storageId);
+    window.addEventListener("pagehide", leave);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      activity.forEach((e) => window.removeEventListener(e, onActivity));
+      window.removeEventListener("pagehide", leave);
+      leave();
+    };
+  }, [storageId, username]);
+
+  const loadLatestVersion = async () => {
+    if (!storageIdRef.current) return;
+    const latest = await getRecordById(storageIdRef.current);
+    if (!latest) return;
+    clearDraft();
+    setSaveConflict(null);
+    onReloadRecord?.(latest.record);
   };
 
   // ============================== DOWNLOAD ==============================
@@ -1682,7 +1743,7 @@ export default function WolfMoon({
           {/* Save Button */}
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => handleSave()}
             className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-3 py-1 text-xs font-black text-white cursor-pointer shadow-xl shrink-0"
           >
             <Save className="h-3 w-3 text-emerald-300 drop-shadow" />
@@ -1801,6 +1862,24 @@ export default function WolfMoon({
           <div className="absolute top-1/2 -right-40 w-[600px] h-[600px] rounded-full" style={{ background: "radial-gradient(circle, rgba(30,64,175,0.06), transparent 70%)" }} />
           <div className="absolute -bottom-32 left-1/3 w-[400px] h-[400px] rounded-full" style={{ background: "radial-gradient(circle, rgba(96,165,250,0.07), transparent 70%)" }} />
         </div>
+        )}
+
+        <EditingWarning editors={otherEditors} language={language} />
+
+        {saveConflict && storageIdRef.current && (
+          <React.Suspense fallback={null}>
+            <SaveConflictDialog
+              recordId={storageIdRef.current}
+              conflict={saveConflict}
+              myDocument={saveConflict.myDocument}
+              theme={BM}
+              language={language}
+              busy={saveStatus === "saving"}
+              onKeepMine={() => handleSave(saveConflict.currentVersion)}
+              onLoadTheirs={loadLatestVersion}
+              onCancel={() => setSaveConflict(null)}
+            />
+          </React.Suspense>
         )}
 
         {/* ===== BIBFRAME EDITOR ===== */}
