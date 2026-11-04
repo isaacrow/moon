@@ -13,7 +13,8 @@ interface AuthoritySelectProps {
   label: string;
   value: any;
   onChange: (value: AuthorityResult | null) => void;
-  onSearch: (query: string) => Promise<AuthorityResult[]>;
+  // Local vocabularies answer at once; LC and other services answer with a promise.
+  onSearch: (query: string) => Promise<AuthorityResult[]> | AuthorityResult[];
   placeholder?: string;
   required?: boolean;
   allowCustom?: boolean;
@@ -390,7 +391,8 @@ interface AuthorityMultiSelectProps {
   label: string;
   values: AuthorityResult[];
   onChange: (values: AuthorityResult[]) => void;
-  onSearch: (query: string) => Promise<AuthorityResult[]>;
+  // Local vocabularies answer at once; LC and other services answer with a promise.
+  onSearch: (query: string) => Promise<AuthorityResult[]> | AuthorityResult[];
   placeholder?: string;
   maxItems?: number;
 }

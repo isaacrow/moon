@@ -22,7 +22,7 @@ export interface OntologyProperty {
   marc: string[];
   required?: boolean;
   repeatable?: boolean;
-  api?: 'loc-names' | 'loc-subjects' | 'loc-places' | 'rda-vocab' | 'loc-classification' | 'loc-relators' | 'loc-languages' | 'loc-geographicAreas' | 'iso639';
+  api?: 'loc-names' | 'loc-subjects' | 'loc-places' | 'rda-vocab' | 'loc-classification' | 'loc-relators' | 'loc-languages' | 'loc-geographicAreas' | 'loc-countries' | 'iso639';
   controlledVocabulary?: boolean;
   valueType?: 'literal' | 'uri' | 'entity';
   description?: string;

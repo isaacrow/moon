@@ -2,62 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Badge } from './ui/badge';
-import { Button } from './ui/button';
 import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
 import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord } from '../utils/recordStorageBackend';
 import type { BIBFRAMERecord } from '../types/bibframe';
 import { ActivityLog } from './ActivityLog';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { 
-  LayoutDashboard,
   Trash2,
   History,
   TrendingUp,
   FileText,
-  Users,
   Clock,
   CheckCircle,
   CheckCircle2,
   Box,
   AlertCircle,
-  BarChart3,
-  Calendar,
   ArrowRight,
-  Activity,
-  Network,
-  BookOpen,
   Sparkles,
   Star,
-  Package,
-  Database,
-  Save,
-  Palette,
   Zap,
-  Globe,
-  Shield,
-  Layers,
-  Upload,
   Search,
-  Edit,
   Library,
-  Download,
-  Moon,
-  LayoutGrid,
-  Orbit,
-  GitBranch,
-  Brain,
-  Server,
-  ChevronDown,
-  ChevronUp,
-  Compass
-} from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+  Moon} from 'lucide-react';
 import moonLogoWhite from '../../assets/white.png';
-import moonLogoBlack from '../../assets/black.png';
 import '../../styles/glassmorphism.css';
 
 // 3D Spline Scene from Login Screen

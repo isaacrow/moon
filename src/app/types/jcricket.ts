@@ -1,6 +1,5 @@
 // JCricket Entity Management Type Definitions
 
-import { BIBFRAMERecord } from './bibframe';
 
 /**
  * User Role Types

@@ -7,11 +7,14 @@ export interface AuthorityLookupResult {
   source?: string;
 }
 
+// Records hold any BIBFRAME/BFLC property (and editor copies of them), not only the ones listed here.
 export interface BIBFRAMEWork {
+  [property: string]: any;
   '@type': 'bf:Work';
   '@id'?: string;
   'bf:creator'?: AuthorityLookupResult[];
   'bf:title'?: {
+    [property: string]: any;
     '@type': 'bf:Title';
     'bf:mainTitle': string;
   };
@@ -70,12 +73,14 @@ export interface BIBFRAMEWork {
 }
 
 export interface BIBFRAMEInstance {
+  [property: string]: any;
   '@type': 'bf:Instance';
   '@id'?: string;
   'bf:instanceOf'?: {
     '@id': string;
   };
   'bf:title'?: {
+    [property: string]: any;
     '@type': 'bf:Title';
     'bf:mainTitle': string;
   };
@@ -122,6 +127,7 @@ export interface BIBFRAMEInstance {
 }
 
 export interface BIBFRAMERecord {
+  [property: string]: any;
   '@context': {
     bf: string;
     rdfs: string;

@@ -1,14 +1,15 @@
 {
-  "name": "@figma/my-make-file",
+  "name": "moon-bibframe",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "npx tsx --test test/serializers.test.ts test/bibframe.test.ts test/arabic-isbn.test.ts test/conformance.test.ts",
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc --noEmit -p . --noUnusedLocals false --noUnusedParameters false",
+    "lint:unused": "tsc --noEmit -p .",
     "build:terms": "node scripts/build-bibframe-terms.mjs",
     "build:samples": "npx tsx scripts/build-sample-records.ts"
   },
@@ -93,6 +94,7 @@
     "vite": "6.3.5"
   },
   "devDependencies": {
+    "@types/n3": "^1.21.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "rdfxml-streaming-parser": "^2.4.0",

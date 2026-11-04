@@ -128,7 +128,7 @@ function convertToMARC(data: RecordData): MARCRecord[] {
 
   // 020 ISBN
   const identifiers = data.instance?.['bf:identifiedBy'] || [];
-  identifiers.forEach(id => {
+  identifiers.forEach((id: any) => {
     if (id['@type'] === 'bf:Isbn' && id['rdf:value']) {
       record.fields.push({
         tag: '020',
@@ -140,7 +140,7 @@ function convertToMARC(data: RecordData): MARCRecord[] {
   });
 
   // 022 ISSN
-  identifiers.forEach(id => {
+  identifiers.forEach((id: any) => {
     if (id['@type'] === 'bf:Issn' && id['rdf:value']) {
       record.fields.push({
         tag: '022',
@@ -152,7 +152,7 @@ function convertToMARC(data: RecordData): MARCRecord[] {
   });
 
   // 024 Other Standard Identifier
-  identifiers.forEach(id => {
+  identifiers.forEach((id: any) => {
     if (id['@type'] === 'bf:Identifier' && id['rdf:value']) {
       record.fields.push({
         tag: '024',
@@ -164,7 +164,7 @@ function convertToMARC(data: RecordData): MARCRecord[] {
   });
 
   // 028 Publisher Number
-  identifiers.forEach(id => {
+  identifiers.forEach((id: any) => {
     if (id['@type'] === 'bf:PublisherNumber' && id['rdf:value']) {
       record.fields.push({
         tag: '028',
@@ -176,7 +176,7 @@ function convertToMARC(data: RecordData): MARCRecord[] {
   });
 
   // 035 System Control Number
-  identifiers.forEach(id => {
+  identifiers.forEach((id: any) => {
     if (id['@type'] === 'bf:SystemNumber' && id['rdf:value']) {
       record.fields.push({
         tag: '035',
@@ -203,7 +203,7 @@ function convertToMARC(data: RecordData): MARCRecord[] {
   // 041 Language Code
   const languages = data.work?.['bf:language'] || [];
   if (languages.length > 0) {
-    const langCodes = languages.map(l => {
+    const langCodes = languages.map((l: any) => {
       const code = l['@id']?.split('/').pop() || l['rdfs:label']?.toLowerCase().slice(0, 3) || 'eng';
       return code;
     }).join('');
@@ -221,7 +221,7 @@ function convertToMARC(data: RecordData): MARCRecord[] {
 
   // 050 Library of Congress Classification
   const classifications = data.work?.['bf:classification'] || [];
-  classifications.forEach(cls => {
+  classifications.forEach((cls: any) => {
     if (cls['@type'] === 'bf:ClassificationLcc') {
       const subfields = [];
       if (cls['bf:classificationPortion']) {
@@ -242,7 +242,7 @@ function convertToMARC(data: RecordData): MARCRecord[] {
   });
 
   // 082 Dewey Decimal Classification
-  classifications.forEach(cls => {
+  classifications.forEach((cls: any) => {
     if (cls['@type'] === 'bf:ClassificationDdc') {
       const subfields = [];
       if (cls['bf:classificationPortion']) {
@@ -510,7 +510,7 @@ function convertToMARC(data: RecordData): MARCRecord[] {
 
   // 546 Language Note
   if (languages.length > 0) {
-    const langNames = languages.map(l => l['rdfs:label']).filter(Boolean).join(', ');
+    const langNames = languages.map((l: any) => l['rdfs:label']).filter(Boolean).join(', ');
     if (langNames) {
       record.fields.push({
         tag: '546',

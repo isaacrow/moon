@@ -54,7 +54,7 @@ export function buildWorkGraph(workData: any, workUri?: string): RDFQuad[] {
   );
 
   // Add properties
-  Object.entries(workData).forEach(([key, value]) => {
+  Object.entries(workData).forEach(([key, value]: [string, any]) => {
     if (!value || key.startsWith('_') || key === '@id') return;
 
     const predicate = key.startsWith('http://') ? key : `http://id.loc.gov/ontologies/bibframe/${key.replace('bf:', '')}`;
@@ -135,7 +135,7 @@ export function buildInstanceGraph(instanceData: any, workUri: string, instanceU
   );
 
   // Add properties (same logic as Work)
-  Object.entries(instanceData).forEach(([key, value]) => {
+  Object.entries(instanceData).forEach(([key, value]: [string, any]) => {
     if (!value || key.startsWith('_') || key === '@id' || key === 'instanceOf') return;
 
     const predicate = key.startsWith('http://') ? key : `http://id.loc.gov/ontologies/bibframe/${key.replace('bf:', '')}`;

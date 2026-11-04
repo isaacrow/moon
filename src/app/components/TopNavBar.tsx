@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
-import { useAuth, AuthUser } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { LayoutDashboard, FilePlus, User, LogOut, Languages, ChevronLeft, Building2, Mail, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, FilePlus, LogOut, Languages, ChevronLeft, Building2, Mail, ShieldCheck } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,

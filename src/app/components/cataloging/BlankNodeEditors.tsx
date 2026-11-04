@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AuthoritySelect } from './AuthoritySelect';
-import { searchAllAuthorities, searchRelators } from '../../../services/authoritySearch';
+import { searchAllAuthorities } from '../../../services/authoritySearch';
 
 interface EditorProps {
   value: any;

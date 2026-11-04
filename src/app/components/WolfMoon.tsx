@@ -22,30 +22,24 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
-  Save, Download, Upload, ChevronLeft, ChevronDown, ChevronRight,
-  Search, BookOpen, Package, Layers, Database, FileText, Code, Braces,
-  Sparkles, Book, Network, CheckCircle2, AlertCircle, AlertTriangle,
-  BarChart3, Clock, Loader2, Eye, Music, Map, FileJson, Globe, User,
-  Building, MapPin, Tag, Newspaper, Archive, Shield, Hash, Activity,
-  Copy, ExternalLink, Zap, Settings, RefreshCw, Plus, X, Info, Home,
-  Moon, Star, Orbit, Waves, Fingerprint, Terminal, Languages, Scissors, Sun, Brain,
-  Sliders, ArrowRightLeft, QrCode, UserCheck, Replace, Columns, Maximize2, LayoutGrid, List, Lock, Box,
+  Save, Download, Upload, ChevronDown, 
+  BookOpen, Package, Layers, Database, FileText, Code, Braces,
+  Sparkles, Network, CheckCircle2, AlertCircle, AlertTriangle,
+  Clock, Loader2, Eye, Music, Map, Globe, User,
+  Newspaper, Archive, Shield, Hash, Activity,
+  Copy, ExternalLink, Settings, RefreshCw, Plus, X, Info, Home,
+  Orbit, Languages, Scissors, 
+  Sliders, LayoutGrid, List, Lock, Box,
   Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import moonLogoWhite from "../../assets/white.png";
-import moonLogoBlack from "../../assets/black.png";
 
 // ===== OFFICIAL BIBFRAME 3.0.1 ONTOLOGY (from bibframe.rdf) =====
-import { 
-  getOfficialPropertiesForDomain, 
-  OFFICIAL_BIBFRAME_CLASSES, 
-  OFFICIAL_BIBFRAME_PROPERTIES 
-} from "../../services/officialBibframeVocabulary";
 
 // ===== CORE SERVICES =====
 import { GraphStore } from "../../services/graphStore";
-import { generateUri, toTurtle, toJsonLd, toRdfXml, extractTriples, validateGraphConnectivity } from "../../services/rdfGraphBuilder";
+import { toTurtle, toRdfXml, extractTriples, validateGraphConnectivity } from "../../services/rdfGraphBuilder";
 import {
   RelationshipGraph, Relationship, generateRelationshipId,
   RELATIONSHIP_DEFINITIONS, getRelationshipTypesForDomain
@@ -53,73 +47,71 @@ import {
 import { validateBibframeRecord, ValidationResult as BFValidationResult } from "../../services/bibframeValidator";
 import { validateInstitutionalBibframe, getValidationBadge, InstitutionalValidationResult } from "../../services/institutionalValidator";
 import {
-  ONTOLOGY_REGISTRY, OntologyProperty,
-  getPropertiesByDomain, getCategoriesForDomain, getPropertiesByCategory
+  
+  getCategoriesForDomain, getPropertiesByCategory
 } from "../../services/ontologyRegistry";
 import {
-  BIBFRAME_PROPERTY_REGISTRY, getPropertiesByDomain as getRegProperties,
-  getGroupsForDomain, getPropertiesByGroup, getRequiredPropertiesByDomain,
-  BibframePropertyDefinition
-} from "../../services/bibframePropertyRegistry";
+  
+  getGroupsForDomain, getRequiredPropertiesByDomain} from "../../services/bibframePropertyRegistry";
 import {
-  MONOGRAPH_COMPLETE_TEMPLATE, SERIAL_TEMPLATE, MANUSCRIPT_TEMPLATE,
-  MUSIC_TEMPLATE, MAP_TEMPLATE, TEMPLATE_REGISTRY,
-  getAllTemplates, getTemplate, CatalogingTemplate
-} from "../../services/templateEngine";
+  MONOGRAPH_COMPLETE_TEMPLATE, 
+  
+  getAllTemplates, getTemplate} from "../../services/templateEngine";
 import {
-  generateRecordId, mintUriSet, mintUri, mintAgentUri,
-  mintContributionUri, mintProvisionUri, mintIdentifierUri,
-  mintTitleUri, UriSet, BASE_URI
+  generateRecordId, mintUriSet, 
+  
+  UriSet, BASE_URI
 } from "../../services/uriMintingService";
 import {
-  BIBFRAME_CORE_CLASSES, BIBFRAME_PROPERTIES, ONTOLOGY_VERSION,
-  getPropertiesForClass, getRequiredProperties
-} from "../../services/bibframeOntology";
+  ONTOLOGY_VERSION} from "../../services/bibframeOntology";
 import {
-  AuthorityResult, ISBNData,
-  searchAllAuthorities, searchLanguages, searchCarriers,
-  searchMediaTypes, searchCountries, searchRelators,
-  COMMON_RELATORS, lookupISBN
-} from "../../services/authoritySearch";
+  ISBNData
+  
+  } from "../../services/authoritySearch";
 
 // ===== APP SERVICES =====
 import { getPropertiesForDomain } from "../services/bibframeOntologyEngine";
-import { buildBibframeGraph, generateUri as genUri } from "../services/graphBuilder";
-import { generateMARC } from "../services/marcGenerator";
+import { buildBibframeGraph } from "../services/graphBuilder";
 import {
   buildW3CJsonLd, validateW3CJsonLd, jsonLdToTurtle, jsonLdToNTriples,
-  BIBFRAME_JSONLD_CONTEXT, JsonLdValidationResult
+  JsonLdValidationResult
 } from "../../services/w3cJsonLdBuilder";
 
 // ===== APP UTILS =====
-import { realLocExamples } from "../utils/realLocExamples";
 import { saveRecord, getAllRecordsLocal } from "../utils/recordStorageBackend";
 
 // ===== COMPONENTS =====
 import { OntologyField } from "./ontology/OntologyField";
-import { OPACPreview } from "./ontology/OPACPreview";
-import WolfMoonStandaloneOpac from "./WolfMoonStandaloneOpac";
-import { MindMapPreview } from "./ontology/MindMapPreview";
-import { SolarSystemMindMap } from "./SolarSystemMindMap";
-import { ImportRecordDialog } from "./ontology/ImportRecordDialog";
-import AuthorFinder from "./AuthorFinder";
 import { OntologyDrivenFormRenderer } from "./cataloging/OntologyDrivenFormRenderer";
 import { ValidationPanel, validateGraph, ValidationResult } from "./cataloging/ValidationPanel";
-import { RecordViewerDialog } from "./cataloging/RecordViewerDialog";
-import { CatalogingWizard, WizardStep } from "./cataloging/CatalogingWizard";
-import { AuthoritySelect, AuthorityMultiSelect } from "./cataloging/AuthoritySelect";
 import { AuthoritySearchDialog } from "./AuthoritySearchDialog";
-import { AuthorityGraph } from "./AuthorityGraph";
-import { LinkedDataDiscovery } from "./LinkedDataDiscovery";
 import { MarcView } from "./RecordView/MarcView";
-import { RdfView } from "./RecordView/RdfView";
-import { Marc21Viewer } from "./Marc21Viewer";
-import { ImageWithFallback } from "./figma/ImageWithFallback";
-import { BlueMoonAIPanel } from "./BlueMoonAIPanel";
+
+// Panels shown only on their own tab or dialog load when first opened, so the editor itself opens fast.
+const WolfMoonStandaloneOpac = React.lazy(() => import("./WolfMoonStandaloneOpac"));
+const MindMapPreview = React.lazy(() => import("./ontology/MindMapPreview").then(m => ({ default: m.MindMapPreview })));
+const SolarSystemMindMap = React.lazy(() => import("./SolarSystemMindMap").then(m => ({ default: m.SolarSystemMindMap })));
+const ImportRecordDialog = React.lazy(() => import("./ontology/ImportRecordDialog").then(m => ({ default: m.ImportRecordDialog })));
+const AuthorFinder = React.lazy(() => import("./AuthorFinder"));
+const RecordViewerDialog = React.lazy(() => import("./cataloging/RecordViewerDialog").then(m => ({ default: m.RecordViewerDialog })));
+const AuthorityGraph = React.lazy(() => import("./AuthorityGraph").then(m => ({ default: m.AuthorityGraph })));
+const LinkedDataDiscovery = React.lazy(() => import("./LinkedDataDiscovery"));
+const Marc21Viewer = React.lazy(() => import("./Marc21Viewer").then(m => ({ default: m.Marc21Viewer })));
+const BlueMoonAIPanel = React.lazy(() => import("./BlueMoonAIPanel").then(m => ({ default: m.BlueMoonAIPanel })));
+const MarvaToolsModal = React.lazy(() => import("./marva/MarvaToolsModal").then(m => ({ default: m.MarvaToolsModal })));
+const MarvaHubEditor = React.lazy(() => import("./marva/MarvaHubEditor").then(m => ({ default: m.MarvaHubEditor })));
+const MarvaRemergeMarc = React.lazy(() => import("./marva/MarvaRemergeMarc").then(m => ({ default: m.MarvaRemergeMarc })));
+
+function LazyPanelFallback() {
+  return (
+    <div className="flex items-center justify-center py-16" role="status" aria-label="Loading">
+      <div className="w-8 h-8 border-4 border-sky-400 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 // ===== CONTEXTS =====
 import { useAuth } from "../contexts/AuthContext";
-import { useThemeSafe } from "../hooks/useThemeSafe";
 import { BIBFRAMERecord } from "../types/bibframe";
 
 // ===== ASSETS & CONFIG =====
@@ -132,26 +124,19 @@ import {
 } from "./LCCutterEngine";
 import {
   fetchLanguageIndex, transliterate as ssTransliterateLocal,
-  type SSLanguageIndex,
 } from "./ScriptShifterEngine";
-import moonLogo from "figma:asset/448923f9298ec547f27dd322785433298cd5ac34.png";
 import "../../styles/glassmorphism.css";
 
 // ===== MARVA & BIBFRAME PRIMER EXTENSIONS =====
 import {
   MarvaPreferencesModal, DEFAULT_MARVA_PREFERENCES, MarvaPreferences
 } from "./marva/MarvaPreferencesModal";
-import { MarvaToolsModal } from "./marva/MarvaToolsModal";
-import { MarvaHubEditor } from "./marva/MarvaHubEditor";
-import { MarvaRemergeMarc } from "./marva/MarvaRemergeMarc";
 import { toBibframeJsonLdString } from '../../services/bibframeNormalizer';
 import {
-  BibframeHub, generateHubAAP, normalizeAAP, createQuickHubStub, SAMPLE_LC_HUBS
+  BibframeHub, SAMPLE_LC_HUBS
 } from "../../services/hubService";
 import {
-  MARVA_DIACRITICS, MARVA_TEXT_MACROS, MarvaHistoryLog, MarvaHistoryEntry,
-  normalizeBCP47
-} from "../../services/marvaService";
+  MARVA_DIACRITICS, MarvaHistoryLog, MarvaHistoryEntry} from "../../services/marvaService";
 
 
 // ============================== TYPES ==============================
@@ -1901,7 +1886,7 @@ export default function WolfMoon({
 
             {/* ===== LC MARVA DYNAMIC WORK / INSTANCE / HUB LAYOUT ===== */}
             {loadType === "hub-only" ? (
-              <MarvaHubEditor
+              <React.Suspense fallback={<LazyPanelFallback />}><MarvaHubEditor
                 currentHub={activeHub}
                 onSelectHub={(h) => {
                   setActiveHub(h);
@@ -1909,7 +1894,7 @@ export default function WolfMoon({
                 }}
                 onSaveHub={(h) => setActiveHub(h)}
                 isDark={!isLight}
-              />
+              /></React.Suspense>
             ) : (
             <>
             {/* Field Display Mode Selector: Category Cards (Img 2) vs Standard MARC (Img 1) */}
@@ -2247,7 +2232,7 @@ export default function WolfMoon({
 
         {/* ===== MARC 21 VIEWER ===== */}
         {activeTab === "marc21-viewer" && (
-          <Marc21Viewer workData={workData} instanceData={instanceData} theme={BM} isLegacy={isLegacy} />
+          <React.Suspense fallback={<LazyPanelFallback />}><Marc21Viewer workData={workData} instanceData={instanceData} theme={BM} isLegacy={isLegacy} /></React.Suspense>
         )}
 
         {/* ===== TRIPLES ===== */}
@@ -2319,7 +2304,7 @@ export default function WolfMoon({
                 <span>Open Full Standalone OPAC (/opac.html)</span>
               </a>
             </div>
-            <WolfMoonStandaloneOpac onOpenEditor={() => setActiveTab('editor')} />
+            <React.Suspense fallback={<LazyPanelFallback />}><WolfMoonStandaloneOpac onOpenEditor={() => setActiveTab('editor')} /></React.Suspense>
           </div>
         )}
 
@@ -2351,9 +2336,9 @@ export default function WolfMoon({
               </div>
             </div>
             {mindmapView === "solar" ? (
-              <SolarSystemMindMap workData={workData} instanceData={instanceData} theme={BM} />
+              <React.Suspense fallback={<LazyPanelFallback />}><SolarSystemMindMap workData={workData} instanceData={instanceData} theme={BM} /></React.Suspense>
             ) : (
-              <MindMapPreview workData={workData} instanceData={instanceData} itemUri={uriSet.item} theme={isLight ? "light" : "dark"} />
+              <React.Suspense fallback={<LazyPanelFallback />}><MindMapPreview workData={workData} instanceData={instanceData} itemUri={uriSet.item} theme={isLight ? "light" : "dark"} /></React.Suspense>
             )}
           </BMCard>
         )}
@@ -2506,18 +2491,18 @@ export default function WolfMoon({
             <h3 className="text-lg font-black mb-4 flex items-center gap-2" style={{ color: BM.text }}>
               <Globe className="h-5 w-5" style={{ color: BM.secondary }} /> Authority Graph
             </h3>
-            <AuthorityGraph nodes={authorityNodes} />
+            <React.Suspense fallback={<LazyPanelFallback />}><AuthorityGraph nodes={authorityNodes} /></React.Suspense>
           </BMCard>
         )}
 
         {/* ===== DISCOVERY LAYER ===== */}
         {activeTab === "discovery" && (
           <div className="-mx-4" style={{ minHeight: "80vh" }}>
-            <LinkedDataDiscovery
+            <React.Suspense fallback={<LazyPanelFallback />}><LinkedDataDiscovery
               glassTheme={glassTheme}
               onThemeToggle={() => setGlassTheme(glassTheme === "dark" ? "legacy" : "dark")}
               onImportToForm={handleDiscoveryImport}
-            />
+            /></React.Suspense>
           </div>
         )}
 
@@ -2534,7 +2519,7 @@ export default function WolfMoon({
 
         {/* ===== BIBFRAME HUBS & EXPRESSIONS ===== */}
         {activeTab === "hubs" && (
-          <MarvaHubEditor
+          <React.Suspense fallback={<LazyPanelFallback />}><MarvaHubEditor
             currentHub={activeHub}
             onSelectHub={(h) => {
               setActiveHub(h);
@@ -2542,23 +2527,23 @@ export default function WolfMoon({
             }}
             onSaveHub={(h) => setActiveHub(h)}
             isDark={!isLight}
-          />
+          /></React.Suspense>
         )}
 
         {/* ===== REMERGE MODERN MARC ===== */}
         {activeTab === "remerge-marc" && (
-          <MarvaRemergeMarc
+          <React.Suspense fallback={<LazyPanelFallback />}><MarvaRemergeMarc
             workData={workData}
             instanceData={instanceData}
             itemData={uriSet.item}
             adminData={uriSet.admin}
             hubData={activeHub}
             isDark={!isLight}
-          />
+          /></React.Suspense>
         )}
         {/* ===== AI ENGINE ===== */}
         {activeTab === "ai-engine" && (
-          <BlueMoonAIPanel
+          <React.Suspense fallback={<LazyPanelFallback />}><BlueMoonAIPanel
             theme={BM}
             isLegacy={isLegacy}
             isClassic={isClassic}
@@ -2579,7 +2564,7 @@ export default function WolfMoon({
               }
               return ids?.["rdf:value"] || "";
             })()}
-          />
+          /></React.Suspense>
         )}
       </div>
 
@@ -2597,7 +2582,7 @@ export default function WolfMoon({
       />
 
       {/* ===== MARVA TOOLS MODAL ===== */}
-      <MarvaToolsModal
+      <React.Suspense fallback={<LazyPanelFallback />}><MarvaToolsModal
         isOpen={showToolsModal}
         onClose={() => setShowToolsModal(false)}
         workData={workData}
@@ -2619,7 +2604,7 @@ export default function WolfMoon({
           toast.info(`Reverted ${entry.field}`);
         }}
         isDark={!isLight}
-      />
+      /></React.Suspense>
 
       {/* ===== FIELD MANAGER PANEL ===== */}
       <AnimatePresence>
@@ -2757,16 +2742,16 @@ export default function WolfMoon({
       {showIraqiAuthorityModal && (
         <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/90 backdrop-blur-xl">
           <div className="flex-1 overflow-auto">
-            <AuthorFinder 
+            <React.Suspense fallback={<LazyPanelFallback />}><AuthorFinder 
               onBack={() => setShowIraqiAuthorityModal(false)} 
               onSelectAuthor={handleInsertIraqiAuthor} 
-            />
+            /></React.Suspense>
           </div>
         </div>
       )}
 
-      <ImportRecordDialog isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} onImport={handleImport} />
-      <RecordViewerDialog open={showRecordViewer} onOpenChange={setShowRecordViewer} jsonldData={graphJsonld || { "@graph": [] }} title={recordTitle} />
+      <React.Suspense fallback={<LazyPanelFallback />}><ImportRecordDialog isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} onImport={handleImport} /></React.Suspense>
+      <React.Suspense fallback={<LazyPanelFallback />}><RecordViewerDialog open={showRecordViewer} onOpenChange={setShowRecordViewer} jsonldData={graphJsonld || { "@graph": [] }} title={recordTitle} /></React.Suspense>
     </div>
     </BMThemeContext.Provider>
   );

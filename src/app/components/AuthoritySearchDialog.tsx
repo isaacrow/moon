@@ -3,9 +3,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Search, ExternalLink, CheckCircle, Loader2, User, Book, Building,
-  Tag, Sparkles, Brain, Globe, FileText, Calendar, Briefcase,
-  CheckCircle2, Info, ArrowRight, ShieldCheck, X
+  Search, CheckCircle, Loader2, User, Book, Building,
+  Tag, Sparkles, Brain, Globe, Calendar, 
+  X
 } from 'lucide-react';
 import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
@@ -15,7 +15,6 @@ import {
   fetchMultiPageWebResults,
   findAuthors,
   deepSearchAndSuggestWithGemini,
-  WebSearchResultItem,
   AISuggestionProfile,
   DEFAULT_GEMINI_API_KEY
 } from '../../services/authorFinderService';
@@ -141,7 +140,7 @@ export function AuthoritySearchDialog({
                 source: (r.sources[0]?.name as any) || 'Federated',
                 label: r.nameArabic || r.name,
                 description: r.description || r.occupation || '',
-                rawScore: r.rawScore || 80
+                score: r.rawScore || 80
               });
             }
           });
@@ -221,7 +220,8 @@ export function AuthoritySearchDialog({
   };
 
   const handleUseAiSuggestion = (suggestion: AISuggestionProfile) => {
-    const person: UnifiedPerson = {
+    // An AI suggestion also carries notes, which UnifiedPerson does not declare.
+    const person: UnifiedPerson & { notes?: string[] } = {
       id: `ai-${Date.now()}`,
       label: suggestion.suggestedNameArabic || suggestion.primarySuggestion,
       birth: suggestion.birthDate,
@@ -229,12 +229,14 @@ export function AuthoritySearchDialog({
       description: suggestion.summaryAr,
       occupations: [suggestion.occupation || 'Author'].filter(Boolean),
       nationality: suggestion.nationality,
-      identifiers: {
-        loc: '',
-        viaf: '',
-        wikidata: ''
+      // An AI suggestion has no authority identifiers; it was not found in LC, VIAF or Wikidata.
+      identifiers: {},
+      sourceGraph: [],
+      metadata: {
+        sources: ['AI suggestion'],
+        lastUpdated: new Date().toISOString(),
+        confidence: suggestion.confidence === 'high' ? 0.8 : suggestion.confidence === 'medium' ? 0.5 : 0.2
       },
-      sources: ['Google Gemini AI', 'Web Search'],
       notes: [`Affiliation: ${suggestion.affiliation || 'N/A'}`, `Movement: ${suggestion.literaryMovement || 'N/A'}`]
     };
     onSelect(person);

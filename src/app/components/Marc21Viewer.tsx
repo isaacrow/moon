@@ -13,9 +13,9 @@ import React, { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
-  Database, Copy, Download, Search, Filter, ChevronDown, ChevronRight,
-  BookOpen, Hash, User, Tag, Globe, FileText, Layers, Eye, EyeOff,
-  Maximize2, Minimize2, BarChart3, Info, Zap, List, LayoutGrid, AlignLeft
+  Database, Copy, Download, Search, ChevronDown, ChevronRight,
+  BookOpen, Hash, User, Tag, Globe, FileText, Layers, 
+  Maximize2, Minimize2, BarChart3, Zap, List, LayoutGrid, AlignLeft
 } from "lucide-react";
 import { generateMARC } from "../services/marcGenerator";
 

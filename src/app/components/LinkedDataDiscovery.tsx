@@ -16,18 +16,17 @@
  */
 
 "use client";
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Search, BookOpen, Package, Layers, Database, FileText, Code,
-  Braces, Globe, User, Building, Tag, Download, ExternalLink,
-  ChevronLeft, ChevronRight, X, Filter, BarChart3, Network,
-  Hash, Link2, ArrowRight, Loader2, FileJson, ChevronDown,
+  Search, BookOpen, Package, Layers, Database, 
+  Globe, User, Tag, Download, ExternalLink,
+  ChevronLeft, ChevronRight, Filter, BarChart3, Network,
+  Hash, Link2, ArrowRight, Loader2, ChevronDown,
   Moon, Sun, Languages, Orbit, Share2, Copy, Check, Radio,
-  Import, Plus
-} from "lucide-react";
+  Import} from "lucide-react";
 import { projectId } from "../../../utils/supabase/info";
 import { moonHeaders } from "../utils/moonApi";
 import "../../styles/glassmorphism.css";
@@ -121,7 +120,8 @@ interface CatalogStats {
 }
 
 type DiscoveryView = "search" | "record" | "agent" | "subject" | "stats";
-type GlassTheme = "dark" | "legacy";
+// Moon Studio also has a "classic" theme; Discovery draws it with its dark theme.
+type GlassTheme = "dark" | "legacy" | "classic";
 type SortOption = "relevance" | "title" | "date" | "contributor";
 type RdfFormat = "jsonld" | "turtle" | "ntriples";
 

@@ -428,7 +428,8 @@ export class VuFindApiClient {
     return {
       work: {
         title: rec.title,
-        author: (rec.authors && rec.authors.length > 0) ? rec.authors[0] : '',
+        // VuFind's REST API gives authors as { primary: { "Name": roles } }; Solr docs give a list.
+        author: Array.isArray(rec.authors) ? rec.authors[0] || '' : Object.keys(rec.authors?.primary || {})[0] || '',
         subjects: rec.subjects ? rec.subjects.flat() : [],
         language: (rec.languages && rec.languages[0]) || 'ara',
       },

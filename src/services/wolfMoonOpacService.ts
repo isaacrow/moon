@@ -15,9 +15,7 @@
  * 3. Formats: User View, Share-VDE WEMI Cluster, Interactive Graph, Framed JSON-LD, Turtle, MARC21.
  */
 
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { AISuggestionProfile, saveAuthorityProfileToMoonSystem } from './authorFinderService';
-import { VERIFIED_IRAQI_AUTHORS } from './iraqiAuthorAIService';
 import { getAllRecords, getDeletedRecordIds } from '../app/utils/recordStorageBackend';
 import { realLocExamples } from '../app/utils/realLocExamples';
 import { buildW3CJsonLd, BIBFRAME_JSONLD_CONTEXT } from './w3cJsonLdBuilder';
@@ -75,6 +73,18 @@ export function normalizeArabic(text: string): string {
     .replace(/\u0640/g, '') // remove tatweel / kashida
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Language facet: MARC language code -> count of works, labelled as the works label their language. */
+function languageFacets(works: { language?: string; languageLabel?: string }[]): { value: string; label: string; count: number }[] {
+  const counts = new Map<string, { label: string; count: number }>();
+  for (const w of works) {
+    if (!w.language) continue;
+    const entry = counts.get(w.language) || { label: w.languageLabel || w.language, count: 0 };
+    entry.count++;
+    counts.set(w.language, entry);
+  }
+  return [...counts].map(([value, { label, count }]) => ({ value, label, count })).sort((a, b) => b.count - a.count);
 }
 
 export interface OpacAdvancedSearchParams {
@@ -2466,7 +2476,8 @@ class WolfMoonOpacService {
         .sort((a, b) => b.count - a.count),
       sources: Array.from(sourceCounts.entries())
         .map(([value, count]) => ({ value, label: value, count }))
-        .sort((a, b) => b.count - a.count)
+        .sort((a, b) => b.count - a.count),
+      languages: languageFacets(filtered)
     };
 
     const totalCount = filtered.length;
@@ -2607,7 +2618,8 @@ class WolfMoonOpacService {
       subjects: Array.from(subjectCounts.entries()).map(([value, count]) => ({ value, label: value, count })).sort((a, b) => b.count - a.count),
       authors: Array.from(authorCounts.entries()).map(([value, count]) => ({ value, label: value, count })).sort((a, b) => b.count - a.count),
       eras: Array.from(eraCounts.entries()).map(([value, count]) => ({ value, label: value, count })).sort((a, b) => b.count - a.count),
-      sources: []
+      sources: [],
+      languages: languageFacets(filtered)
     };
 
     const totalCount = filtered.length;

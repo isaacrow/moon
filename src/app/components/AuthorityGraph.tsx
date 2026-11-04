@@ -19,11 +19,12 @@ interface AuthorityGraphProps {
   onNodeClick?: (node: AuthorityGraphNode) => void;
 }
 
-const sourceColors = {
+const sourceColors: Record<string, string> = {
   LOC: '#dc2626',      // Red
   VIAF: '#2563eb',     // Blue
   Wikidata: '#16a34a', // Green
-  AfIqa: '#9333ea'     // Purple
+  AfIqa: '#9333ea',    // Purple
+  ISBNdb: '#ea580c'    // Orange (ISBNdb nodes had no colour, so their badge was blank)
 };
 
 export function AuthorityGraph({ nodes: authorityNodes, onNodeClick }: AuthorityGraphProps) {

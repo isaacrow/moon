@@ -1,9 +1,7 @@
 "use client";
-import React, { useState } from "react";
+import { useState } from "react";
 import {
-  FileText, ArrowRightLeft, CheckCircle2, AlertCircle, Copy, Check,
-  Download, RefreshCw, Layers, Shield
-} from "lucide-react";
+  ArrowRightLeft, Copy, Check} from "lucide-react";
 
 interface MarvaRemergeMarcProps {
   workData: any;

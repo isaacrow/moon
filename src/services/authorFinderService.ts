@@ -238,6 +238,12 @@ export interface AuthorConnectionNode {
 export interface AISuggestionProfile {
   query: string;
   primarySuggestion: string;
+  /** The name as matched in Moon's authority index (OPAC author profiles). */
+  normalizedAuthorName?: string;
+  /** 0-1 match score for OPAC author profiles (confidence is the coarse level). */
+  confidenceScore?: number;
+  /** Authority files that identify the author (LC, VIAF, Wikidata...), shown on OPAC author profiles. */
+  authorities?: { name: string; uri?: string; identifier?: string }[];
   suggestedNameArabic?: string;
   suggestedNameEnglish?: string;
   summaryAr: string;

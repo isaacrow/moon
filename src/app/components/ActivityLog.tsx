@@ -16,7 +16,6 @@ import {
   Search,
   X,
   Shield,
-  ShieldAlert,
   CheckCircle2,
   Lock
 } from 'lucide-react';
@@ -28,7 +27,6 @@ import {
   deleteRecord,
   logActivity,
   approveRecord,
-  SavedRecord,
   getDeletedRecordIds
 } from '../utils/recordStorageBackend';
 import { useAuth } from '../contexts/AuthContext';

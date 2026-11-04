@@ -4,7 +4,7 @@
  * Renders a field for complex entity values (objects with @type and @id)
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { OntologyProperty } from '../../services/bibframeOntologyEngine';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
