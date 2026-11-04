@@ -139,11 +139,22 @@ export async function listPublishedRecords(): Promise<StoredRecord[]> {
   return [...(published.data || []).map(fromPublishedRow), ...notCopied];
 }
 
-/** Saves a record as its next version and returns the version number. */
+/** Thrown when a save starts from an older version than the record's current one. */
+export class VersionConflictError extends Error {
+  constructor(readonly currentVersion: number) {
+    super(`The record is now at version ${currentVersion}`);
+  }
+}
+
+/**
+ * Saves a record as its next version and returns the version number. With `baseVersion` (the version
+ * the editor started from), a record that has moved on since is not saved: VersionConflictError.
+ */
 export async function saveRecord(
   record: StoredRecord & { saved: string },
   savedBy: string,
   note = "save",
+  baseVersion?: number,
 ): Promise<number> {
   const { data, error } = await sb().rpc("moon_save_record", {
     p_id: record.id,
@@ -157,9 +168,12 @@ export async function saveRecord(
     p_note: note,
     p_approved_by: record.approvedBy ?? null,
     p_approved_at: record.approvedAt ?? null,
+    p_base_version: baseVersion ?? null,
   });
+  const conflict = error?.message?.match(/version_conflict:(\d+)/);
+  if (conflict) throw new VersionConflictError(Number(conflict[1]));
   if (error) throw new Error(`[records] save ${record.id} failed: ${error.message}`);
-  const { version: _version, ...kvRecord } = record;
+  const { version: _version, publishedVersion: _published, ...kvRecord } = record;
   await kv.set(kvKey(record.id), JSON.stringify(kvRecord));
   return data as number;
 }
@@ -195,7 +209,7 @@ export async function reviewRecord(
     ...(status === "complete" ? { approvedBy: by, approvedAt: now } : {}),
     version: data as number,
   };
-  const { version: _version, ...kvRecord } = updated;
+  const { version: _version, publishedVersion: _published, ...kvRecord } = updated;
   await kv.set(kvKey(id), JSON.stringify(kvRecord));
   return updated;
 }
@@ -275,4 +289,23 @@ export async function revertRecord(
     ...(status === "complete" ? { approvedBy: by, approvedAt: now } : {}),
     saved: now,
   }, by, `revert to v${to.version}`);
+}
+
+export interface ActiveEditor {
+  username: string;
+  since: string;
+  lastSeen: string;
+}
+
+/** Marks `username` as editing the record now; returns the others active on it in the last 90 seconds. */
+export async function editingHeartbeat(id: string, username: string): Promise<ActiveEditor[]> {
+  const { data, error } = await sb().rpc("moon_editing_heartbeat", { p_id: id, p_user: username });
+  if (error) throw new Error(`[records] editing heartbeat ${id} failed: ${error.message}`);
+  return (data as ActiveEditor[]) || [];
+}
+
+/** `username` closed the record. */
+export async function editingLeave(id: string, username: string): Promise<void> {
+  const { error } = await sb().rpc("moon_editing_leave", { p_id: id, p_user: username });
+  if (error) throw new Error(`[records] editing leave ${id} failed: ${error.message}`);
 }

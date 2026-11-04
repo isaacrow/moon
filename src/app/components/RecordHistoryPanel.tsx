@@ -4,9 +4,10 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { History, RotateCcw, Loader2, ArrowRight } from "lucide-react";
+import { History, RotateCcw, Loader2 } from "lucide-react";
 import { fetchVersion, fetchVersions, revertToVersion, HistoryError, type RecordVersion, type RecordVersionSummary } from "../utils/recordHistory";
 import { diffRecords, type DiffEntry } from "../utils/recordDiff";
+import { RecordDiffTable } from "./RecordDiffTable";
 
 interface Theme {
   accent: string; success: string; warning: string; danger: string;
@@ -31,12 +32,11 @@ const L = {
     previous: "What changed in this version", vsCurrent: "Compared with the current version",
     firstVersion: "This is the first version: there is nothing earlier to compare it with.",
     sameAsCurrent: "This is the current version.", noChanges: "No field changed.",
-    field: "Field", revert: "Revert to this version", reverting: "Reverting…",
+    revert: "Revert to this version", reverting: "Reverting…",
     confirm: (v: number, unsaved: boolean) => `Make version ${v} the current version again? It is saved as a new version, so nothing in the history is lost.${unsaved ? "\n\nYour unsaved edits in the editor will be discarded." : ""}`,
     reverted: (v: number, n: number) => `Reverted to version ${v} (saved as version ${n})`,
     notes: { save: "Saved", approve: "Approved", return: "Returned for changes", migrated: "Copied from the old storage", synced: "Synced from the old storage", revert: (v: string) => `Reverted to v${v}` },
     status: { complete: "Published", "pending-review": "Pending review", "needs-review": "Returned" } as Record<string, string>,
-    added: "added", removed: "removed",
   },
   ar: {
     title: "سجل الإصدارات", loading: "جارٍ تحميل السجل…", empty: "احفظ التسجيلة ليبدأ سجل إصداراتها.",
@@ -44,12 +44,11 @@ const L = {
     previous: "ما الذي تغيّر في هذا الإصدار", vsCurrent: "مقارنة بالإصدار الحالي",
     firstVersion: "هذا هو الإصدار الأول: لا يوجد إصدار سابق للمقارنة.",
     sameAsCurrent: "هذا هو الإصدار الحالي.", noChanges: "لم يتغيّر أي حقل.",
-    field: "الحقل", revert: "الرجوع إلى هذا الإصدار", reverting: "جارٍ الرجوع…",
+    revert: "الرجوع إلى هذا الإصدار", reverting: "جارٍ الرجوع…",
     confirm: (v: number, unsaved: boolean) => `هل تريد جعل الإصدار ${v} هو الإصدار الحالي مجددًا؟ يُحفظ كإصدار جديد، فلا يضيع شيء من السجل.${unsaved ? "\n\nستُفقد تعديلاتك غير المحفوظة في المحرر." : ""}`,
     reverted: (v: number, n: number) => `تم الرجوع إلى الإصدار ${v} (حُفظ كإصدار ${n})`,
     notes: { save: "حفظ", approve: "اعتماد", return: "إعادة للتعديل", migrated: "نُسخ من التخزين القديم", synced: "مُزامن من التخزين القديم", revert: (v: string) => `رجوع إلى الإصدار ${v}` },
     status: { complete: "منشور", "pending-review": "قيد المراجعة", "needs-review": "معاد للتعديل" } as Record<string, string>,
-    added: "أُضيف", removed: "حُذف",
   },
 };
 
@@ -234,38 +233,7 @@ export function RecordHistoryPanel({ recordId, theme, language, hasUnsavedChange
         ) : diff.length === 0 ? (
           <p className="text-sm" style={muted}>{l.noChanges}</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border-separate" style={{ borderSpacing: 0 }}>
-              <thead>
-                <tr style={dim}>
-                  <th className="text-start font-bold py-2 pe-3">{l.field}</th>
-                  <th className="text-start font-bold py-2 pe-3">{leftLabel}</th>
-                  <th className="w-4" />
-                  <th className="text-start font-bold py-2">{rightLabel}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {diff.map((d) => (
-                  <tr key={d.field} className="align-top">
-                    <td className="py-2 pe-3 font-mono text-[11px]" style={{ color: theme.textMuted, borderTop: `1px solid ${theme.cardBorder}` }} dir="ltr">{d.field}</td>
-                    <td className="py-2 pe-3" style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
-                      {d.before.length ? d.before.map((v, i) => (
-                        <div key={i} className="rounded-md px-1.5 py-0.5 mb-1 break-words" style={{ background: "rgba(248,113,113,0.12)", color: theme.text }}>{v}</div>
-                      )) : <span style={dim}>— {l.added}</span>}
-                    </td>
-                    <td className="py-2" style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
-                      <ArrowRight className={`h-3 w-3 mt-1 ${language === "ar" ? "rotate-180" : ""}`} style={dim} />
-                    </td>
-                    <td className="py-2" style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
-                      {d.after.length ? d.after.map((v, i) => (
-                        <div key={i} className="rounded-md px-1.5 py-0.5 mb-1 break-words" style={{ background: "rgba(52,211,153,0.14)", color: theme.text }}>{v}</div>
-                      )) : <span style={dim}>— {l.removed}</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <RecordDiffTable diff={diff} leftLabel={leftLabel} rightLabel={rightLabel} theme={theme} language={language} />
         )}
       </div>
     </div>

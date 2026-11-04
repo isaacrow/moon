@@ -608,7 +608,9 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
       return c.json({ error: 'Sign in to save records' }, 401);
     }
 
-    const { id, document, title, metadata, status: requestedStatus } = await c.req.json();
+    // baseVersion: the version the editor started from. A record saved by someone else meanwhile is not
+    // overwritten: the reply is 409 with who saved which version, and the editor lets the cataloger choose.
+    const { id, document, title, metadata, status: requestedStatus, baseVersion } = await c.req.json();
 
     if (!id || !document) {
       return c.json({ error: 'Record ID and document required' }, 400);
@@ -648,19 +650,33 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     const cataloger = isAdmin && existing?.cataloger ? existing.cataloger : session.username;
 
     // Each save is a new version of the record.
-    const version = await recordStore.saveRecord({
-      id,
-      title: title || existing?.title || 'Untitled',
-      document,
-      metadata: { ...(existing?.metadata || {}), ...(metadata || {}), status },
-      status,
-      cataloger,
-      createdAt: existing?.createdAt || existing?.saved || now,
-      ...(status === 'complete'
-        ? { approvedBy: isAdmin ? session!.username : existing?.approvedBy, approvedAt: now }
-        : {}),
-      saved: now,
-    }, session.username);
+    let version: number;
+    try {
+      version = await recordStore.saveRecord({
+        id,
+        title: title || existing?.title || 'Untitled',
+        document,
+        metadata: { ...(existing?.metadata || {}), ...(metadata || {}), status },
+        status,
+        cataloger,
+        createdAt: existing?.createdAt || existing?.saved || now,
+        ...(status === 'complete'
+          ? { approvedBy: isAdmin ? session!.username : existing?.approvedBy, approvedAt: now }
+          : {}),
+        saved: now,
+      }, session.username, 'save', Number.isInteger(baseVersion) ? baseVersion : undefined);
+    } catch (error) {
+      if (!(error instanceof recordStore.VersionConflictError)) throw error;
+      const [latest] = await recordStore.listVersions(id);
+      return c.json({
+        error: 'This record was saved by someone else while you were editing it',
+        conflict: {
+          currentVersion: error.currentVersion,
+          savedBy: latest?.version === error.currentVersion ? latest.savedBy : undefined,
+          savedAt: latest?.version === error.currentVersion ? latest.savedAt : undefined,
+        },
+      }, 409);
+    }
 
     console.log(`[RECORDS] Saved record ${id} v${version} "${title || 'Untitled'}" (${status}) by ${cataloger} with ${document['@graph'].length} nodes`);
 
@@ -768,6 +784,36 @@ async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
 
 app.post("/make-server-49c0e13c/records/:id/approve", (c) => reviewRecord(c, 'complete'));
 app.post("/make-server-49c0e13c/records/:id/reject", (c) => reviewRecord(c, 'needs-review'));
+
+// ✏️ Who is editing: the editor calls this every half minute while a record is open, and gets back the
+// other catalogers active on it, so it can warn "<username> is working on this record".
+app.post("/make-server-49c0e13c/records/:id/editing", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) {
+      return c.json({ error: 'Sign in to edit records' }, 401);
+    }
+    const editors = await recordStore.editingHeartbeat(c.req.param('id'), session.username);
+    return c.json({ editors });
+  } catch (error) {
+    console.error('Editing heartbeat error:', error);
+    return c.json({ error: 'Failed to update who is editing' }, 500);
+  }
+});
+
+app.delete("/make-server-49c0e13c/records/:id/editing", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) {
+      return c.json({ error: 'Sign in to edit records' }, 401);
+    }
+    await recordStore.editingLeave(c.req.param('id'), session.username);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Editing leave error:', error);
+    return c.json({ error: 'Failed to update who is editing' }, 500);
+  }
+});
 
 // 🕓 Version history: every save, approval, return and revert of a record (signed-in catalogers only,
 // since earlier versions can include unpublished states).

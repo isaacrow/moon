@@ -192,7 +192,29 @@ function extractExtraNodes(graph: any[], metadata: any, work: any, instance: any
   };
 }
 
-export async function saveRecord(record: BIBFRAMERecord, cataloger?: string): Promise<SavedRecord> {
+/** The JSON-LD document the server stores for a record: Work, Instance and their extra nodes. */
+export function toServerDocument(record: BIBFRAMERecord) {
+  // Build safe Work and Instance nodes - spread FIRST, defaults LAST
+  const safeWork = buildSafeNode(record.work, 'bf:Work', `http://moon.local/work/${Date.now()}`);
+  const safeInstance = buildSafeNode(record.instance, 'bf:Instance', `http://moon.local/instance/${Date.now()}`);
+  return {
+    '@context': 'http://id.loc.gov/ontologies/bibframe/',
+    '@graph': [safeWork, safeInstance, ...extraGraphNodes(record)],
+  };
+}
+
+/** Someone else saved the record after the version this save started from. */
+export class RecordConflictError extends Error {
+  constructor(readonly currentVersion: number, readonly savedBy?: string, readonly savedAt?: string) {
+    super(`This record was saved by ${savedBy || 'someone else'} (version ${currentVersion}) while you were editing it`);
+  }
+}
+
+/**
+ * Saves a record. `baseVersion` is the server version the editor started from: if someone saved a newer
+ * one meanwhile, nothing is saved and RecordConflictError is thrown.
+ */
+export async function saveRecord(record: BIBFRAMERecord, cataloger?: string, options: { baseVersion?: number } = {}): Promise<SavedRecord> {
   // Helper to safely extract string from potentially nested title objects
   const extractTitleString = (titleValue: any): string => {
     if (!titleValue) return '';
@@ -332,30 +354,8 @@ export async function saveRecord(record: BIBFRAMERecord, cataloger?: string): Pr
   unmarkRecordDeleted(savedRecord.id);
 
   try {
-    // Build safe Work and Instance nodes - spread FIRST, defaults LAST
-    const safeWork = buildSafeNode(
-      record.work,
-      'bf:Work',
-      `http://moon.local/work/${Date.now()}`
-    );
-
-    const safeInstance = buildSafeNode(
-      record.instance,
-      'bf:Instance',
-      `http://moon.local/instance/${Date.now()}`
-    );
-
     // Build JSON-LD document format expected by server
-    const jsonldDocument = {
-      '@context': 'http://id.loc.gov/ontologies/bibframe/',
-      '@graph': [safeWork, safeInstance, ...extraGraphNodes(record)]
-    };
-    
-    // LOG: Verify @type is preserved
-    console.log('💾 Saving record with @types:', {
-      work: safeWork['@type'],
-      instance: safeInstance['@type']
-    });
+    const jsonldDocument = toServerDocument(record);
     
     const response = await fetch(`${API_BASE}/records/save`, {
       method: 'POST',
@@ -366,9 +366,15 @@ export async function saveRecord(record: BIBFRAMERecord, cataloger?: string): Pr
         title: savedRecord.title,
         metadata: { ...(record.metadata || {}), cataloger },
         status: savedRecord.status,
+        baseVersion: options.baseVersion,
       }),
     });
 
+    if (response.status === 409) {
+      const body = await response.json().catch(() => ({}));
+      const c = body?.conflict || {};
+      throw new RecordConflictError(c.currentVersion, c.savedBy, c.savedAt);
+    }
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Failed to save record to Supabase:', errorText);
@@ -403,6 +409,8 @@ export async function saveRecord(record: BIBFRAMERecord, cataloger?: string): Pr
     
     return savedRecord;
   } catch (error) {
+    // A conflict is the cataloger's to resolve; it must never look like a successful save.
+    if (error instanceof RecordConflictError) throw error;
     console.error('Error saving record to Supabase, falling back to localStorage:', error);
     // Fallback to localStorage
     const records = getAllRecordsLocal();
@@ -611,6 +619,7 @@ export async function getAllRecords(options: { published?: boolean } = {}): Prom
           createdAt: serverRecord.metadata?.createdAt,
           catalogerId: serverRecord.metadata?.catalogerId,
           status,
+          serverVersion: serverRecord.version,
         } as any
       };
 
@@ -815,6 +824,8 @@ export async function getRecordById(id: string): Promise<SavedRecord | null> {
       metadata: {
         ...(serverRecord.metadata || {}),
         storageId: serverRecord.id,
+        // The version this copy is; a save sends it back so a newer save by someone else isn't overwritten.
+        serverVersion: serverRecord.version,
         catalogingLanguage: serverRecord.metadata?.catalogingLanguage || 'en',
         descriptionConventions: serverRecord.metadata?.descriptionConventions || 'rda',
         resourceType: serverRecord.metadata?.resourceType || 'Text'
