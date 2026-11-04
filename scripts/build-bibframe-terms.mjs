@@ -9,7 +9,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 function readTerms(file, ns) {
   const xml = readFileSync(join(root, 'ontologies', file), 'utf8');
   const version = (xml.match(/owl:versionIRI rdf:resource="([^"]+)"/) || [])[1] || 'unknown';
-  const terms = { classes: new Set(), objectProps: new Set(), datatypeProps: new Set(), domains: {} };
+  const terms = { classes: new Set(), objectProps: new Set(), datatypeProps: new Set(), domains: {}, superclasses: {}, deprecated: new Set() };
   const re = new RegExp(`<owl:(Class|ObjectProperty|DatatypeProperty|SymmetricProperty) rdf:about="${ns.replace(/[.\/]/g, '\\$&')}([A-Za-z0-9]+)"`, 'g');
   for (const [, kind, local] of xml.matchAll(re)) {
     if (kind === 'Class') terms.classes.add(local);
@@ -21,6 +21,14 @@ function readTerms(file, ns) {
   for (const [, , local, body] of xml.matchAll(propRe)) {
     const domain = body.match(/<rdfs:domain rdf:resource="http:\/\/id\.loc\.gov\/ontologies\/bibframe\/([A-Za-z0-9]+)"/);
     if (domain) terms.domains[local] = domain[1];
+  }
+  // rdfs:subClassOf (bf: superclasses only) and terms the ontology marks deprecated
+  const termRe = new RegExp(`<owl:(Class|ObjectProperty|DatatypeProperty|SymmetricProperty) rdf:about="${ns.replace(/[.\/]/g, '\\$&')}([A-Za-z0-9]+)">([\\s\\S]*?)</owl:\\1>`, 'g');
+  for (const [, kind, local, body] of xml.matchAll(termRe)) {
+    if (/status>\s*[^<]*deprecated/i.test(body) || /\(Deprecated/i.test(body)) terms.deprecated.add(local);
+    if (kind !== 'Class') continue;
+    const supers = [...body.matchAll(/<rdfs:subClassOf rdf:resource="http:\/\/id\.loc\.gov\/ontologies\/bibframe\/([A-Za-z0-9]+)"/g)].map(m => m[1]);
+    if (supers.length) terms.superclasses[local] = supers;
   }
   return { version, terms };
 }
@@ -42,6 +50,13 @@ export const BFLC_DATATYPE_PROPERTIES = new Set<string>(${list(bflc.terms.dataty
 
 /** rdfs:domain (a bf: class) of each bf: property that declares one. */
 export const BF_PROPERTY_DOMAINS: Record<string, string> = ${JSON.stringify(Object.fromEntries(Object.entries(bf.terms.domains).sort()))};
+
+/** Direct rdfs:subClassOf (bf: classes) of each bf: class that declares one. */
+export const BF_SUPERCLASSES: Record<string, string[]> = ${JSON.stringify(Object.fromEntries(Object.entries(bf.terms.superclasses).sort()))};
+
+/** bf: and bflc: terms the ontologies mark deprecated: still defined, but new records should not use them. */
+export const BF_DEPRECATED = new Set<string>(${list(bf.terms.deprecated)});
+export const BFLC_DEPRECATED = new Set<string>(${list(bflc.terms.deprecated)});
 `;
 
 writeFileSync(join(root, 'src/services/bibframeTerms.generated.ts'), out);

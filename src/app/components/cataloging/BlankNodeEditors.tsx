@@ -242,10 +242,12 @@ export function ContributionEditorModal({ value, onChange, onClose, triggerRect 
         '@id': contribution.agent?.uri || undefined,
         'rdfs:label': contribution.agent?.label || ''
       },
-      'bf:role': {
-        '@id': `http://id.loc.gov/vocabulary/relators/${contribution.role}`,
-        'rdfs:label': contribution.role
-      },
+      ...(contribution.role ? {
+        'bf:role': {
+          '@id': `http://id.loc.gov/vocabulary/relators/${contribution.role}`,
+          'rdfs:label': contribution.role
+        }
+      } : {}),
       agent: contribution.agent,
       role: contribution.role
     };

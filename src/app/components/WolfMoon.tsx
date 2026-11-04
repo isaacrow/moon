@@ -480,7 +480,18 @@ export default function WolfMoon({
   const [w3cValidation, setW3cValidation] = useState<JsonLdValidationResult | null>(null);
 
   // ===== ONTOLOGY-DRIVEN STATE =====
-  const [fieldViewMode, setFieldViewMode] = useState<'both' | 'categories' | 'standard'>('both');
+  // Category Cards is the main way to catalog; the last layout the cataloger picked is remembered.
+  const [fieldViewMode, setFieldViewMode] = useState<'both' | 'categories' | 'standard'>(() => {
+    try {
+      const saved = localStorage.getItem("moon-field-view-mode");
+      return saved === "standard" || saved === "both" ? saved : "categories";
+    } catch {
+      return "categories";
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("moon-field-view-mode", fieldViewMode); } catch {}
+  }, [fieldViewMode]);
   const [workData, setWorkData] = useState<any>(
     initialWork || { "@type": "bf:Work", "@id": uriSet.work, "bf:contribution": [] }
   );
@@ -824,7 +835,7 @@ export default function WolfMoon({
       description: t("resetDescription") || "Form cleared to blank state",
     });
     // Regenerate RDF after reset
-    setTimeout(() => regenerateRDF(), 100);
+    setTimeout(() => regenerateRef.current(), 100);
   }, [uriSet, graphStore, enableExpression, t]);
 
   // ===== TEMPLATE-AWARE PROPERTIES =====
@@ -953,6 +964,10 @@ export default function WolfMoon({
 
   // ============================== GRAPH ENGINE ==============================
 
+  // Memoized callbacks below schedule a rebuild for later; they call the latest regenerateRDF through
+  // this ref, or the exports would be rebuilt from the Work/Instance as they were when the callback was made.
+  const regenerateRef = useRef<() => void>(() => {});
+
   const handlePropertyChange = useCallback((nodeUri: string, property: string, value: any) => {
     graphStore.setProperty(nodeUri, property, value);
     const unprefixed = property.replace(/^bf:/, '');
@@ -965,7 +980,7 @@ export default function WolfMoon({
       }));
       graphStore.setProperty(nodeUri, 'bf:contribution', contribArray);
       setSaveStatus("unsaved");
-      setTimeout(() => regenerateRDF(), 500);
+      setTimeout(() => regenerateRef.current(), 500);
       return;
     }
     const titleVal = typeof value === 'object' && value ? (value['bf:mainTitle'] || value.mainTitle || value['rdfs:label'] || value) : value;
@@ -989,7 +1004,7 @@ export default function WolfMoon({
       }));
     }
     setSaveStatus("unsaved");
-    setTimeout(() => regenerateRDF(), 500);
+    setTimeout(() => regenerateRef.current(), 500);
   }, [uriSet]);
 
   const toggleExpression = () => {
@@ -1036,6 +1051,7 @@ export default function WolfMoon({
       } catch (e) { console.error("W3C JSON-LD build error:", e); }
     } catch (error) { console.error("Graph RDF generation error:", error); }
   };
+  regenerateRef.current = regenerateRDF;
 
   // ============================== ONTOLOGY FORM ==============================
 
@@ -1178,12 +1194,12 @@ export default function WolfMoon({
   const updateRelationship = (id: string, field: string, value: any) => {
     setRelationships(prev => prev.map(rel => rel.id === id ? { ...rel, [field]: value } : rel));
     setSaveStatus("unsaved");
-    setTimeout(() => regenerateRDF(), 500);
+    setTimeout(() => regenerateRef.current(), 500);
   };
   const removeRelationship = (id: string) => {
     setRelationships(prev => prev.filter(rel => rel.id !== id));
     setSaveStatus("unsaved");
-    setTimeout(() => regenerateRDF(), 500);
+    setTimeout(() => regenerateRef.current(), 500);
   };
 
   // ============================== AUTHORITY ==============================

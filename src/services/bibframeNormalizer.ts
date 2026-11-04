@@ -16,7 +16,7 @@
  */
 
 import {
-  BF_CLASSES, BF_OBJECT_PROPERTIES, BF_DATATYPE_PROPERTIES,
+  BF_CLASSES, BF_OBJECT_PROPERTIES, BF_DATATYPE_PROPERTIES, BF_PROPERTY_DOMAINS, BF_SUPERCLASSES,
   BFLC_CLASSES, BFLC_OBJECT_PROPERTIES, BFLC_DATATYPE_PROPERTIES
 } from './bibframeTerms.generated';
 import { BASE_URI } from './uriMintingService';
@@ -305,7 +305,12 @@ class Normalizer {
   node(input: any, implied?: string): any {
     if (!isNode(input)) return input;
     const out: any = {};
-    let types = [...new Set(typesOf(input).map(t => this.normalizeType(t)).filter(Boolean) as string[])];
+    // A class written as a plain field ("type": "bf:Person", "rdf:type": "bf:Topic") is the node's @type,
+    // never a text value of rdf:type.
+    const fieldTypes = ['type', 'rdf:type'].flatMap(k => asArray(input[k]))
+      .map((t: any) => (isNode(t) ? t['@id'] : t)).filter((t: any) => typeof t === 'string' && /^(bf|bflc):[A-Z]|^https?:\/\//.test(t));
+    if (fieldTypes.length) this.note('type field -> @type');
+    let types = [...new Set([...typesOf(input), ...fieldTypes].map(t => this.normalizeType(t)).filter(Boolean) as string[])];
     if (!types.length && implied && Object.keys(input).some(k => !k.startsWith('@'))) types = [implied];
     const publication: Record<string, any[]> = {};
     const contributors: Record<string, any[]> = {};
@@ -315,6 +320,7 @@ class Normalizer {
       if (rawKey === '@type') continue;
       if (rawKey.startsWith('@')) { out[rawKey] = rawValue; continue; }
       if (rawKey.startsWith('_') || INTERNAL_KEYS.has(rawKey)) continue;
+      if ((rawKey === 'type' || rawKey === 'rdf:type') && fieldTypes.length) continue;
       const single = !Array.isArray(rawValue);
 
       const key = canonicalTerm(rawKey, this.ctx);
@@ -372,6 +378,15 @@ class Normalizer {
     if ((prefix === 'bf' || prefix === 'bflc') && !isOfficialTerm(key)) {
       this.note(`${key} -> moonext:${local}`);
       this.add(out, `moonext:${local}`, values, single);
+      return;
+    }
+    if (prefix === 'bf' && BF_DATATYPE_PROPERTIES.has(local) && values.some(isNode)) {
+      // Datatype properties (bf:temporalCoverage, bf:dimensions...) take text, not a node: keep the node's label.
+      const literals = values.flatMap(v => (isNode(v) ? asArray(v['rdfs:label']).filter(isLiteral) : [v]));
+      const leftover = values.filter(v => isNode(v) && !asArray(v['rdfs:label']).some(isLiteral));
+      this.note(`node on datatype property ${key} -> its label`);
+      if (literals.length) this.add(out, key, literals, single);
+      if (leftover.length) this.add(out, `moonext:${local}`, leftover, single);
       return;
     }
     this.add(out, key, isObjectProperty(key) ? values.map(v => this.coerce(key, v)) : values, single);
@@ -502,6 +517,109 @@ function relocateShelfMarks(graph: any[], changes: string[]) {
   }
 }
 
+/** The class and all its bf: superclasses (bf:Text -> Text, Work). */
+function ancestry(local: string, seen = new Set<string>()): Set<string> {
+  if (seen.has(local)) return seen;
+  seen.add(local);
+  for (const s of BF_SUPERCLASSES[local] || []) ancestry(s, seen);
+  return seen;
+}
+
+function bfClasses(node: any): Set<string> {
+  const out = new Set<string>();
+  for (const t of typesOf(node)) if (t.startsWith('bf:')) ancestry(t.slice(3), out);
+  return out;
+}
+
+const refIds = (v: any): string[] => asArray(v).map((r: any) => (isNode(r) ? r['@id'] : r)).filter((x: any) => typeof x === 'string');
+const sameValues = (a: any[], b: any[]) => JSON.stringify(a.map(v => literalText(v))) === JSON.stringify(b.map(v => literalText(v)));
+
+// Links between the record's own entities come from its structure; a copy on the wrong entity is dropped.
+const STRUCTURAL_LINKS = new Set(['hasInstance', 'instanceOf', 'hasItem', 'itemOf', 'hasExpression', 'expressionOf', 'adminMetadata', 'adminMetadataFor']);
+
+/**
+ * Puts every bf: property on a node of its rdfs:domain, as the editor's builder does: a Work
+ * property entered on the Instance goes to the Instance's Work, bf:heldBy goes to the Item,
+ * bf:descriptionAuthentication goes to the entity's AdminMetadata. A value the right entity
+ * already states differently is kept on the original node as moonext:, never published as invalid BIBFRAME.
+ */
+function enforceDomains(graph: any[], changes: string[]) {
+  const counts = new Map<string, number>();
+  const note = (c: string) => counts.set(c, (counts.get(c) || 0) + 1);
+  const ofClass = (cls: string) => graph.filter(n => isNode(n) && bfClasses(n).has(cls));
+  const linked = (from: any, cls: string): any => {
+    const candidates = ofClass(cls);
+    const fromId = from['@id'];
+    const links = (n: any) => [
+      ...refIds(from['bf:instanceOf']), ...refIds(from['bf:hasInstance']), ...refIds(from['bf:hasItem']), ...refIds(from['bf:itemOf'])
+    ].includes(n['@id']) || [
+      ...refIds(n['bf:instanceOf']), ...refIds(n['bf:hasInstance']), ...refIds(n['bf:hasItem']), ...refIds(n['bf:itemOf'])
+    ].includes(fromId);
+    return candidates.find(n => n !== from && links(n) && !n['bf:expressionOf']) || candidates.find(n => n !== from && links(n))
+      || (candidates.length === 1 ? candidates[0] : undefined);
+  };
+  const itemFor = (from: any): any => {
+    const instance = bfClasses(from).has('Instance') ? from : linked(from, 'Instance');
+    if (!instance?.['@id']) return undefined;
+    let item = graph.find(n => bfClasses(n).has('Item') && refIds(n['bf:itemOf']).includes(instance['@id']));
+    if (!item) {
+      item = { '@id': `${instance['@id']}-item`, '@type': 'bf:Item', 'bf:itemOf': [{ '@id': instance['@id'] }] };
+      instance['bf:hasItem'] = [...asArray(instance['bf:hasItem']), { '@id': item['@id'] }];
+      graph.push(item);
+    }
+    return item;
+  };
+  const adminFor = (from: any): any => {
+    const ref = asArray(from['bf:adminMetadata'])[0];
+    const inGraph = isNode(ref) && ref['@id'] ? graph.find(n => n['@id'] === ref['@id']) : undefined;
+    if (inGraph) return inGraph;
+    if (isNode(ref)) return ref;
+    const admin = { '@type': 'bf:AdminMetadata' };
+    from['bf:adminMetadata'] = [...asArray(from['bf:adminMetadata']).filter(isNode), admin];
+    return admin;
+  };
+
+  const fix = (node: any, top: boolean) => {
+    const classes = bfClasses(node);
+    for (const key of Object.keys(node)) {
+      if (key.startsWith('@')) continue;
+      for (const v of asArray(node[key])) if (isNode(v)) fix(v, false);
+      if (!key.startsWith('bf:') || !classes.size) continue;
+      const local = key.slice(3);
+      const domain = BF_PROPERTY_DOMAINS[local];
+      if (!domain || classes.has(domain)) continue;
+      // A lone Instance (or Work) has nowhere better for a Work (or Instance) property: leave it.
+      if (top && (domain === 'Work' || domain === 'Instance') && !ofClass(domain).length) continue;
+      const values = asArray(node[key]);
+      delete node[key];
+
+      if (STRUCTURAL_LINKS.has(local)) { note(`${key} on the wrong entity dropped`); continue; }
+      // An edition statement typed into an Instance's "edition" box (bf:edition belongs to classifications).
+      if (local === 'edition' && classes.has('Instance')) {
+        node['bf:editionStatement'] = [...asArray(node['bf:editionStatement']), ...values.filter(v => !asArray(node['bf:editionStatement']).some(e => literalText(e) === literalText(v)))];
+        note('bf:edition on Instance -> bf:editionStatement');
+        continue;
+      }
+      const target = !top ? undefined
+        : domain === 'Work' || domain === 'Instance' ? linked(node, domain)
+        : domain === 'Item' ? itemFor(node)
+        : domain === 'AdminMetadata' ? adminFor(node)
+        : undefined;
+      if (target && target[key] === undefined) {
+        target[key] = values;
+        note(`${key} moved to bf:${domain}`);
+      } else if (target && sameValues(asArray(target[key]), values)) {
+        note(`${key} duplicate on the wrong entity dropped`);
+      } else {
+        node[`moonext:${local}`] = [...asArray(node[`moonext:${local}`]), ...values];
+        note(`${key} outside its domain bf:${domain} -> moonext:${local}`);
+      }
+    }
+  };
+  for (const n of [...graph]) if (isNode(n)) fix(n, true);
+  for (const [c, n] of counts) changes.push(`${c} (${n})`);
+}
+
 /** Accepts a JSON-LD document ({@graph}), a node, an array of nodes, or a Moon record ({work, instance, item}). */
 function toGraph(input: any): any[] {
   if (Array.isArray(input)) return input;
@@ -536,6 +654,7 @@ export function normalizeBibframeWithReport(input: any): NormalizeResult {
   const graph = toGraph(input).filter(isNode).map(n => normalizer.node(n));
   const changes = normalizer.report();
   relocateShelfMarks(graph, changes);
+  enforceDomains(graph, changes);
   return { doc: { '@context': ctx, '@graph': graph }, changes };
 }
 

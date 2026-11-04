@@ -137,13 +137,7 @@
         }
       ],
       "bf:temporalCoverage": [
-        "1041-1061 هـ. / القرن 17 الميلادي",
-        {
-          "@type": "moonext:TemporalCoverage",
-          "moonext:start": "1041 هـ.",
-          "moonext:end": "1061 هـ. (1650 م.)",
-          "rdfs:label": "1041-1061 هـ. / القرن 17 الميلادي"
-        }
+        "1041-1061 هـ. / القرن 17 الميلادي"
       ],
       "bf:note": [
         {
@@ -212,7 +206,12 @@
           "bf:descriptionLanguage": {
             "@id": "http://id.loc.gov/vocabulary/languages/ara"
           },
-          "rdfs:label": "IQ-KaCCS / العتبة العباسية (RDA)"
+          "rdfs:label": "IQ-KaCCS / العتبة العباسية (RDA)",
+          "bf:descriptionAuthentication": [
+            {
+              "rdfs:label": "rda"
+            }
+          ]
         },
         {
           "rdfs:label": "IQ-KaCCS | ara | RDA | b125923"
@@ -305,12 +304,7 @@
       "bf:intendedAudience": {
         "@type": "bf:IntendedAudience",
         "rdfs:label": "باحثو وعلماء الفلسفة الإسلامية والحكمة المتعالية"
-      },
-      "bf:descriptionAuthentication": [
-        {
-          "rdfs:label": "rda"
-        }
-      ]
+      }
     },
     {
       "@id": "https://mooon.site/resource/instance/b125923",
@@ -377,7 +371,6 @@
       "bf:editionStatement": [
         "نسخة مخطوطة كاملة مجدولة ومذهبة"
       ],
-      "bf:edition": "نسخة مخطوطة كاملة مجدولة ومذهبة",
       "bf:provisionActivity": [
         {
           "@type": "bf:Production",
@@ -492,10 +485,6 @@
           "rdfs:label": "مكتبة مجلس الشورى : 4662، طهران، ايران (ir)"
         }
       ],
-      "bf:heldBy": {
-        "@type": "bf:Agent",
-        "rdfs:label": "مكتبة العتبة العباسية المقدسة (IQ-KaCCS)"
-      },
       "bf:hasItem": [
         {
           "@id": "https://mooon.site/resource/item/b125923",
@@ -583,7 +572,12 @@
           "bf:descriptionLanguage": {
             "@id": "http://id.loc.gov/vocabulary/languages/ara"
           },
-          "rdfs:label": "IQ-KaCCS / العتبة العباسية (RDA)"
+          "rdfs:label": "IQ-KaCCS / العتبة العباسية (RDA)",
+          "bf:descriptionAuthentication": [
+            {
+              "rdfs:label": "rda"
+            }
+          ]
         },
         {
           "rdfs:label": "IQ-KaCCS | ara | RDA | b125923"
@@ -603,9 +597,6 @@
           "rdfs:label": "مخطوط وحيد / أحادي (Single unit)"
         }
       ],
-      "bf:originDate": [
-        "1061 هـ. = [1650]"
-      ],
       "bf:originPlace": [
         {
           "rdfs:label": "كربلاء المقدسة / طهران"
@@ -622,20 +613,13 @@
           "rdfs:label": "غير حكومي"
         }
       ],
-      "bf:itemOf": [
-        {
-          "@id": "https://mooon.site/resource/instance/b125923"
-        }
-      ],
       "bf:translationOf": [
         {
           "rdfs:label": "الأصل العربي"
         }
       ],
-      "bf:descriptionAuthentication": [
-        {
-          "rdfs:label": "rda"
-        }
+      "moonext:originDate": [
+        "1061 هـ. = [1650]"
       ]
     },
     {
@@ -650,6 +634,12 @@
         {
           "@type": "bf:ShelfMark",
           "rdfs:label": "B753.D363 Q23 1650"
+        }
+      ],
+      "bf:heldBy": [
+        {
+          "@type": "bf:Agent",
+          "rdfs:label": "مكتبة العتبة العباسية المقدسة (IQ-KaCCS)"
         }
       ]
     }
