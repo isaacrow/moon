@@ -65,6 +65,10 @@ jobs:
           rm -f package-lock.json
           npm install --legacy-peer-deps
 
+      # BIBFRAME conformance and serializer tests: a record that is not valid BIBFRAME never deploys.
+      - name: Test
+        run: npm test
+
       - name: Build
         run: |
           npx vite build 2>&1 | tee build.log || true

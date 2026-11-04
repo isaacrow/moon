@@ -158,7 +158,7 @@ export function buildW3CJsonLd(input: BuilderInput): W3CJsonLdDocument {
   // 7. A title entered once (on the Work, or by ISBN lookup) describes the Instance too, and vice versa.
   const sharedTitle = workNode["bf:title"] || instanceNode["bf:title"];
   for (const n of graph) {
-    if (sharedTitle && !n["bf:title"] && [].concat(n["@type"]).some((t: string) => t === "bf:Work" || t === "bf:Instance")) {
+    if (sharedTitle && !n["bf:title"] && ([] as string[]).concat(n["@type"]).some((t: string) => t === "bf:Work" || t === "bf:Instance")) {
       n["bf:title"] = JSON.parse(JSON.stringify(sharedTitle));
     }
   }
@@ -454,7 +454,12 @@ function fromFormShapes(key: string, value: any): any {
   const prop = key.replace(/^bf:/, "");
   if (prop === "classification") {
     return asList(value).flatMap((c: any) => {
-      if (!c || typeof c !== "object" || c["bf:classificationPortion"] || c["classificationPortion"]) return [c];
+      if (c && typeof c === "object" && (c["bf:classificationPortion"] || c["classificationPortion"])) {
+        // The classification card also stores its inputs (scheme, number); the portions already say it.
+        const { scheme: _scheme, number: _number, ...rest } = c;
+        return [rest];
+      }
+      if (!c || typeof c !== "object") return [c];
       const lcc = typeof c.lcc === "string" ? c.lcc : typeof c.number === "string" && c["@type"] !== "bf:ClassificationDdc" ? c.number : "";
       const ddc = typeof c.ddc === "string" ? c.ddc : "";
       const out = [...(lcc.trim() ? [lccNode(lcc)] : []), ...(ddc.trim() ? [{ "@type": "bf:ClassificationDdc", "bf:classificationPortion": ddc.trim() }] : [])];
@@ -464,10 +469,40 @@ function fromFormShapes(key: string, value: any): any {
   if (prop === "identifiedBy") {
     const types: Record<string, string> = { isbn: "bf:Isbn", lccn: "bf:Lccn", issn: "bf:Issn" };
     return asList(value).flatMap((id: any) => {
+      // The identifier card: { type: "Isbn", value: "978..." }. OCLC numbers are bf:Local assigned by OCLC, as LC records them.
+      if (id && typeof id === "object" && !id["@type"] && typeof id.type === "string" && id["rdf:value"] === undefined) {
+        const v = String(id.value ?? "").trim();
+        if (!v) return [];
+        const kind = id.type.replace(/^bf:/, "");
+        if (/^oclc$/i.test(kind)) {
+          return [{ "@type": "bf:Local", "rdf:value": v, "bf:assigner": { "@id": "http://id.loc.gov/vocabulary/organizations/ocolc" } }];
+        }
+        return [{ "@type": BF_CLASSES.has(kind) ? `bf:${kind}` : "bf:Identifier", "rdf:value": v }];
+      }
       if (!id || typeof id !== "object" || id["rdf:value"] !== undefined || id["value"] !== undefined) return [id];
       const out = Object.entries(types).filter(([k]) => typeof id[k] === "string" && id[k].trim())
         .map(([k, type]) => ({ "@type": type, "rdf:value": id[k].trim() }));
       return out.length ? out : [id];
+    });
+  }
+  if (prop === "dissertation") {
+    // The dissertation card's year, number and note have BIBFRAME homes: bf:date, bf:identifiedBy, bf:note.
+    return asList(value).map((d: any) => {
+      if (!d || typeof d !== "object" || d["@value"] !== undefined) return d;
+      const { dissertationYear, dissertationIdentifier, dissertationNote, ...rest } = d;
+      const out: any = { ...rest };
+      if (text(dissertationYear) && !out["bf:date"]) out["bf:date"] = text(dissertationYear);
+      if (text(dissertationIdentifier)) out["bf:identifiedBy"] = { "@type": "bf:Identifier", "rdf:value": text(dissertationIdentifier) };
+      if (text(dissertationNote)) out["bf:note"] = { "@type": "bf:Note", "rdfs:label": text(dissertationNote) };
+      return out;
+    });
+  }
+  if (prop === "hasSeries") {
+    // The series card records which link it is ("relationship"); the property already says that.
+    return asList(value).map((s: any) => {
+      if (!s || typeof s !== "object") return s;
+      const { relationship: _relationship, ...rest } = s;
+      return rest;
     });
   }
   return value;
@@ -795,7 +830,8 @@ function extractContributions(data: any, workUri: string): any[] {
 
     // Roles: relator IRIs, relator codes ("aut"), or a labelled role; "contributor" only when none is given.
     const roles = asList(contrib["bf:role"] ?? contrib["role"]).map((r: any) => {
-      if (r && typeof r === "object" && r["@id"]) return { "@id": r["@id"] };
+      // A relator IRI with no code ("…/relators/") comes from a card saved without a role: no role was given.
+      if (r && typeof r === "object" && r["@id"]) return /\/relators\/?$/.test(r["@id"]) ? null : { "@id": r["@id"] };
       const t = text(r);
       if (/^[a-z]{3}$/.test(t)) return { "@id": `http://id.loc.gov/vocabulary/relators/${t}` };
       return t ? { "@type": "bf:Role", "rdfs:label": t } : null;
