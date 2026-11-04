@@ -19,6 +19,9 @@ interface AuthoritySelectProps {
   required?: boolean;
   allowCustom?: boolean;
   isLight?: boolean;
+  /** A short tag beside the selected value, e.g. that it was pre-filled from LC's profile; `noteTitle` explains it on hover. */
+  note?: string;
+  noteTitle?: string;
 }
 
 export function AuthoritySelect({
@@ -30,6 +33,8 @@ export function AuthoritySelect({
   required = false,
   allowCustom = false,
   isLight = false,
+  note,
+  noteTitle,
 }: AuthoritySelectProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AuthorityResult[]>([]);
@@ -230,6 +235,15 @@ export function AuthoritySelect({
                 {getSourceIcon(displayValue.source)}
                 {displayValue.source}
               </span>
+              {note && (
+                <span
+                  className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  title={noteTitle}
+                  style={{ color: isLight ? "rgba(15,23,42,0.65)" : "rgba(255,255,255,0.75)", border: isLight ? "1px dashed rgba(15,23,42,0.3)" : "1px dashed rgba(255,255,255,0.4)" }}
+                >
+                  {note}
+                </span>
+              )}
             </div>
             {displayValue.uri && <div className="text-xs mt-1 font-mono" style={{ color: isLight ? "rgba(30,64,175,0.85)" : "#93c5fd" }}>{displayValue.uri}</div>}
             {displayValue.description && (

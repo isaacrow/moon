@@ -82,7 +82,7 @@ import { saveRecord, getAllRecordsLocal, getRecordById } from "../utils/recordSt
 
 // ===== COMPONENTS =====
 import { OntologyField } from "./ontology/OntologyField";
-import { OntologyDrivenFormRenderer } from "./cataloging/OntologyDrivenFormRenderer";
+import { OntologyDrivenFormRenderer, PrefilledDefaultsContext } from "./cataloging/OntologyDrivenFormRenderer";
 import { ValidationPanel, validateGraph, ValidationResult } from "./cataloging/ValidationPanel";
 import { AuthoritySearchDialog } from "./AuthoritySearchDialog";
 import { MarcView } from "./RecordView/MarcView";
@@ -938,6 +938,16 @@ export default function WolfMoon({
     appliedDefaultsRef.current = next;
   }, [selectedTemplate, isNewRecord]);
 
+  // The pre-filled values nobody has changed yet, so their fields can say "LC default".
+  const prefilledDefaults = useMemo(() => {
+    const ids = new Set<string>();
+    const applied = isNewRecord ? LC_TEMPLATE_DEFAULTS[selectedTemplate] : undefined;
+    if (!applied) return ids;
+    for (const [key, d] of Object.entries(applied.work)) if (workData[key]?.["@id"] === d["@id"]) ids.add(d["@id"]);
+    for (const [key, d] of Object.entries(applied.instance)) if (instanceData[key]?.["@id"] === d["@id"]) ids.add(d["@id"]);
+    return ids;
+  }, [isNewRecord, selectedTemplate, workData, instanceData]);
+
   // A restored draft has not been saved yet, even though it arrived as the initial record.
   useEffect(() => {
     if ((initialRecord?.metadata as any)?.restoredFromDraft) setSaveStatus("unsaved");
@@ -1452,6 +1462,7 @@ export default function WolfMoon({
 
   return (
     <BMThemeContext.Provider value={BM}>
+    <PrefilledDefaultsContext.Provider value={prefilledDefaults}>
     <div
       className={`h-screen flex flex-col overflow-hidden relative ${gradientClass} ${!isClassic ? "dark" : ""}`}
       dir={language === "ar" ? "rtl" : "ltr"}
@@ -1669,7 +1680,7 @@ export default function WolfMoon({
 
           {/* Record Title input with Save Status indicator */}
           <div className="flex items-center gap-1.5 glass-bubble-pill px-2.5 py-1 text-xs shrink-0">
-            <BMSaveStatus status={saveStatus} />
+            <BMSaveStatus status={saveStatus} neverSaved={!storageIdRef.current} />
             <input
               type="text"
               value={recordTitle}
@@ -2782,6 +2793,7 @@ export default function WolfMoon({
       <React.Suspense fallback={<LazyPanelFallback />}><ImportRecordDialog isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} onImport={handleImport} /></React.Suspense>
       <React.Suspense fallback={<LazyPanelFallback />}><RecordViewerDialog open={showRecordViewer} onOpenChange={setShowRecordViewer} jsonldData={graphJsonld || { "@graph": [] }} title={recordTitle} /></React.Suspense>
     </div>
+    </PrefilledDefaultsContext.Provider>
     </BMThemeContext.Provider>
   );
 }
@@ -3602,9 +3614,18 @@ function BMFieldWrapper({ children, fieldKey, onHide }: { children: React.ReactN
   );
 }
 
-function BMSaveStatus({ status }: { status: SaveStatus }) {
+function BMSaveStatus({ status, neverSaved = false }: { status: SaveStatus; neverSaved?: boolean }) {
   const t = useBMTheme();
-  const { t: tr } = useTranslation();
+  const { t: tr, i18n } = useTranslation();
+  // A new record with nothing typed yet is not "saved": it has never been saved.
+  if (status === "saved" && neverSaved) {
+    return (
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold"
+        style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.18)", color: t.textDim }}>
+        <Clock className="h-3 w-3" /> {i18n.language === "ar" ? "لم تُحفظ بعد" : "Not saved yet"}
+      </div>
+    );
+  }
   const meta = {
     saved: { bg: "rgba(52,199,89,0.1)", border: "rgba(52,199,89,0.25)", color: t.success, icon: <CheckCircle2 className="h-3 w-3" />, label: tr("saved") },
     unsaved: { bg: "rgba(255,149,0,0.1)", border: "rgba(255,149,0,0.25)", color: t.warning, icon: <Clock className="h-3 w-3" />, label: tr("unsaved") },
