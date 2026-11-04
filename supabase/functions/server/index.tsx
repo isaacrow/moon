@@ -102,6 +102,28 @@ app.use(
   }),
 );
 
+// Routes that spend paid API credit (AI providers, ISBNdb) or change stored data need a signed-in
+// Moon session; changing the AI provider setup is the Super Admin's. The public key in the website
+// is not a credential: anyone can read it from the page.
+const API_PREFIX = "/make-server-49c0e13c";
+const SESSION_ANY_METHOD = ["/ai/", "/ai-router/", "/isbndb/"];
+const SESSION_WRITES = [
+  "/favorites", "/moon/authorities/import", "/moon/triplestore/", "/moon/versions/", "/moon/discovery/import",
+  "/ld4/", "/import-bibframe-rdf", "/authority/clear-cache",
+];
+const ADMIN_ONLY = ["/ai-router/config", "/ai-router/reset-circuit/"];
+app.use(`${API_PREFIX}/*`, async (c, next) => {
+  if (c.req.method === "OPTIONS") return next();
+  const path = c.req.path.slice(API_PREFIX.length);
+  const write = c.req.method !== "GET";
+  if (write && ADMIN_ONLY.some(p => path.startsWith(p))) {
+    if (!(await isAdminSession(c))) return c.json({ error: "Super Admin session required" }, 403);
+  } else if (SESSION_ANY_METHOD.some(p => path.startsWith(p)) || (write && SESSION_WRITES.some(p => path.startsWith(p)))) {
+    if (!(await getSession(c))) return c.json({ error: "Sign in to use this feature" }, 401);
+  }
+  return next();
+});
+
 // Initialize Supabase client
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
@@ -579,21 +601,39 @@ app.post("/make-server-49c0e13c/authority/clear-cache", (c) => {
 // 💾 Save BIBFRAME Record (full JSON-LD document)
 app.post("/make-server-49c0e13c/records/save", async (c) => {
   try {
+    // Only signed-in, approved catalogers save; the record says who saved it from the session, not the request.
+    const session = await getSession(c);
+    if (!session) {
+      return c.json({ error: 'Sign in to save records' }, 401);
+    }
+
     const { id, document, title, metadata, status: requestedStatus } = await c.req.json();
 
     if (!id || !document) {
       return c.json({ error: 'Record ID and document required' }, 400);
     }
+    // The id becomes part of a storage key: letters, digits and . _ : - only.
+    if (typeof id !== 'string' || !/^[A-Za-z0-9._:-]{1,120}$/.test(id)) {
+      return c.json({ error: 'Invalid record ID' }, 400);
+    }
 
-    // Validate it's a proper JSON-LD document
+    // Validate it's a proper JSON-LD document describing a Work and an Instance
     if (!document['@graph'] || !Array.isArray(document['@graph'])) {
       return c.json({ error: 'Invalid JSON-LD document: @graph array required' }, 400);
+    }
+    const graph: any[] = document['@graph'];
+    if (graph.length > 500 || JSON.stringify(document).length > 2_000_000) {
+      return c.json({ error: 'Record is too large' }, 413);
+    }
+    const typed = (suffix: string) => graph.some((n: any) =>
+      ([] as any[]).concat(n?.['@type'] || []).some((t: any) => typeof t === 'string' && t.endsWith(suffix)));
+    if (!typed('Work') || !typed('Instance')) {
+      return c.json({ error: 'A BIBFRAME record needs a bf:Work and a bf:Instance' }, 400);
     }
 
     // Review workflow: only the Super Admin can publish straight to the catalog.
     // Everyone else's saves (new records and edits) wait for approval.
-    const session = await getSession(c);
-    const isAdmin = session?.role === 'admin';
+    const isAdmin = session.role === 'admin';
     const status = isAdmin
       ? (requestedStatus === 'pending-review' ? 'pending-review' : 'complete')
       : 'pending-review';
@@ -601,8 +641,12 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     const recordKey = `bibframe:record:${id}`;
     const existingRaw = await kv.get(recordKey);
     const existing = existingRaw ? (typeof existingRaw === 'string' ? JSON.parse(existingRaw) : existingRaw) : null;
+    // A cataloger edits their own records; anyone else's are the Super Admin's to change.
+    if (existing && !isAdmin && existing.cataloger && existing.cataloger !== session.username) {
+      return c.json({ error: 'This record belongs to another cataloger' }, 403);
+    }
     const now = new Date().toISOString();
-    const cataloger = session?.username || metadata?.catalogerId || existing?.cataloger || 'anonymous';
+    const cataloger = isAdmin && existing?.cataloger ? existing.cataloger : session.username;
 
     // Store entire document as JSON-LD with metadata
     await kv.set(recordKey, JSON.stringify({
@@ -768,38 +812,6 @@ app.delete("/make-server-49c0e13c/records/:id", async (c) => {
 // 🌙 MOON ENGINE RECORDS (Separate Storage for Moon Engine)
 // ══════════════════════════════��════════════════════════════
 
-// 💾 Save Moon Engine Record
-app.post("/make-server-49c0e13c/moon-engine/records/save", async (c) => {
-  try {
-    const { id, document, title } = await c.req.json();
-    
-    if (!id || !document) {
-      return c.json({ error: 'Record ID and document required' }, 400);
-    }
-    
-    // Validate JSON-LD structure
-    if (!document['@graph'] || !Array.isArray(document['@graph'])) {
-      return c.json({ error: 'Invalid JSON-LD document: @graph array required' }, 400);
-    }
-    
-    // Store with Moon Engine prefix
-    const recordKey = `moon-engine:record:${id}`;
-    await kv.set(recordKey, JSON.stringify({
-      id,
-      title: title || 'Untitled',
-      document,
-      saved: new Date().toISOString(),
-      source: 'Moon Engine'
-    }));
-    
-    console.log(`[MOON ENGINE] Saved record ${id} with ${document['@graph'].length} nodes`);
-    
-    return c.json({ success: true, id, saved: new Date().toISOString() });
-  } catch (error) {
-    console.error('Moon Engine save error:', error);
-    return c.json({ error: 'Failed to save Moon Engine record' }, 500);
-  }
-});
 
 // 📋 List Moon Engine Records
 app.get("/make-server-49c0e13c/moon-engine/records", async (c) => {
@@ -850,21 +862,6 @@ app.get("/make-server-49c0e13c/moon-engine/records/:id", async (c) => {
   }
 });
 
-// 🗑️ Delete Moon Engine Record
-app.delete("/make-server-49c0e13c/moon-engine/records/:id", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const recordKey = `moon-engine:record:${id}`;
-    
-    await kv.del(recordKey);
-    console.log(`[MOON ENGINE] Deleted record ${id}`);
-    
-    return c.json({ success: true, id });
-  } catch (error) {
-    console.error('Moon Engine delete error:', error);
-    return c.json({ error: 'Failed to delete Moon Engine record' }, 500);
-  }
-});
 
 // ═══════════════════════════════════════════════════════════
 // 🌐 VIAF PROXY (CORS Workaround)
@@ -959,124 +956,7 @@ function buildViafDescription(item: any): string {
   return parts.join(', ');
 }
 
-// Authentication: Sign up
-app.post("/make-server-49c0e13c/signup", async (c) => {
-  try {
-    const { username, password } = await c.req.json();
 
-    if (!username || !password) {
-      return c.json({ error: 'Username and password required' }, 400);
-    }
-
-    if (password.length < 6) {
-      return c.json({ error: 'Password must be at least 6 characters' }, 400);
-    }
-
-    // Create email from username for Supabase auth
-    const email = `${username}@moon.local`;
-
-    const { data, error } = await supabase.auth.admin.createUser({
-      email: email,
-      password: password,
-      user_metadata: { username: username },
-      // Automatically confirm since we don't have email configured
-      email_confirm: true
-    });
-
-    if (error) {
-      console.error('Signup error:', error);
-      // Provide clearer error for duplicate users
-      if (error.message?.includes('already') || error.message?.includes('duplicate') || error.message?.includes('exists')) {
-        return c.json({ error: `Username "${username}" is already taken. Please choose a different username or log in.` }, 400);
-      }
-      return c.json({ error: `Signup failed: ${error.message}` }, 400);
-    }
-
-    // Auto-login the newly created user so they get a session immediately
-    let access_token = null;
-    try {
-      const loginClient = createClient(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      );
-      const { data: loginData, error: loginError } = await loginClient.auth.signInWithPassword({
-        email: email,
-        password: password,
-      });
-      if (!loginError && loginData.session?.access_token) {
-        access_token = loginData.session.access_token;
-        console.log(`[SIGNUP] User "${username}" created and auto-logged in`);
-      } else {
-        console.log(`[SIGNUP] User "${username}" created but auto-login failed:`, loginError?.message);
-      }
-    } catch (autoLoginErr) {
-      console.log(`[SIGNUP] Auto-login after signup failed:`, autoLoginErr);
-    }
-
-    return c.json({ 
-      success: true, 
-      access_token: access_token,
-      user: { 
-        id: data.user.id, 
-        username: username 
-      } 
-    });
-  } catch (error) {
-    console.error('Signup exception:', error);
-    return c.json({ error: `Signup failed unexpectedly: ${error}` }, 500);
-  }
-});
-
-// Authentication: Login
-app.post("/make-server-49c0e13c/login", async (c) => {
-  try {
-    const { username, password } = await c.req.json();
-
-    if (!username || !password) {
-      return c.json({ error: 'Username and password required' }, 400);
-    }
-
-    const email = `${username}@moon.local`;
-
-    const loginClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-    );
-
-    // First attempt: try signing in directly
-    let { data, error } = await loginClient.auth.signInWithPassword({
-      email: email,
-      password: password,
-    });
-
-    if (error) {
-      console.error('Login error:', error);
-      const isInvalidCreds = error.message?.includes('Invalid login credentials') || error.message?.includes('invalid_credentials');
-      const errorMsg = isInvalidCreds
-        ? `No account found for "${username}". Please use the Sign Up tab to create an account first, then log in.`
-        : `Login failed: ${error.message}`;
-      return c.json({ error: errorMsg }, 401);
-    }
-
-    if (!data.session?.access_token) {
-      console.error('Login succeeded but no session/token returned');
-      return c.json({ error: 'Login succeeded but no session was created. Please try again.' }, 500);
-    }
-
-    console.log(`[LOGIN] User "${username}" logged in successfully`);
-    return c.json({ 
-      success: true,
-      access_token: data.session.access_token,
-      user: {
-        id: data.user?.id,
-        username: username
-      }
-    });
-  } catch (error) {
-    console.error('Login exception:', error);
-    return c.json({ error: `Login failed unexpectedly: ${error}` }, 500);
-  }
-});
 
 // BIBFRAME Search - searches id.loc.gov using the official API format
 app.get("/make-server-49c0e13c/search-bibframe", async (c) => {
@@ -1668,205 +1548,11 @@ app.get("/make-server-49c0e13c/search-authority", async (c) => {
   }
 });
 
-// Save cataloging record (legacy endpoint)
-app.post("/make-server-49c0e13c/save-record", async (c) => {
-  try {
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-    
-    if (authError || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
 
-    const savedRecord = await c.req.json();
-    
-    // Validate it's a SavedRecord with proper structure
-    if (!savedRecord.id) {
-      savedRecord.id = `record_${user.id}_${Date.now()}`;
-    }
-    if (!savedRecord.createdAt) {
-      savedRecord.createdAt = new Date().toISOString();
-    }
-    savedRecord.modifiedAt = new Date().toISOString();
-    
-    // Save the complete SavedRecord structure
-    await kv.set(savedRecord.id, JSON.stringify(savedRecord));
-    
-    return c.json({ success: true, recordId: savedRecord.id, record: savedRecord });
-  } catch (error) {
-    console.error('Save record error:', error);
-    return c.json({ error: 'Failed to save record' }, 500);
-  }
-});
 
-// Save BIBFRAME record (new simplified endpoint)
-app.post("/make-server-49c0e13c/records", async (c) => {
-  try {
-    // Public endpoint - no auth required for demo purposes
-    const recordPayload = await c.req.json();
-    
-    // Use provided ID or generate one
-    const recordId = recordPayload.id || `record_anonymous_${Date.now()}`;
-    
-    // Validate JSON-LD structure
-    if (!recordPayload.document || !recordPayload.document['@graph']) {
-      return c.json({ error: 'Invalid record: document with @graph required' }, 400);
-    }
-    
-    const savedRecord = {
-      id: recordId,
-      title: recordPayload.title || 'Untitled',
-      document: recordPayload.document, // Full JSON-LD with @graph and quads
-      metadata: {
-        ...recordPayload.metadata,
-        createdAt: new Date().toISOString(),
-        modifiedAt: new Date().toISOString(),
-      }
-    };
-    
-    // Save to KV store with bibframe:record: prefix
-    await kv.set(`bibframe:record:${recordId}`, JSON.stringify(savedRecord));
-    
-    console.log(`✅ Record saved: ${recordId} with ${recordPayload.document['@graph'].length} nodes and ${recordPayload.document.quads?.length || 0} RDF triples`);
-    
-    return c.json({ 
-      success: true, 
-      recordId: recordId, 
-      record: savedRecord,
-      nodeCount: recordPayload.document['@graph'].length,
-      tripleCount: recordPayload.document.quads?.length || 0,
-      message: 'Record saved permanently to database'
-    });
-  } catch (error) {
-    console.error('Save record error:', error);
-    return c.json({ error: 'Failed to save record', details: String(error) }, 500);
-  }
-});
 
-// List user's records
-app.get("/make-server-49c0e13c/list-records", async (c) => {
-  try {
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-    
-    if (authError || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
 
-    const prefix = `record_${user.id}_`;
-    const records = await kv.getByPrefix(prefix);
-    
-    // Parse and return SavedRecord objects directly
-    const parsedRecords = records.map((r: any) => {
-      try {
-        return JSON.parse(r.value);
-      } catch (e) {
-        console.error('Error parsing record:', r.key, e);
-        // Return a minimal valid record structure if parsing fails
-        return {
-          id: r.key,
-          record: {},
-          title: 'Parse Error',
-          createdAt: new Date().toISOString(),
-          modifiedAt: new Date().toISOString()
-        };
-      }
-    });
-    
-    return c.json({ records: parsedRecords });
-  } catch (error) {
-    console.error('List records error:', error);
-    return c.json({ error: 'Failed to list records', records: [] }, 500);
-  }
-});
 
-// Get specific record
-app.get("/make-server-49c0e13c/get-record/:id", async (c) => {
-  try {
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-    
-    if (authError || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-
-    const recordId = c.req.param('id');
-    const recordData = await kv.get(recordId);
-    
-    if (!recordData) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    
-    // Return the full SavedRecord object
-    const record = JSON.parse(recordData);
-    return c.json({ record });
-  } catch (error) {
-    console.error('Get record error:', error);
-    return c.json({ error: 'Failed to get record' }, 500);
-  }
-});
-
-// Update record
-app.put("/make-server-49c0e13c/update-record/:id", async (c) => {
-  try {
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-    
-    if (authError || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-
-    const recordId = c.req.param('id');
-    const body = await c.req.json();
-    
-    // Preserve the original createdAt if it exists
-    const existingData = await kv.get(recordId);
-    let createdAt = new Date().toISOString();
-    
-    if (existingData) {
-      try {
-        const existing = JSON.parse(existingData);
-        createdAt = existing.createdAt || createdAt;
-      } catch (e) {
-        console.error('Error parsing existing record:', e);
-      }
-    }
-    
-    const updatedRecord = {
-      ...body,
-      id: recordId,
-      createdAt,
-      modifiedAt: new Date().toISOString(),
-    };
-    
-    await kv.set(recordId, JSON.stringify(updatedRecord));
-    
-    return c.json({ record: updatedRecord, message: 'Record updated successfully' });
-  } catch (error) {
-    console.error('Update record error:', error);
-    return c.json({ error: 'Failed to update record' }, 500);
-  }
-});
-
-// Delete record
-app.delete("/make-server-49c0e13c/delete-record/:id", async (c) => {
-  try {
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-    
-    if (authError || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-
-    const recordId = c.req.param('id');
-    await kv.del(recordId);
-    
-    return c.json({ message: 'Record deleted successfully' });
-  } catch (error) {
-    console.error('Delete record error:', error);
-    return c.json({ error: 'Failed to delete record' }, 500);
-  }
-});
 
 // ============================================================================
 // JCRICKET COLLABORATIVE ENTITY MANAGEMENT ENDPOINTS
@@ -3417,6 +3103,10 @@ app.post("/make-server-49c0e13c/moon/:entityType/:entityId/delete", async (c) =>
   try {
     const entityType = c.req.param('entityType') as 'record' | 'authority';
     const entityId = c.req.param('entityId');
+    // Deleting and restoring records or authorities is the Super Admin's job.
+    if (!(await isAdminSession(c))) {
+      return c.json({ error: 'Super Admin session required' }, 403);
+    }
     const { actor, reason } = await c.req.json();
 
     if (!actor || !reason) {
@@ -3441,6 +3131,9 @@ app.post("/make-server-49c0e13c/moon/:entityType/:entityId/restore", async (c) =
   try {
     const entityType = c.req.param('entityType') as 'record' | 'authority';
     const entityId = c.req.param('entityId');
+    if (!(await isAdminSession(c))) {
+      return c.json({ error: 'Super Admin session required' }, 403);
+    }
     const { actor } = await c.req.json();
 
     if (!actor) {
@@ -3556,6 +3249,9 @@ app.get("/make-server-49c0e13c/moon/authority-page/:authorityUri", async (c) => 
 // Create institution (POST /moon/institutions)
 app.post("/make-server-49c0e13c/moon/institutions", async (c) => {
   try {
+    if (!(await isAdminSession(c))) {
+      return c.json({ error: 'Super Admin session required' }, 403);
+    }
     const data = await c.req.json();
     const institution = await multiTenant.createInstitution(data);
     return c.json(institution);
@@ -3608,6 +3304,10 @@ app.get("/make-server-49c0e13c/moon/institutions/:id/stats", async (c) => {
 // Create user (POST /moon/users)
 app.post("/make-server-49c0e13c/moon/users", async (c) => {
   try {
+    // A Moon user's roles decide what the /moon/* routes allow (admin included): only the Super Admin creates them.
+    if (!(await isAdminSession(c))) {
+      return c.json({ error: 'Super Admin session required' }, 403);
+    }
     const data = await c.req.json();
     const user = await multiTenant.createUser(data);
     return c.json(user);
@@ -4633,6 +4333,9 @@ app.get("/make-server-49c0e13c/field-templates", async (c) => {
 // PUT save/overwrite all field templates
 app.put("/make-server-49c0e13c/field-templates", async (c) => {
   try {
+    if (!(await getSession(c))) {
+      return c.json({ success: false, error: "Sign in to change field templates" }, 401);
+    }
     const { templates } = await c.req.json();
     if (!Array.isArray(templates)) {
       return c.json({ success: false, error: "templates must be an array" }, 400);
@@ -4648,6 +4351,9 @@ app.put("/make-server-49c0e13c/field-templates", async (c) => {
 // DELETE a single field template by id
 app.delete("/make-server-49c0e13c/field-templates/:id", async (c) => {
   try {
+    if (!(await getSession(c))) {
+      return c.json({ success: false, error: "Sign in to change field templates" }, 401);
+    }
     const id = c.req.param("id");
     const data = await kv.get("field-templates-all");
     const templates = data ? (typeof data === "string" ? JSON.parse(data) : data) : [];

@@ -2,7 +2,8 @@
  * ISBNdb Client
  * Uses the server proxy to securely access ISBNdb API
  */
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { projectId } from '../../../utils/supabase/info';
+import { moonHeaders } from './moonApi';
 import type { ISBNdbBook, ISBNdbSearchResult, ISBNdbAuthorDetails } from './isbndbApi';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-49c0e13c`;
@@ -16,7 +17,7 @@ export async function getBookByISBN(isbn: string): Promise<ISBNdbBook | null> {
     
     const response = await fetch(`${API_BASE}/isbndb/book/${cleanIsbn}`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
     });
 
@@ -45,7 +46,7 @@ export async function getBooksByISBNs(isbns: string[]): Promise<ISBNdbBook[]> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
       body: JSON.stringify({ isbns }),
     });
@@ -78,7 +79,7 @@ export async function searchBooks(
 
     const response = await fetch(`${API_BASE}/isbndb/search/books/${encodeURIComponent(query)}?${params}`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
     });
 
@@ -113,7 +114,7 @@ export async function searchAuthors(
 
     const response = await fetch(`${API_BASE}/isbndb/search/authors/${encodeURIComponent(query)}?${params}`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
     });
 
@@ -139,7 +140,7 @@ export async function getAuthorDetails(authorName: string): Promise<ISBNdbAuthor
   try {
     const response = await fetch(`${API_BASE}/isbndb/author/${encodeURIComponent(authorName)}`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
     });
 
@@ -174,7 +175,7 @@ export async function searchPublishers(
 
     const response = await fetch(`${API_BASE}/isbndb/search/publishers/${encodeURIComponent(query)}?${params}`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
     });
 
@@ -209,7 +210,7 @@ export async function searchSubjects(
 
     const response = await fetch(`${API_BASE}/isbndb/search/subjects/${encodeURIComponent(query)}?${params}`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
     });
 
@@ -235,7 +236,7 @@ export async function getPublisherDetails(publisherName: string): Promise<{ name
   try {
     const response = await fetch(`${API_BASE}/isbndb/publisher/${encodeURIComponent(publisherName)}`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
     });
 
@@ -261,7 +262,7 @@ export async function getSubjectDetails(subjectName: string): Promise<{ name: st
   try {
     const response = await fetch(`${API_BASE}/isbndb/subject/${encodeURIComponent(subjectName)}`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
     });
 
@@ -287,7 +288,7 @@ export async function getStats(): Promise<any> {
   try {
     const response = await fetch(`${API_BASE}/isbndb/stats`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...moonHeaders(),
       },
     });
 

@@ -15,10 +15,12 @@ import {
   BookOpen, Users, Languages, Calendar, Tag, FileText, Loader2, Database,
   Layers, BarChart3, RefreshCw, ThumbsUp, ThumbsDown, History, Zap
 } from "lucide-react";
-import { projectId, publicAnonKey } from "../../../utils/supabase/info";
+import { projectId } from "../../../utils/supabase/info";
+import { moonHeaders } from "../utils/moonApi";
 
 const API = `https://${projectId}.supabase.co/functions/v1/make-server-49c0e13c`;
-const hdrs = { "Content-Type": "application/json", Authorization: `Bearer ${publicAnonKey}` };
+// Read on every call: the AI routes need the cataloger's current session.
+const hdrs = () => moonHeaders({ "Content-Type": "application/json" });
 
 // ─── Types for the theme prop ────────────────────────────────────
 interface BMTheme {
@@ -214,7 +216,7 @@ function P1MetadataSuggestions({ BM, isLight, hasGlass, inputStyle, t, lang, pre
     if (!title && !author && !isbn) { toast.error("Enter at least a title, author, or ISBN"); return; }
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`${API}/ai/suggest-metadata`, { method: "POST", headers: hdrs,
+      const res = await fetch(`${API}/ai/suggest-metadata`, { method: "POST", headers: hdrs(),
         body: JSON.stringify({ title, author, isbn, publisher, abstract }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
@@ -372,7 +374,7 @@ function P2DuplicateDetection({ BM, isLight, inputStyle, t, prefillTitle, prefil
     if (!title) { toast.error("Title required"); return; }
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`${API}/ai/detect-duplicates`, { method: "POST", headers: hdrs,
+      const res = await fetch(`${API}/ai/detect-duplicates`, { method: "POST", headers: hdrs(),
         body: JSON.stringify({ title, author, isbn }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
@@ -467,7 +469,7 @@ function P3NaturalLanguage({ BM, isLight, inputStyle, t, lang }: {
     if (!query.trim()) { toast.error("Enter a query"); return; }
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`${API}/ai/natural-search`, { method: "POST", headers: hdrs,
+      const res = await fetch(`${API}/ai/natural-search`, { method: "POST", headers: hdrs(),
         body: JSON.stringify({ query }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
@@ -538,7 +540,7 @@ function P4SPARQLTranslator({ BM, isLight, inputStyle, t, lang }: {
     if (!query.trim()) { toast.error("Enter a query"); return; }
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`${API}/ai/sparql-translate`, { method: "POST", headers: hdrs,
+      const res = await fetch(`${API}/ai/sparql-translate`, { method: "POST", headers: hdrs(),
         body: JSON.stringify({ query }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
@@ -630,7 +632,7 @@ function P5AutoFill({ BM, isLight, inputStyle, t, prefillTitle, prefillAuthor, p
     if (!isbn && !title && !author) { toast.error("Enter an ISBN, title, or author"); return; }
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`${API}/ai/autofill`, { method: "POST", headers: hdrs,
+      const res = await fetch(`${API}/ai/autofill`, { method: "POST", headers: hdrs(),
         body: JSON.stringify({ isbn, title, author }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
@@ -727,7 +729,7 @@ function AuditPanel({ BM, isLight, t }: { BM: BMTheme; isLight: boolean; t: any 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/ai/audit-log?limit=50`, { headers: hdrs });
+      const res = await fetch(`${API}/ai/audit-log?limit=50`, { headers: hdrs() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
       setEntries(data.entries || []);
@@ -740,7 +742,7 @@ function AuditPanel({ BM, isLight, t }: { BM: BMTheme; isLight: boolean; t: any 
 
   const approve = async (id: string, approved: boolean) => {
     try {
-      await fetch(`${API}/ai/audit/${id}/approve`, { method: "POST", headers: hdrs, body: JSON.stringify({ approved }) });
+      await fetch(`${API}/ai/audit/${id}/approve`, { method: "POST", headers: hdrs(), body: JSON.stringify({ approved }) });
       setEntries(prev => prev.map(e => e.id === id ? { ...e, approved } : e));
       toast.success(approved ? t("ai.approved") : t("ai.rejected"));
     } catch (err: any) { toast.error(err.message); }
