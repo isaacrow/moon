@@ -671,6 +671,8 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
       status,
       cataloger,
       version,
+      // A cataloger's edit of a published record leaves the published version live until approval.
+      publishedVersion: status === 'complete' ? version : existing?.publishedVersion,
       nodeCount: document['@graph'].length,
       saved: now,
     });
@@ -684,17 +686,15 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
 app.get("/make-server-49c0e13c/records/:id", async (c) => {
   try {
     const id = c.req.param('id');
-    const record = await recordStore.getRecord(id);
+    // The public, and anyone asking with ?view=published (the OPAC), get the published version: an edit
+    // waiting for review never replaces what the catalogue shows. Signed-in catalogers get the working copy.
+    const published = c.req.query('view') === 'published' || !(await getSession(c));
+    const record = published ? await recordStore.getPublishedRecord(id) : await recordStore.getRecord(id);
 
     if (!record) {
       return c.json({ error: 'Record not found' }, 404);
     }
-
-    // Pending and returned records are visible only to signed-in catalogers; the public sees published ones.
-    if (!isPublished(record) && !(await getSession(c))) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    console.log(`[RECORDS] Loaded record ${id}`);
+    console.log(`[RECORDS] Loaded record ${id}${published ? ' (published)' : ''}`);
     
     return c.json(record);
   } catch (error) {
@@ -706,12 +706,11 @@ app.get("/make-server-49c0e13c/records/:id", async (c) => {
 // 📋 List All Records
 app.get("/make-server-49c0e13c/records", async (c) => {
   try {
-    const records = await recordStore.listRecords();
-    const signedIn = !!(await getSession(c));
+    // Same rule as a single record: the public and ?view=published get published versions only.
+    const published = c.req.query('view') === 'published' || !(await getSession(c));
+    const records = published ? await recordStore.listPublishedRecords() : await recordStore.listRecords();
 
     const recordList = records
-      // Without a session only published records are listed.
-      .filter((record) => signedIn || isPublished(record))
       .map((record) => ({
         id: record.id,
         title: record.title || 'Untitled',
@@ -724,6 +723,7 @@ app.get("/make-server-49c0e13c/records", async (c) => {
         createdAt: record.createdAt || record.saved,
         saved: record.saved,
         version: record.version,
+        publishedVersion: record.publishedVersion,
         nodeCount: record.document?.['@graph']?.length || 0,
       }));
 
@@ -738,11 +738,6 @@ app.get("/make-server-49c0e13c/records", async (c) => {
     return c.json({ error: 'Failed to list records' }, 500);
   }
 });
-
-// Records saved before the review workflow existed have no status and count as published.
-function isPublished(record: any): boolean {
-  return (record?.status || record?.metadata?.status || 'complete') === 'complete';
-}
 
 // ✅ Approve / reject a pending record (Super Admin only)
 async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
@@ -787,7 +782,7 @@ app.get("/make-server-49c0e13c/records/:id/versions", async (c) => {
       return c.json({ error: 'Record not found' }, 404);
     }
     const versions = await recordStore.listVersions(id);
-    return c.json({ id, current: record.version ?? null, versions });
+    return c.json({ id, current: record.version ?? null, published: record.publishedVersion ?? null, versions });
   } catch (error) {
     console.error('List versions error:', error);
     return c.json({ error: 'Failed to load the record\'s history' }, 500);

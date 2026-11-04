@@ -28,6 +28,9 @@ export interface SavedRecord {
   status?: RecordStatus;
   approvedBy?: string;
   approvedAt?: string;
+  /** Latest version on the server, and the version the public catalogue shows (older while an edit waits). */
+  version?: number;
+  publishedVersion?: number;
   jcricket?: {
     provenanceId?: string;
     institutionCode?: string;
@@ -374,6 +377,8 @@ export async function saveRecord(record: BIBFRAMERecord, cataloger?: string): Pr
 
     const data = await response.json();
     console.log('✅ Record saved to Supabase:', data);
+    savedRecord.version = data?.version;
+    savedRecord.publishedVersion = data?.publishedVersion;
     if (data?.status) {
       savedRecord.status = normalizeStatus(data.status);
       savedRecord.record = {
@@ -412,10 +417,15 @@ export async function saveRecord(record: BIBFRAMERecord, cataloger?: string): Pr
   }
 }
 
-export async function getAllRecords(): Promise<SavedRecord[]> {
+/**
+ * Every record from the server, merged with this browser's local copies. With `published`, only what
+ * the public catalogue shows: each published record at its published version (an edit waiting for
+ * review never replaces it), and no local copies.
+ */
+export async function getAllRecords(options: { published?: boolean } = {}): Promise<SavedRecord[]> {
   const deletedIds = getDeletedRecordIds();
   try {
-    const response = await fetch(`${API_BASE}/records`, {
+    const response = await fetch(`${API_BASE}/records${options.published ? '?view=published' : ''}`, {
       headers: moonHeaders(),
     });
 
@@ -616,8 +626,12 @@ export async function getAllRecords(): Promise<SavedRecord[]> {
         status,
         approvedBy: serverRecord.approvedBy,
         approvedAt: serverRecord.approvedAt,
+        version: serverRecord.version,
+        publishedVersion: serverRecord.publishedVersion,
       };
     });
+
+    if (options.published) return convertedRecords;
     
     // Merge with local records, excluding any deleted records
     const localRecords = getAllRecordsLocal();

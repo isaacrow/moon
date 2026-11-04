@@ -1092,10 +1092,9 @@ class WolfMoonOpacService {
 
     // 1. Load real records from the Wolf backend storage (/api/records + localStorage cache)
     try {
-      // Only records approved by the Super Admin appear in the public OPAC.
-      const realRecords = (await getAllRecords()).filter(
-        (r) => (r.status || 'complete') === 'complete'
-      );
+      // Only records approved by the Super Admin appear in the public OPAC, each at its published
+      // version: an edit waiting for review does not replace what patrons see.
+      const realRecords = await getAllRecords({ published: true });
       if (Array.isArray(realRecords) && realRecords.length > 0) {
         for (const r of realRecords) {
           const parsed = this.parseBibframeDocumentToOpacWork(r);

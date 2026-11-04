@@ -32,6 +32,8 @@ export interface StoredRecord {
   reviewedBy?: string;
   reviewedAt?: string;
   version?: number;
+  /** The version the public catalogue shows; may be older than `version` while an edit waits for review. */
+  publishedVersion?: number;
 }
 
 function fromRow(row: any): StoredRecord {
@@ -49,6 +51,25 @@ function fromRow(row: any): StoredRecord {
     reviewedBy: row.reviewed_by ?? undefined,
     reviewedAt: row.reviewed_at ?? undefined,
     version: row.current_version,
+    publishedVersion: row.published_version ?? undefined,
+  };
+}
+
+/** A row of the published_records view: the record as the public catalogue shows it. */
+function fromPublishedRow(row: any): StoredRecord {
+  return {
+    id: row.id,
+    title: row.title,
+    document: row.document,
+    metadata: row.metadata || {},
+    status: "complete",
+    cataloger: row.cataloger ?? undefined,
+    createdAt: row.created_at,
+    saved: row.updated_at,
+    approvedBy: row.approved_by ?? undefined,
+    approvedAt: row.approved_at ?? undefined,
+    version: row.published_version,
+    publishedVersion: row.published_version,
   };
 }
 
@@ -86,6 +107,36 @@ export async function listRecords(): Promise<StoredRecord[]> {
     .map(fromKv)
     .filter((r): r is StoredRecord => !!r && !!r.id && !inTable.has(r.id));
   return [...fromTable, ...notCopied];
+}
+
+/**
+ * One record as the public catalogue shows it: its published version, even while a newer edit waits
+ * for review. Null when it was never published, was deleted or does not exist.
+ */
+export async function getPublishedRecord(id: string): Promise<StoredRecord | null> {
+  const { data, error } = await sb().from("published_records").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(`[records] published read ${id} failed: ${error.message}`);
+  if (data) return fromPublishedRow(data);
+  // A record not copied to the table yet is public if its key-value row is published.
+  const { data: row } = await sb().from("records").select("id").eq("id", id).maybeSingle();
+  if (row) return null;
+  const rec = fromKv(await kv.get(kvKey(id)));
+  return rec?.status === "complete" ? rec : null;
+}
+
+/** Every published record, each at its published version. */
+export async function listPublishedRecords(): Promise<StoredRecord[]> {
+  const [published, all] = await Promise.all([
+    sb().from("published_records").select("*"),
+    sb().from("records").select("id"),
+  ]);
+  if (published.error) throw new Error(`[records] published list failed: ${published.error.message}`);
+  if (all.error) throw new Error(`[records] list failed: ${all.error.message}`);
+  const inTable = new Set((all.data || []).map((r: any) => r.id));
+  const notCopied = (await kv.getByPrefix("bibframe:record:"))
+    .map(fromKv)
+    .filter((r): r is StoredRecord => !!r && !!r.id && !inTable.has(r.id) && r.status === "complete");
+  return [...(published.data || []).map(fromPublishedRow), ...notCopied];
 }
 
 /** Saves a record as its next version and returns the version number. */
