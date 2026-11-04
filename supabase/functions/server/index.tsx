@@ -698,6 +698,35 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
   }
 });
 
+// 🔎 Search records on the server: ?q=words&status=&cataloger=&language=&template=&limit=&offset=
+// Every word must match, however it is spelled (Arabic letter variants and diacritics are folded).
+// Same visibility rule as the list: the public and ?view=published search published versions only.
+// Registered before /records/:id so "search" is not read as a record id.
+app.get("/make-server-49c0e13c/records/search", async (c) => {
+  try {
+    const published = c.req.query('view') === 'published' || !(await getSession(c));
+    const num = (v: string | undefined, d: number) => (v && /^\d+$/.test(v) ? Number(v) : d);
+    const result = await recordStore.searchRecords({
+      query: (c.req.query('q') || '').slice(0, 200),
+      published,
+      // A status filter only makes sense on working copies; published results are all 'complete'.
+      status: published ? undefined : c.req.query('status'),
+      cataloger: c.req.query('cataloger'),
+      language: c.req.query('language'),
+      template: c.req.query('template'),
+      limit: Math.min(num(c.req.query('limit'), 50), 200),
+      offset: num(c.req.query('offset'), 0),
+    });
+    return c.json({
+      ...result,
+      records: result.records.map((r) => ({ ...r, nodeCount: r.document?.['@graph']?.length || 0 })),
+    });
+  } catch (error) {
+    console.error('Search records error:', error);
+    return c.json({ error: 'Search failed' }, 500);
+  }
+});
+
 // 📖 Load BIBFRAME Record
 app.get("/make-server-49c0e13c/records/:id", async (c) => {
   try {
