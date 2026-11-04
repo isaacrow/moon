@@ -41,3 +41,6 @@ Thumbs.db
 tmp/
 temp/
 *.tsbuildinfo
+
+# Record backups and copy reports from scripts/copy-kv-records.mjs
+backups/
