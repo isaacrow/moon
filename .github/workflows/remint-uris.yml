@@ -1,0 +1,48 @@
+name: Re-mint record URIs
+
+# Run by hand from the Actions tab (or `gh workflow run remint-uris.yml -f mode=dry-run`).
+# Gives published records that still carry placeholder ids permanent https://mooon.site/resource/...
+# URIs, saved as a new published version. Both modes first back up every record; the backup and a
+# report are kept as a workflow artifact for 90 days.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run: re-mint and roll back, keep nothing. apply: re-mint for real.'
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remint-uris
+  cancel-in-progress: false
+
+jobs:
+  remint:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: gfbagczwhvxxstbfrfhu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Back up and re-mint (${{ inputs.mode }})
+        run: node scripts/remint-uris.mjs --${{ inputs.mode }}
+
+      - name: Keep the backup and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: remint-${{ inputs.mode }}-${{ github.run_number }}
+          path: backups/
+          retention-days: 90
+          if-no-files-found: error

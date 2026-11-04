@@ -29,6 +29,7 @@ import * as loadTesting from "./loadTesting.tsx";
 import recordRoutes from "./recordRoutes.tsx";
 import accountRoutes, { getSession, isAdminSession } from "./accountRoutes.tsx";
 import * as recordStore from "./recordStore.tsx";
+import * as linkedData from "./linkedData.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
@@ -695,6 +696,48 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
   } catch (error) {
     console.error('Save record error:', error);
     return c.json({ error: 'Failed to save record' }, 500);
+  }
+});
+
+// 🌐 Resolvable URIs: https://mooon.site/resource/<kind>/<id> reaches here through the Cloudflare
+// Worker in workers/resource-router. The published record describing that URI is answered as
+// JSON-LD, Turtle or N-Triples (by extension, e.g. .ttl, or by the Accept header); a browser is sent
+// (303 See Other) to the record's page in the OPAC. Only published versions are ever served.
+app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
+  const kind = c.req.param('kind');
+  const { id, format: fromExtension } = linkedData.splitExtension(c.req.param('id'));
+  if (!/^[a-z]+$/.test(kind) || !/^[A-Za-z0-9._:-]{1,120}$/.test(id)) {
+    return c.json({ error: 'Not a Moon resource URI' }, 404);
+  }
+  const uri = `${linkedData.BASE_URI}/${kind}/${id}`;
+  const format = fromExtension ?? linkedData.negotiate(c.req.header('Accept'));
+  try {
+    const record = await recordStore.findPublishedByUri(uri);
+    if (!record) {
+      return c.json({ error: 'No published record has this URI', uri }, 404);
+    }
+    const alternates = (['jsonld', 'ttl', 'nt'] as const)
+      .map((f) => `<${uri}.${f}>; rel="alternate"; type="${linkedData.MEDIA_TYPES[f]}"`)
+      .join(', ');
+    const headers: Record<string, string> = {
+      Vary: 'Accept',
+      Link: alternates,
+      'Cache-Control': 'public, max-age=300',
+      'Access-Control-Allow-Origin': '*',
+    };
+    if (format === 'html') {
+      const page = new URL('/opac.html', linkedData.BASE_URI);
+      page.searchParams.set('work', record.id);
+      return c.body(null, 303, { ...headers, Location: page.toString() });
+    }
+    if (format === 'jsonld') {
+      return c.body(JSON.stringify(linkedData.toJsonLd(record.document), null, 2), 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
+    }
+    const body = format === 'ttl' ? await linkedData.toTurtle(record.document) : await linkedData.toNTriples(record.document);
+    return c.body(body, 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES[format]}; charset=utf-8` });
+  } catch (error) {
+    console.error('Resolve URI error:', uri, error);
+    return c.json({ error: 'Failed to resolve the URI' }, 500);
   }
 });
 

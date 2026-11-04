@@ -347,3 +347,10 @@ export async function searchRecords(o: SearchOptions): Promise<SearchResult> {
   if (error) throw new Error(`[records] search failed: ${error.message}`);
   return data as SearchResult;
 }
+
+/** The published record that describes `uri` (any node with that @id), or null. */
+export async function findPublishedByUri(uri: string): Promise<{ id: string; title: string; document: any; version: number; saved: string } | null> {
+  const { data, error } = await sb().rpc("moon_find_published_by_uri", { p_uri: uri });
+  if (error) throw new Error(`[records] resolve ${uri} failed: ${error.message}`);
+  return data ?? null;
+}

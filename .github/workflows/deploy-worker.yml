@@ -1,0 +1,37 @@
+name: Deploy resource router (Cloudflare Worker)
+
+# Deploys workers/resource-router, which makes https://mooon.site/resource/... resolve.
+# Needs the CLOUDFLARE_API_TOKEN (Workers Scripts and Workers Routes: Edit, on the mooon.site zone)
+# and CLOUDFLARE_ACCOUNT_ID repository secrets, and mooon.site on Cloudflare's nameservers;
+# skipped with a warning while the secrets are missing.
+on:
+  push:
+    branches: [main]
+    paths: ['workers/resource-router/**', '.github/workflows/deploy-worker.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        uses: actions/checkout@v4
+
+      - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/resource-router
+
+      - name: Skipped (no Cloudflare secrets)
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
+        run: echo "::warning::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID not set - the resource router was not deployed."
