@@ -1,0 +1,14 @@
+name = "moon-resource-router"
+main = "index.js"
+compatibility_date = "2025-10-01"
+workers_dev = false
+
+# Only record URIs come here; the rest of mooon.site stays on GitHub Pages.
+routes = [
+  { pattern = "mooon.site/resource/*", zone_name = "mooon.site" },
+]
+
+[vars]
+MOON_API = "https://gfbagczwhvxxstbfrfhu.supabase.co/functions/v1/make-server-49c0e13c"
+# The same public (anon) key the website ships with; it grants nothing the server does not allow the public.
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmYmFnY3p3aHZ4eHN0YmZyZmh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA3ODg4OTksImV4cCI6MjA4NjM2NDg5OX0.Hrib4UwwVvCu0o7K51UAICoSmd2J-0XlkLegdkIqLJk"
