@@ -355,7 +355,7 @@ export async function findPublishedByUri(uri: string): Promise<{ id: string; tit
   return data ?? null;
 }
 
-export type NotificationKind = "welcome" | "review" | "approved" | "returned";
+export type NotificationKind = "welcome" | "review" | "approved" | "returned" | "comment";
 
 /**
  * Adds a notification. Never throws: a notification that fails to send must not undo the save or
@@ -385,5 +385,35 @@ export async function listNotifications(username: string): Promise<{ unread: num
 export async function markNotificationsRead(username: string, ids?: number[]): Promise<number> {
   const { data, error } = await sb().rpc("moon_notifications_read", { p_user: username, p_ids: ids?.length ? ids : null });
   if (error) throw new Error(`[notifications] mark read failed: ${error.message}`);
+  return data as number;
+}
+
+export interface FieldComment {
+  id: number;
+  field: string;
+  body: string;
+  author: string;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+}
+
+/** Every comment on a record's fields, oldest first. */
+export async function listComments(recordId: string): Promise<FieldComment[]> {
+  const { data, error } = await sb().rpc("moon_record_comments", { p_record: recordId });
+  if (error) throw new Error(`[comments] list ${recordId} failed: ${error.message}`);
+  return data || [];
+}
+
+export async function addComment(recordId: string, field: string, body: string, author: string): Promise<FieldComment> {
+  const { data, error } = await sb().rpc("moon_add_comment", { p_record: recordId, p_field: field, p_body: body, p_author: author });
+  if (error) throw new Error(`[comments] add on ${recordId} failed: ${error.message}`);
+  return data;
+}
+
+/** Resolves (or with resolved=false reopens) the thread the comment belongs to; returns how many changed. */
+export async function resolveComment(recordId: string, id: number, by: string, resolved = true): Promise<number> {
+  const { data, error } = await sb().rpc("moon_resolve_comment", { p_record: recordId, p_id: id, p_by: by, p_resolved: resolved });
+  if (error) throw new Error(`[comments] resolve ${id} failed: ${error.message}`);
   return data as number;
 }

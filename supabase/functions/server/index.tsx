@@ -940,6 +940,64 @@ app.post("/make-server-49c0e13c/notifications/read", async (c) => {
   }
 });
 
+// 💬 Comments on a record's fields. The Super Admin and the record's cataloger may comment and resolve;
+// a comment notifies the other side (the cataloger, or the Super Admin when the cataloger replies).
+async function commentAccess(c: any) {
+  const session = await getSession(c);
+  if (!session) return { error: c.json({ error: 'Sign in to see comments' }, 401) };
+  const record = await recordStore.getRecord(c.req.param('id'));
+  if (!record) return { error: c.json({ error: 'Record not found' }, 404) };
+  const mayWrite = session.role === 'admin' || !record.cataloger || record.cataloger === session.username;
+  return { session, record, mayWrite };
+}
+
+app.get("/make-server-49c0e13c/records/:id/comments", async (c) => {
+  try {
+    const a = await commentAccess(c);
+    if (a.error) return a.error;
+    return c.json({ comments: await recordStore.listComments(a.record!.id), mayWrite: a.mayWrite });
+  } catch (error) {
+    console.error('List comments error:', error);
+    return c.json({ error: 'Failed to load comments' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/records/:id/comments", async (c) => {
+  try {
+    const a = await commentAccess(c);
+    if (a.error) return a.error;
+    if (!a.mayWrite) return c.json({ error: 'Only the Super Admin and the record\'s cataloger can comment' }, 403);
+    const { field, body } = await c.req.json().catch(() => ({}));
+    if (typeof field !== 'string' || !/^[A-Za-z]+:[A-Za-z0-9_.-]{1,80}$/.test(field)) return c.json({ error: 'Invalid field' }, 400);
+    if (typeof body !== 'string' || !body.trim() || body.length > 2000) return c.json({ error: 'A comment needs 1–2000 characters' }, 400);
+    const comment = await recordStore.addComment(a.record!.id, field, body, a.session!.username);
+    const to = a.session!.username === a.record!.cataloger ? SUPER_ADMIN_USERNAME : a.record!.cataloger;
+    if (to && to !== a.session!.username) {
+      await recordStore.notify(to, 'comment', a.record!, a.session!.username, body.trim().slice(0, 300));
+    }
+    return c.json({ comment });
+  } catch (error) {
+    console.error('Add comment error:', error);
+    return c.json({ error: 'Failed to add the comment' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/records/:id/comments/:cid/resolve", async (c) => {
+  try {
+    const a = await commentAccess(c);
+    if (a.error) return a.error;
+    if (!a.mayWrite) return c.json({ error: 'Only the Super Admin and the record\'s cataloger can resolve comments' }, 403);
+    const cid = Number(c.req.param('cid'));
+    if (!Number.isInteger(cid) || cid < 1) return c.json({ error: 'Invalid comment' }, 400);
+    const { resolved } = await c.req.json().catch(() => ({}));
+    const changed = await recordStore.resolveComment(a.record!.id, cid, a.session!.username, resolved !== false);
+    return c.json({ changed });
+  } catch (error) {
+    console.error('Resolve comment error:', error);
+    return c.json({ error: 'Failed to update the comment' }, 500);
+  }
+});
+
 // ✏️ Who is editing: the editor calls this every half minute while a record is open, and gets back the
 // other catalogers active on it, so it can warn "<username> is working on this record".
 app.post("/make-server-49c0e13c/records/:id/editing", async (c) => {

@@ -81,6 +81,7 @@ import {
 import { saveRecord, getAllRecordsLocal, getRecordById, RecordConflictError, toServerDocument } from "../utils/recordStorageBackend";
 import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils/recordEditing";
 import { EditingWarning } from "./EditingWarning";
+import { RecordCommentsContext, useRecordComments } from "./FieldComments";
 import type { SaveConflict } from "./SaveConflictDialog";
 
 // ===== COMPONENTS =====
@@ -457,6 +458,8 @@ export default function WolfMoon({
   const baseVersionRef = useRef<number | undefined>((initialRecord?.metadata as any)?.serverVersion);
   const [saveConflict, setSaveConflict] = useState<(SaveConflict & { myDocument: any }) | null>(null);
   const [otherEditors, setOtherEditors] = useState<ActiveEditor[]>([]);
+  // Comments on this record's fields (review v2); none until the record has been saved.
+  const recordComments = useRecordComments(storageId);
 
   // ===== GRAPH STORE =====
   const [graphStore] = useState(new GraphStore());
@@ -1545,6 +1548,7 @@ export default function WolfMoon({
   return (
     <BMThemeContext.Provider value={BM}>
     <PrefilledDefaultsContext.Provider value={prefilledDefaults}>
+    <RecordCommentsContext.Provider value={recordComments}>
     <div
       className={`h-screen flex flex-col overflow-hidden relative ${gradientClass} ${!isClassic ? "dark" : ""}`}
       dir={language === "ar" ? "rtl" : "ltr"}
@@ -2893,6 +2897,7 @@ export default function WolfMoon({
       <React.Suspense fallback={<LazyPanelFallback />}><ImportRecordDialog isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} onImport={handleImport} /></React.Suspense>
       <React.Suspense fallback={<LazyPanelFallback />}><RecordViewerDialog open={showRecordViewer} onOpenChange={setShowRecordViewer} jsonldData={graphJsonld || { "@graph": [] }} title={recordTitle} /></React.Suspense>
     </div>
+    </RecordCommentsContext.Provider>
     </PrefilledDefaultsContext.Provider>
     </BMThemeContext.Provider>
   );
