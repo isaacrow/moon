@@ -90,6 +90,11 @@ main { flex: 1; padding-bottom: 96px; }
   box-shadow: inset -3px -3px 6px rgba(0, 0, 0, 0.18);
 }
 .brand-name { font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
+/* The Moon logo (public/opac-logo.png: the user's logo, black on transparent, trimmed). */
+.brand-logo { display: block; height: 40px; width: auto; }
+.footer-brand { display: inline-flex; align-items: center; gap: 12px; }
+.footer-brand img { height: 28px; width: auto; opacity: .85; }
+@media (max-width: 760px) { .brand-logo { height: 32px; } }
 .nav { display: flex; gap: 4px; }
 .nav button { position: relative;
   background: none; border: 0; padding: 8px 14px; border-radius: 10px; color: var(--ink-2); font-size: 15px;

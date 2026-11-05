@@ -190,8 +190,7 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
       <header className="topbar wrap">
         <div className="topbar-inner glass">
           <button className="brand" onClick={() => go({ mode: 'home' })} aria-label="فهرس مون، الصفحة الرئيسية">
-            <span className="brand-mark" aria-hidden="true" />
-            <span className="brand-name">مون</span>
+            <img className="brand-logo" src="/opac-logo.png" alt="مون" width={230} height={120} />
           </button>
           <nav className={`nav ${navOpen ? 'open glass' : ''}`} aria-label="الأقسام">
             {([
@@ -235,7 +234,7 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
 
       <footer className="footer wrap">
         <div className="footer-inner glass">
-          <span>فهرس مون — الفهرس العام للمكتبة</span>
+          <span className="footer-brand"><img src="/opac-logo.png" alt="مون" width={230} height={120} /> الفهرس العام للمكتبة</span>
           <span>{ready ? `${wolfMoonOpacService.getAllWorks().length} كتاب منشور` : ''}</span>
         </div>
       </footer>
