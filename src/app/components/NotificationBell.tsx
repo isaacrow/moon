@@ -11,7 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dro
 
 interface Notice {
   id: number;
-  kind: "welcome" | "review" | "approved" | "returned";
+  kind: "welcome" | "review" | "approved" | "returned" | "comment";
   recordId?: string;
   recordTitle?: string;
   actor?: string;
@@ -31,6 +31,10 @@ function message(n: Notice, ar: boolean): { title: string; body?: string } {
       return ar ? { title: `${n.actor || "مفهرس"} أرسل ${t} للمراجعة` } : { title: `${n.actor || "A cataloger"} sent ${t} for review` };
     case "approved":
       return ar ? { title: `اعتُمدت ${t}`, body: n.actor ? `بواسطة ${n.actor}` : undefined } : { title: `${t} was approved`, body: n.actor ? `by ${n.actor}` : undefined };
+    case "comment":
+      return ar
+        ? { title: `علّق ${n.actor || "مراجع"} على ${t}`, body: n.reason }
+        : { title: `${n.actor || "A reviewer"} commented on ${t}`, body: n.reason };
     case "returned":
       return ar
         ? { title: `أُعيدت ${t} للتعديل`, body: n.reason ? `السبب: ${n.reason}` : undefined }

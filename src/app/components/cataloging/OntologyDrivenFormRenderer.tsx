@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef, useContext } from 'react';
+import { FieldComments } from '../FieldComments';
 import { ChevronDown, ChevronUp, Plus, X, Edit2, Link as LinkIcon, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n/config';
@@ -562,6 +563,7 @@ function CategorySection({
                 value={getFieldValue(node, property.shortName)}
                 onChange={(value) => onChange(nodeUri, property.shortName, value)}
               />
+              <FieldComments field={`${entityType}:${property.shortName}`} label={property.label} />
               {onHideField && (
                 <button
                   onClick={() => onHideField(`registry:${property.shortName}`)}
