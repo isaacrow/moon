@@ -75,6 +75,96 @@ export function toMarcXml(records: MarcRecord[]): string {
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// Reading
+// ---------------------------------------------------------------------------
+
+/** ISO 2709 (.mrc), one record or a whole batch (e.g. a Koha export). Assumes UTF-8 (leader/09 = a). */
+export function parseIso2709(bytes: Uint8Array): MarcRecord[] {
+  const dec = new TextDecoder('utf-8');
+  const records: MarcRecord[] = [];
+  let start = 0;
+  while (start < bytes.length) {
+    // Skip line breaks some tools put between records.
+    while (start < bytes.length && (bytes[start] === 0x0a || bytes[start] === 0x0d)) start++;
+    if (start >= bytes.length) break;
+    const length = Number(dec.decode(bytes.subarray(start, start + 5)));
+    if (!Number.isFinite(length) || length < 25) throw new Error('This is not a binary MARC file (the record length is missing).');
+    const rec = bytes.subarray(start, start + length);
+    const leader = dec.decode(rec.subarray(0, 24));
+    const base = Number(leader.slice(12, 17));
+    const fields: MarcField[] = [];
+    for (let p = 24; p + 12 <= base - 1; p += 12) {
+      const entry = dec.decode(rec.subarray(p, p + 12));
+      const tag = entry.slice(0, 3);
+      const len = Number(entry.slice(3, 7));
+      const off = Number(entry.slice(7, 12));
+      let body = rec.subarray(base + off, base + off + len);
+      if (body[body.length - 1] === FIELD_END) body = body.subarray(0, body.length - 1);
+      if (/^00\d$/.test(tag)) { fields.push({ tag, data: dec.decode(body) }); continue; }
+      const text = dec.decode(body);
+      const [ind, ...parts] = text.split(String.fromCharCode(SUBFIELD));
+      fields.push({ tag, ind1: ind[0] || ' ', ind2: ind[1] || ' ', subfields: parts.filter(Boolean).map((s) => [s[0], s.slice(1)] as Subfield) });
+    }
+    records.push({ leader, fields });
+    start += length;
+  }
+  return records;
+}
+
+const unxml = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, '&');
+const attr = (tag: string, name: string) => (tag.match(new RegExp(`\\b${name}="([^"]*)"`)) || [])[1] ?? '';
+
+/** MARCXML: a <collection> of <record>s or a single <record>, with or without a "marc:" prefix. */
+export function parseMarcXml(text: string): MarcRecord[] {
+  const src = text.replace(/<(\/?)marc:/g, '<$1');
+  const records: MarcRecord[] = [];
+  for (const [, body] of src.matchAll(/<record\b[^>]*>([\s\S]*?)<\/record>/g)) {
+    const leader = unxml((body.match(/<leader>([\s\S]*?)<\/leader>/) || [])[1] || '').padEnd(24, ' ');
+    const fields: MarcField[] = [];
+    for (const m of body.matchAll(/<controlfield\b([^>]*)>([\s\S]*?)<\/controlfield>|<datafield\b([^>]*)>([\s\S]*?)<\/datafield>/g)) {
+      if (m[1] !== undefined) { fields.push({ tag: attr(m[1], 'tag'), data: unxml(m[2]) }); continue; }
+      const subfields = [...m[4].matchAll(/<subfield\b([^>]*)>([\s\S]*?)<\/subfield>/g)].map(([, a, v]) => [attr(a, 'code'), unxml(v)] as Subfield);
+      fields.push({ tag: attr(m[3], 'tag'), ind1: attr(m[3], 'ind1') || ' ', ind2: attr(m[3], 'ind2') || ' ', subfields });
+    }
+    records.push({ leader, fields });
+  }
+  return records;
+}
+
+/** MarcEdit text (.mrk): records separated by blank lines; "\" is a blank. */
+export function parseMrk(text: string): MarcRecord[] {
+  const records: MarcRecord[] = [];
+  for (const block of text.replace(/\r/g, '').split(/\n\s*\n/)) {
+    let leader = '';
+    const fields: MarcField[] = [];
+    for (const line of block.split('\n')) {
+      const m = line.match(/^=(\w{3}) {2}(.*)$/);
+      if (!m) continue;
+      const [, tag, rest] = m;
+      if (tag === 'LDR') leader = rest.replace(/\\/g, ' ');
+      else if (/^00\d$/.test(tag)) fields.push({ tag, data: rest.replace(/\\/g, ' ') });
+      else {
+        const blank = (c: string) => (c === '\\' ? ' ' : c || ' ');
+        fields.push({ tag, ind1: blank(rest[0]), ind2: blank(rest[1]),
+          subfields: rest.slice(2).split('$').filter(Boolean).map((s) => [s[0], s.slice(1)] as Subfield) });
+      }
+    }
+    if (leader || fields.length) records.push({ leader: leader.padEnd(24, ' '), fields });
+  }
+  return records;
+}
+
+/** Reads a MARC file whatever its form: binary, MARCXML or MarcEdit text. */
+export function readMarcFile(bytes: Uint8Array): MarcRecord[] {
+  const head = new TextDecoder('utf-8').decode(bytes.subarray(0, 400)).replace(/^﻿/, '').trimStart();
+  if (/^\d{5}/.test(head)) return parseIso2709(bytes);
+  const text = new TextDecoder('utf-8').decode(bytes).replace(/^﻿/, '');
+  if (head.startsWith('<')) return parseMarcXml(text);
+  if (head.startsWith('=LDR') || head.startsWith('=')) return parseMrk(text);
+  throw new Error('This file is not MARC (binary .mrc, MARCXML or MarcEdit .mrk).');
+}
+
 /** MarcEdit's text form (.mrk): "=LDR  ...", "=245  10$aTitle". Blanks in indicators are written as "\". */
 export function toMrk(record: MarcRecord): string {
   const ind = (c: string) => (!c || c === ' ' ? '\\' : c);

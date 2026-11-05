@@ -7,6 +7,8 @@
 import React, { useState } from 'react';
 import { Upload, FileJson, FileCode, FileText, X } from 'lucide-react';
 import { importBibframe, ImportFormat } from '../../../services/bibframeImport';
+import { readMarcFile } from '../../../services/marc/marcRecord';
+import { marcToBibframe, ImportedMarcRecord } from '../../../services/marc/marcToBibframe';
 
 interface ImportRecordDialogProps {
   isOpen: boolean;
@@ -17,7 +19,10 @@ interface ImportRecordDialogProps {
 export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDialogProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
-  const [fileType, setFileType] = useState<'jsonld' | 'xml' | 'rdf' | null>(null);
+  const [fileType, setFileType] = useState<'jsonld' | 'xml' | 'rdf' | 'marc' | null>(null);
+  // MARC files (.mrc, .mrk, MARCXML) can hold many records, e.g. a Koha export; the cataloger picks one.
+  const [marcRecords, setMarcRecords] = useState<ImportedMarcRecord[]>([]);
+  const [marcIndex, setMarcIndex] = useState(0);
   const [error, setError] = useState<string>('');
 
   if (!isOpen) return null;
@@ -31,33 +36,56 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
 
     // Determine file type
     const extension = file.name.split('.').pop()?.toLowerCase();
-    if (extension === 'json' || extension === 'jsonld') {
+    setMarcRecords([]);
+    setMarcIndex(0);
+    if (extension === 'mrc' || extension === 'mrk' || extension === 'marc') {
+      setFileType('marc');
+    } else if (extension === 'json' || extension === 'jsonld') {
       setFileType('jsonld');
     } else if (extension === 'xml' || extension === 'rdf' || extension === 'marcxml') {
       setFileType('xml');
     } else if (extension === 'ttl' || extension === 'n3' || extension === 'nt') {
       setFileType('rdf');
     } else {
-      setError('Unsupported file type. Please use JSON-LD, Turtle or N-Triples.');
+      setError('Unsupported file type. Please use MARC (.mrc, .mrk, MARCXML), JSON-LD, Turtle or N-Triples.');
       return;
     }
 
     // Read file content
     const reader = new FileReader();
     reader.onload = (e) => {
-      const content = e.target?.result as string;
+      const bytes = new Uint8Array(e.target?.result as ArrayBuffer);
+      const content = new TextDecoder('utf-8').decode(bytes);
       setFileContent(content);
+      // MARC: binary or MarcEdit files by extension, MARCXML by its namespace.
+      if (extension === 'mrc' || extension === 'mrk' || extension === 'marc' || /loc\.gov\/MARC21\/slim/.test(content.slice(0, 2000))) {
+        try {
+          const records = readMarcFile(bytes).map(marcToBibframe);
+          if (!records.length) throw new Error('No MARC records in this file.');
+          setFileType('marc');
+          setMarcRecords(records);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'This MARC file could not be read.');
+        }
+      }
     };
     reader.onerror = () => {
       setError('Error reading file');
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const handleImport = async () => {
     try {
+      if (fileType === 'marc') {
+        const chosen = marcRecords[marcIndex];
+        if (!chosen) { setError('No MARC record to import.'); return; }
+        onImport(chosen.work, chosen.instance, chosen.item);
+        onClose();
+        return;
+      }
       if (fileType === 'xml') {
-        setError('RDF/XML and MARCXML import is not available yet. Please export the record as JSON-LD, Turtle or N-Triples.');
+        setError('RDF/XML import is not available yet. Please export the record as JSON-LD, Turtle or N-Triples.');
         return;
       }
       // Any BIBFRAME description: LC's id.loc.gov records, Moon exports, Turtle or N-Triples.
@@ -102,7 +130,7 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
         {/* Content */}
         <div className="p-6 space-y-5">
           <p className="text-sm text-white/80">
-            Import a BIBFRAME record (JSON-LD, Turtle or N-Triples — including id.loc.gov records) into MOON.
+            Import a MARC record (from Koha, MarcEdit or any library system) or a BIBFRAME record (JSON-LD, Turtle or N-Triples, including id.loc.gov records) into MOON.
           </p>
 
           {/* File Upload Drop Area */}
@@ -116,7 +144,7 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
               type="file"
               id="file-upload"
               className="hidden"
-              accept=".json,.jsonld,.ttl,.n3,.nt,.xml,.rdf,.marcxml"
+              accept=".mrc,.mrk,.marc,.xml,.marcxml,.json,.jsonld,.ttl,.n3,.nt,.rdf"
               onChange={handleFileSelect}
             />
             <label
@@ -139,7 +167,7 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
                 Click to upload or drag and drop
               </span>
               <span className="text-xs text-white/60 mt-1 font-mono">
-                JSON-LD, XML, RDF, Turtle
+                MARC (.mrc, .mrk, MARCXML), JSON-LD, Turtle, N-Triples
               </span>
             </label>
           </div>
@@ -154,7 +182,7 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
               }}
             >
               {fileType === 'jsonld' && <FileJson className="h-6 w-6 text-cyan-300" />}
-              {fileType === 'xml' && <FileText className="h-6 w-6 text-amber-300" />}
+              {(fileType === 'xml' || fileType === 'marc') && <FileText className="h-6 w-6 text-amber-300" />}
               {fileType === 'rdf' && <FileCode className="h-6 w-6 text-purple-300" />}
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-white truncate">
@@ -171,6 +199,23 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
           {error && (
             <div className="p-3.5 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-200 text-xs">
               {error}
+            </div>
+          )}
+
+          {/* MARC: which record to open (a Koha export can hold many) */}
+          {fileType === 'marc' && marcRecords.length > 0 && !error && (
+            <div>
+              <label htmlFor="marc-record" className="block text-xs font-semibold text-white/80 mb-1.5 uppercase tracking-wider">
+                {marcRecords.length === 1 ? 'MARC record' : `${marcRecords.length} MARC records: choose one`}
+              </label>
+              <select
+                id="marc-record"
+                value={marcIndex}
+                onChange={(e) => setMarcIndex(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-xl text-sm bg-black/40 border border-white/20 text-white"
+              >
+                {marcRecords.map((r, i) => <option key={i} value={i}>{i + 1}. {r.title}</option>)}
+              </select>
             </div>
           )}
 
