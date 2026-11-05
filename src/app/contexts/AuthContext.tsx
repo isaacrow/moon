@@ -10,6 +10,9 @@ export interface AuthUser {
   registeredAt: string;
   approvedAt?: string;
   reviewedBy?: string;
+  /** Only in the Super Admin's account list: when this user was last active, and whether that was in the last 2 minutes. */
+  lastSeenAt?: string | null;
+  online?: boolean;
 }
 
 export interface LoginResult {
