@@ -22,6 +22,10 @@ import {
   normalizeArabic,
 } from '../services/wolfMoonOpacService';
 import { bookJsonLd, metaDescription, pageUrl } from './schemaOrg';
+import {
+  FACETS, SORTS as SORT_OPTIONS, applyFacets, facetCounts, sortWorks, readState, writeState, toggle, valueLabel, valuesOf,
+  workYearOf, realCopies, libraryOf, languageName, type FacetKey, type FacetValue, type Selection, type SortKey,
+} from './facets';
 import './opac.css';
 
 type View =
@@ -46,7 +50,8 @@ function viewFromUrl(): View {
 
 function urlFor(v: View): string {
   const u = new URL(window.location.href);
-  ['work', 'person', 'subject', 'dir', 'q', 'view'].forEach(k => u.searchParams.delete(k));
+  ['work', 'person', 'subject', 'dir', 'q', 'view', 'sort', 'page'].forEach(k => u.searchParams.delete(k));
+  [...u.searchParams.keys()].filter(k => k.startsWith('f_')).forEach(k => u.searchParams.delete(k));
   if (v.mode === 'work') u.searchParams.set('work', v.id);
   if (v.mode === 'person') u.searchParams.set('person', v.key);
   if (v.mode === 'subject') u.searchParams.set('subject', v.key);
@@ -489,40 +494,123 @@ function Home({ ctx }: { ctx: Ctx }) {
 // ---------------------------------------------------------------------------
 // Search results
 
-const SORTS = [
-  { v: 'relevance', l: 'الأكثر صلة' },
-  { v: 'title', l: 'العنوان' },
-  { v: 'date-desc', l: 'الأحدث' },
-  { v: 'date-asc', l: 'الأقدم' },
-] as const;
+const PAGE_SIZE = 20;
+const RESULTS_KEY = 'moon-opac:last-results';
+
+/** The result list a record page was opened from, so it can offer "previous / next result". */
+export function lastResults(): { ids: string[]; url: string; query: string } | null {
+  try { return JSON.parse(sessionStorage.getItem(RESULTS_KEY) || 'null'); } catch { return null; }
+}
+
+function holdingsSummary(w: OpacWorkEntity): { text: string; s: string } {
+  const copies = realCopies(w);
+  const libs = new Set(copies.map(c => libraryOf(c.heldBy)).filter(Boolean)).size;
+  if (valuesOf(w, 'avail').includes('online')) return { text: 'متاح على الإنترنت', s: 'digital_access' };
+  if (copies.length) {
+    const c = copies.length === 1 ? 'نسخة واحدة' : copies.length === 2 ? 'نسختان' : `${copies.length} نسخ`;
+    return { text: libs > 1 ? `${c} · ${libs} مكتبات` : c, s: 'available' };
+  }
+  return { text: 'لا نسخ مسجلة', s: 'not_connected' };
+}
+
+function contributorsLine(w: OpacWorkEntity): React.ReactNode[] {
+  const main = personName(w.primaryCreator);
+  const others = (w.contributors || []).filter(c => c !== w.primaryCreator && personName(c) && personName(c) !== main);
+  const parts: React.ReactNode[] = [];
+  if (main) parts.push(<span key="m" className="who">{main}</span>);
+  others.slice(0, 2).forEach((c, i) => parts.push(
+    <span key={i} className="who">{personName(c)}{c.role && roleLabel(c.role) ? <span className="role"> ({roleLabel(c.role)})</span> : null}</span>,
+  ));
+  if (others.length > 2) parts.push(<span key="more" className="more">+{others.length - 2}</span>);
+  return parts;
+}
+
+/** One result, as Libris shows it: category · language, the title, who made it (with roles), format · year, holdings. */
+function ResultCard({ w, ctx, i }: { w: OpacWorkEntity; ctx: Ctx; i: number }) {
+  const meta = [w.genreForm?.[0], languageName(w.languageLabel, w.language)].filter(Boolean).join(' · ');
+  const fmt = valuesOf(w, 'format')[0];
+  const year = workYearOf(w);
+  const h = holdingsSummary(w);
+  const who = contributorsLine(w);
+  return (
+    <button className="row result glass rise" style={stagger(i)} onClick={() => ctx.go({ mode: 'work', id: w.id })}>
+      <Cover work={w} jacket={false} />
+      <div style={{ minWidth: 0 }}>
+        {meta && <div className="kicker">{meta}</div>}
+        <div className="t" dir="auto">{w.title}{w.subtitle ? <span className="sub"> : {w.subtitle}</span> : null}</div>
+        {w.expressionOfHub?.label && <div className="hub" dir="auto">من العمل: {w.expressionOfHub.label}</div>}
+        {who.length > 0 && <div className="s" dir="auto">{who.reduce<React.ReactNode[]>((a, n, k) => (k ? [...a, '، ', n] : [n]), [])}</div>}
+        <div className="m">{[fmt, year].filter(Boolean).join(' · ')}</div>
+      </div>
+      <div className="side">
+        <span className="status" data-s={h.s}>{h.text}</span>
+      </div>
+    </button>
+  );
+}
+
+function FacetGroup({ title, k, values, sel, onToggle, needle, startOpen }: {
+  title: string; k: FacetKey; values: FacetValue[]; sel: Selection; onToggle: (k: FacetKey, v: string) => void; needle: string; startOpen: boolean;
+}) {
+  const [more, setMore] = useState(false);
+  const chosen = sel[k] || [];
+  const shown = needle ? values.filter(v => normalizeArabic(v.label).includes(needle)) : values;
+  if (!shown.length) return null;
+  const list = more || needle ? shown : shown.slice(0, 6);
+  return (
+    <details className="group" open={startOpen || chosen.length > 0 || !!needle}>
+      <summary><span>{title}</span>{chosen.length > 0 && <span className="badge">{chosen.length}</span>}</summary>
+      <div className="opts">
+        {list.map(o => {
+          const on = chosen.includes(o.value);
+          return (
+            <button key={o.value} className="opt" role="checkbox" aria-checked={on} aria-pressed={on} disabled={!on && o.count === 0}
+              onClick={() => onToggle(k, o.value)}>
+              <span className="box" aria-hidden="true">{on ? '✓' : ''}</span>
+              <span className="l" dir="auto">{o.label}</span>
+              <span className="n">{o.count}</span>
+            </button>
+          );
+        })}
+        {!needle && shown.length > 6 && (
+          <button className="opt-more" onClick={() => setMore(m => !m)}>{more ? 'عرض أقل' : `عرض المزيد (+${shown.length - 6})`}</button>
+        )}
+      </div>
+    </details>
+  );
+}
 
 function Results({ ctx, query }: { ctx: Ctx; query: string }) {
-  const [subject, setSubject] = useState('all');
-  const [author, setAuthor] = useState('all');
-  const [avail, setAvail] = useState('all');
-  const [sort, setSort] = useState<(typeof SORTS)[number]['v']>('relevance');
-  const [page, setPage] = useState(1);
+  const initial = useMemo(() => readState(new URLSearchParams(window.location.search)), [query]);
+  const [sel, setSel] = useState<Selection>(initial.sel);
+  const [sort, setSort] = useState<SortKey>(initial.sort);
+  const [page, setPage] = useState(initial.page);
+  const [needle, setNeedle] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
 
-  const r = useMemo(
-    () => wolfMoonOpacService.searchWorks(query, subject, author, 'all', 'all', sort, page, 12, 'all', avail),
-    [query, subject, author, avail, sort, page, ctx.rev],
+  // Every work matching the words, in order of relevance; the filters and the sort apply on top.
+  const base = useMemo(
+    () => wolfMoonOpacService.searchWorks(query, 'all', 'all', 'all', 'all', 'relevance', 1, 100000).works,
+    [query, ctx.rev],
   );
-  useEffect(() => { setPage(1); }, [subject, author, avail, sort]);
+  const filtered = useMemo(() => sortWorks(applyFacets(base, sel), sort), [base, sel, sort]);
+  const counts = useMemo(() => facetCounts(base, sel), [base, sel]);
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const shown = filtered.slice((Math.min(page, pages) - 1) * PAGE_SIZE, Math.min(page, pages) * PAGE_SIZE);
 
-  const anyFilter = subject !== 'all' || author !== 'all' || avail !== 'all';
-  const clear = () => { setSubject('all'); setAuthor('all'); setAvail('all'); };
+  // The filters live in the address, so a filtered list can be shared, bookmarked and come back with Back.
+  useEffect(() => {
+    const p = writeState(new URLSearchParams(window.location.search), { sel, sort, page });
+    const url = `${window.location.pathname}?${p.toString()}`;
+    if (url !== `${window.location.pathname}${window.location.search}`) history.replaceState(history.state, '', url);
+    try { sessionStorage.setItem(RESULTS_KEY, JSON.stringify({ ids: filtered.map(w => w.id), url, query })); } catch { /* private mode */ }
+  }, [sel, sort, page, filtered, query]);
 
-  const Group = ({ title, opts, value, set }: { title: string; opts: { value: string; label: string; count: number }[]; value: string; set: (v: string) => void }) =>
-    opts.length ? (
-      <div className="group">
-        <h3>{title}</h3>
-        {opts.slice(0, 8).map(o => (
-          <button key={o.value} className="opt" aria-pressed={value === o.value} onClick={() => set(value === o.value ? 'all' : o.value)}>
-            <span>{o.label}</span><span className="n">{o.count}</span>
-          </button>
-        ))}
-      </div>
-    ) : null;
+  const onToggle = (k: FacetKey, v: string) => { setSel(s => toggle(s, k, v)); setPage(1); };
+  const clear = () => { setSel({}); setPage(1); };
+  const chips = (Object.entries(sel) as [FacetKey, string[]][]).flatMap(([k, vs]) => vs.map(v => ({ k, v, label: valueLabel(k, v) })));
+  const activeCount = chips.length;
+  const n = normalizeArabic(needle.trim());
 
   return (
     <div className="wrap">
@@ -533,59 +621,63 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
       <div style={{ maxWidth: 720 }}><SearchBox ctx={ctx} initial={query} compact /></div>
 
       <div className="results-layout">
-        <aside className="filters glass" aria-label="تضييق النتائج">
-          <Group title="الإتاحة" opts={(r.facets.availabilities || []).map(a => ({ ...a, label: STATUS_LABEL[a.value] || a.label }))} value={avail} set={setAvail} />
-          <Group title="الموضوع" opts={r.facets.subjects || []} value={subject} set={setSubject} />
-          <Group title="المؤلف" opts={r.facets.authors || []} value={author} set={setAuthor} />
-          {anyFilter && <div className="group"><button className="btn-ghost" onClick={clear} style={{ width: '100%', justifyContent: 'center' }}>إزالة الفلاتر</button></div>}
+        <aside className={`filters glass ${showFilters ? 'open' : ''}`} aria-label="تضييق النتائج">
+          <div className="filters-head">
+            <h2>الفلاتر</h2>
+            {activeCount > 0 && <button className="link-btn" onClick={clear}>مسح الكل</button>}
+          </div>
+          <label className="filter-search">
+            <span className="sr-only">ابحث في الفلاتر</span>
+            <input value={needle} onChange={e => setNeedle(e.target.value)} placeholder="ابحث في الفلاتر…" />
+          </label>
+          {FACETS.map(({ key, title }, idx) => (
+            <FacetGroup key={key} k={key} title={title} values={counts[key]} sel={sel} onToggle={onToggle} needle={n} startOpen={idx < 4} />
+          ))}
         </aside>
 
         <section aria-live="polite">
           <div className="results-bar glass">
-            <span className="count">{r.totalCount} {r.totalCount === 1 ? 'كتاب' : 'كتب'}</span>
-            <label>
-              <span className="sr-only">الترتيب</span>
-              <select className="select" value={sort} onChange={e => setSort(e.target.value as any)}>
-                {SORTS.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}
+            <span className="count">عدد النتائج: {filtered.length}</span>
+            <button className="btn-ghost filters-toggle" aria-expanded={showFilters} onClick={() => setShowFilters(s => !s)}>
+              الفلاتر{activeCount ? ` (${activeCount})` : ''}
+            </button>
+            <label className="sort">
+              <span>الترتيب:</span>
+              <select className="select" value={sort} onChange={e => { setSort(e.target.value as SortKey); setPage(1); }}>
+                {SORT_OPTIONS.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}
               </select>
             </label>
           </div>
 
-          {r.works.length === 0 ? (
-            <div className="empty glass">
-              <h3>لم نجد كتباً تطابق بحثك</h3>
-              <p>تأكد من الإملاء، أو ابحث باسم المؤلف وحده، أو أزل بعض الفلاتر.</p>
-              {anyFilter ? <button className="btn-black" onClick={clear}>إزالة الفلاتر</button> : <button className="btn-black" onClick={() => ctx.go({ mode: 'search', query: '' })}>تصفّح كل الكتب</button>}
-            </div>
-          ) : (
-            <div className="rows">
-              {r.works.map((w, i) => {
-                const inst = w.instances[0];
-                const st = workStatus(w);
-                return (
-                  <button key={w.id} className="row glass rise" style={stagger(i)} onClick={() => ctx.go({ mode: 'work', id: w.id })}>
-                    <Cover work={w} jacket={false} />
-                    <div style={{ minWidth: 0 }}>
-                      <div className="t" dir="auto">{w.title}</div>
-                      <div className="s" dir="auto">{personName(w.primaryCreator)}</div>
-                      <div className="m">{[inst?.publisher, workYear(w), w.subjects[0]?.label].filter(Boolean).join('، ')}</div>
-                    </div>
-                    <div className="side">
-                      <span className="status" data-s={st}>{STATUS_LABEL[st]}</span>
-                    </div>
-                  </button>
-                );
-              })}
+          {chips.length > 0 && (
+            <div className="chips" aria-label="الفلاتر المختارة">
+              {chips.map(c => (
+                <button key={`${c.k}:${c.v}`} className="chip-x" onClick={() => onToggle(c.k, c.v)} aria-label={`إزالة ${c.label}`}>
+                  <span dir="auto">{c.label}</span><span aria-hidden="true">×</span>
+                </button>
+              ))}
             </div>
           )}
 
-          {r.totalPages > 1 && (
+          {shown.length === 0 ? (
+            <div className="empty glass">
+              <h3>لم نجد كتباً تطابق بحثك</h3>
+              <p>تأكد من الإملاء، أو ابحث باسم المؤلف وحده، أو أزل بعض الفلاتر.</p>
+              {activeCount ? <button className="btn-black" onClick={clear}>إزالة الفلاتر</button> : <button className="btn-black" onClick={() => ctx.go({ mode: 'search', query: '' })}>تصفّح كل الكتب</button>}
+            </div>
+          ) : (
+            <div className="rows">
+              {shown.map((w, i) => <ResultCard key={w.id} w={w} ctx={ctx} i={i} />)}
+            </div>
+          )}
+
+          {pages > 1 && (
             <nav className="pager" aria-label="الصفحات">
               <button className="btn-ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>السابق</button>
-              {Array.from({ length: r.totalPages }).slice(0, 7).map((_, i) => (
+              {Array.from({ length: pages }).slice(0, 9).map((_, i) => (
                 <button key={i} className="btn-ghost" aria-pressed={page === i + 1} aria-label={`الصفحة ${i + 1}`} onClick={() => setPage(i + 1)}>{i + 1}</button>
               ))}
-              <button className="btn-ghost" disabled={page >= r.totalPages} onClick={() => setPage(p => p + 1)}>التالي</button>
+              <button className="btn-ghost" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>التالي</button>
             </nav>
           )}
         </section>
