@@ -6,14 +6,27 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
+    // The SPARQL endpoint also takes POSTed queries (and the browser's CORS preflight for them).
+    const isSparql = url.pathname === '/resource/sparql';
+    if (isSparql && request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Accept',
+        'Access-Control-Max-Age': '86400',
+      } });
+    }
+    const allowed = isSparql ? ['GET', 'HEAD', 'POST'] : ['GET', 'HEAD'];
+    if (!allowed.includes(request.method)) {
+      return new Response('Method not allowed', { status: 405, headers: { Allow: allowed.join(', ') } });
     }
     const target = `${env.MOON_API}${url.pathname}${url.search}`;
     const upstream = await fetch(target, {
       method: request.method,
+      body: request.method === 'POST' ? await request.text() : undefined,
       headers: {
         Accept: request.headers.get('Accept') || '*/*',
+        ...(request.method === 'POST' ? { 'Content-Type': request.headers.get('Content-Type') || 'application/sparql-query' } : {}),
         // The public key the website itself uses; the server decides what may be shown (published only).
         Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
         apikey: env.SUPABASE_ANON_KEY,
@@ -25,7 +38,7 @@ export default {
     response.headers.set('Access-Control-Allow-Origin', '*');
     // Supabase sends every HTML page from its functions as text/plain; the record list at /resource/
     // is a web page, so label it as one.
-    if ((url.pathname === '/resource' || url.pathname === '/resource/') && (response.headers.get('Content-Type') || '').startsWith('text/plain')) {
+    if ((url.pathname === '/resource' || url.pathname === '/resource/' || isSparql) && (response.headers.get('Content-Type') || '').startsWith('text/plain')) {
       response.headers.set('Content-Type', 'text/html; charset=utf-8');
     }
     return response;

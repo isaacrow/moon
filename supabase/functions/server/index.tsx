@@ -30,6 +30,7 @@ import recordRoutes from "./recordRoutes.tsx";
 import accountRoutes, { getSession, isAdminSession, canReview, isReviewer, SUPER_ADMIN_USERNAME } from "./accountRoutes.tsx";
 import * as recordStore from "./recordStore.tsx";
 import * as linkedData from "./linkedData.tsx";
+import * as sparqlStore from "./sparqlEndpoint.tsx";
 import { missingForPublish, shapesFromProfile } from "./publishGate.tsx";
 import { PROFILES } from "./profiles.tsx";
 import * as aiEngine from "./aiEngine.tsx";
@@ -754,7 +755,7 @@ li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:n
 .t{font-weight:600;font-size:1.05rem;color:#f9fafb}.u{font-family:ui-monospace,monospace;font-size:.8rem;margin-top:4px;word-break:break-all}.f{font-size:.8rem;margin-top:4px;color:#9ca3af}
 </style></head><body><h1>Moon — published records</h1>
 <p>${records.length} BIBFRAME records. Each address opens the record's page in a browser, or its data for library systems (JSON-LD, Turtle, N-Triples). <a href="?format=json">This list as JSON</a> · <a href="/opac.html">Catalogue</a></p>
-<p>Every record in one file: <a href="/resource/dump.jsonld">JSON-LD</a> · <a href="/resource/dump.nt">N-Triples</a> · <a href="https://github.com/isaacrow/moon3/releases/tag/data-dump">nightly copy</a></p>
+<p>Every record in one file: <a href="/resource/dump.jsonld">JSON-LD</a> · <a href="/resource/dump.nt">N-Triples</a> · <a href="https://github.com/isaacrow/moon3/releases/tag/data-dump">nightly copy</a> · <a href="/resource/sparql">SPARQL</a></p>
 <ul>${rows}</ul></body></html>`;
     return c.html(html, 200, { 'Cache-Control': 'public, max-age=300' });
   } catch (error) {
@@ -762,6 +763,82 @@ li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:n
     return c.json({ error: 'Failed to list records' }, 500);
   }
 }
+// 🔍 Read-only SPARQL over the published records: https://mooon.site/resource/sparql
+// GET ?query=… (and optional &format=json|xml|csv|tsv|ttl|nt|rdfxml), or POST with an
+// application/sparql-query body or a form field "query". Without a query, browsers get a query page.
+const loadPublishedNTriples = async () => {
+  const records = (await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  return await linkedData.dumpNTriples(records.map((r) => r.document));
+};
+
+const SPARQL_EXAMPLE = `PREFIX bf: <http://id.loc.gov/ontologies/bibframe/>
+
+SELECT ?work ?title WHERE {
+  ?work a bf:Work ;
+        bf:title/bf:mainTitle ?title .
+}
+LIMIT 25`;
+
+function sparqlPage(): string {
+  const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moon SPARQL</title><style>
+body{font-family:system-ui,"Segoe UI",Tahoma,sans-serif;max-width:960px;margin:0 auto;padding:24px 16px;background:#0b1020;color:#e5e7eb}
+h1{font-size:1.5rem;margin:0 0 4px}p{color:#9ca3af;margin:0 0 16px}a{color:#93c5fd}
+textarea{width:100%;box-sizing:border-box;min-height:220px;font:13px/1.5 ui-monospace,monospace;background:#111827;color:#f9fafb;border:1px solid #374151;border-radius:8px;padding:12px}
+.bar{display:flex;gap:8px;margin:10px 0 18px;flex-wrap:wrap}button,select{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #374151;background:#1f2937;color:#f9fafb;cursor:pointer}
+button{background:#2563eb;border-color:#2563eb}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-top:1px solid #1f2937;padding:6px 8px;text-align:start;vertical-align:top;word-break:break-word}
+th{color:#9ca3af;font-weight:600}pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:#111827;padding:12px;border-radius:8px}#msg{color:#fca5a5}
+</style></head><body><h1>Moon SPARQL</h1>
+<p>Read-only SPARQL 1.1 over every published Moon record (BIBFRAME). Endpoint: <code>https://mooon.site/resource/sparql</code> · <a href="/resource/">Records</a> · <a href="/resource/dump.nt">Data dump</a></p>
+<form id="f"><textarea id="q" name="query" spellcheck="false">${esc(SPARQL_EXAMPLE)}</textarea>
+<div class="bar"><button type="submit">Run query</button><select id="fmt" name="format"><option value="">Table</option><option value="json">SPARQL JSON</option><option value="xml">SPARQL XML</option><option value="csv">CSV</option><option value="ttl">Turtle (CONSTRUCT)</option><option value="nt">N-Triples (CONSTRUCT)</option></select></div></form>
+<div id="msg"></div><div id="out"></div>
+<script>
+const f=document.getElementById('f'),q=document.getElementById('q'),fmt=document.getElementById('fmt'),out=document.getElementById('out'),msg=document.getElementById('msg');
+const cell=v=>{const td=document.createElement('td');if(!v){return td}if(v.type==='uri'){const a=document.createElement('a');a.href=v.value;a.textContent=v.value;td.appendChild(a)}else{td.textContent=v.value;td.dir='auto'}return td};
+f.addEventListener('submit',async e=>{e.preventDefault();msg.textContent='';out.textContent='Running…';
+  const u=new URL(location.href);u.search='';u.searchParams.set('query',q.value);if(fmt.value)u.searchParams.set('format',fmt.value);
+  try{const r=await fetch(u,{headers:{Accept:fmt.value?'*/*':'application/sparql-results+json, text/turtle;q=0.9'}});const t=await r.text();
+    if(!r.ok){out.textContent='';msg.textContent=(()=>{try{return JSON.parse(t).error}catch{return t}})();return}
+    let j=null;if(!fmt.value){try{j=JSON.parse(t)}catch{}}
+    out.textContent='';
+    if(j&&j.head&&j.results){const tb=document.createElement('table'),hr=document.createElement('tr');j.head.vars.forEach(v=>{const th=document.createElement('th');th.textContent=v;hr.appendChild(th)});tb.appendChild(hr);
+      j.results.bindings.forEach(b=>{const tr=document.createElement('tr');j.head.vars.forEach(v=>tr.appendChild(cell(b[v])));tb.appendChild(tr)});
+      const n=document.createElement('p');n.textContent=j.results.bindings.length+' results';out.append(n,tb)}
+    else if(j&&'boolean' in j){out.textContent=j.boolean?'true':'false'}
+    else{const pre=document.createElement('pre');pre.textContent=t;out.appendChild(pre)}
+  }catch(err){out.textContent='';msg.textContent=String(err)}});
+</script></body></html>`;
+}
+
+async function sparqlEndpoint(c: any) {
+  const cors = { 'Access-Control-Allow-Origin': '*', Vary: 'Accept' };
+  let query = c.req.query('query') || '';
+  if (c.req.method === 'POST') {
+    const type = (c.req.header('Content-Type') || '').toLowerCase();
+    if (type.startsWith('application/sparql-query')) query = await c.req.text();
+    else if (type.startsWith('application/x-www-form-urlencoded')) query = String((await c.req.parseBody()).query || '');
+    else return c.json({ error: 'POST a query as application/sparql-query or a form field named query' }, 415, cors);
+  }
+  if (!query) {
+    if (/text\/html/.test(c.req.header('Accept') || '')) return c.html(sparqlPage(), 200, { ...cors, 'Cache-Control': 'public, max-age=300' });
+    return c.json({ error: 'A query is required: ?query=SELECT …', example: SPARQL_EXAMPLE }, 400, cors);
+  }
+  try {
+    const result = await sparqlStore.runQuery(query, {
+      format: c.req.query('format'), accept: c.req.header('Accept'), loadNTriples: loadPublishedNTriples,
+    });
+    return c.body(result.body, 200, { ...cors, 'Content-Type': `${result.contentType}; charset=utf-8`, 'Cache-Control': 'public, max-age=60' });
+  } catch (error) {
+    if (error instanceof sparqlStore.SparqlError) return c.json({ error: error.message }, 400, cors);
+    console.error('SPARQL error:', error);
+    return c.json({ error: 'The query could not be run' }, 500, cors);
+  }
+}
+app.get("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
+app.post("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
+
 // 📦 Data dump: every published record in one file, https://mooon.site/resource/dump.jsonld or dump.nt
 // (always current; a dated copy is also saved nightly by .github/workflows/data-dump.yml).
 async function resourceDump(c: any, format: 'jsonld' | 'nt') {
