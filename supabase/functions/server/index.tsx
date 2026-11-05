@@ -27,7 +27,10 @@ import * as jwtAuth from "./jwtAuth.tsx";
 import * as observability from "./observability.tsx";
 import * as loadTesting from "./loadTesting.tsx";
 import recordRoutes from "./recordRoutes.tsx";
-import accountRoutes, { getSession, isAdminSession } from "./accountRoutes.tsx";
+import accountRoutes, { getSession, isAdminSession, canReview, isReviewer, SUPER_ADMIN_USERNAME } from "./accountRoutes.tsx";
+import * as recordStore from "./recordStore.tsx";
+import * as linkedData from "./linkedData.tsx";
+import { missingForPublish } from "./publishGate.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
@@ -607,7 +610,9 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
       return c.json({ error: 'Sign in to save records' }, 401);
     }
 
-    const { id, document, title, metadata, status: requestedStatus } = await c.req.json();
+    // baseVersion: the version the editor started from. A record saved by someone else meanwhile is not
+    // overwritten: the reply is 409 with who saved which version, and the editor lets the cataloger choose.
+    const { id, document, title, metadata, status: requestedStatus, baseVersion } = await c.req.json();
 
     if (!id || !document) {
       return c.json({ error: 'Record ID and document required' }, 400);
@@ -634,13 +639,14 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     // Review workflow: only the Super Admin can publish straight to the catalog.
     // Everyone else's saves (new records and edits) wait for approval.
     const isAdmin = session.role === 'admin';
-    const status = isAdmin
-      ? (requestedStatus === 'pending-review' ? 'pending-review' : 'complete')
+    // A record missing a required field is still saved, but not published: it waits until it is complete.
+    const missing = missingForPublish(document);
+    const status = isAdmin && requestedStatus !== 'pending-review' && missing.length === 0
+      ? 'complete'
       : 'pending-review';
+    const publishBlocked = isAdmin && requestedStatus !== 'pending-review' && missing.length > 0 ? missing : undefined;
 
-    const recordKey = `bibframe:record:${id}`;
-    const existingRaw = await kv.get(recordKey);
-    const existing = existingRaw ? (typeof existingRaw === 'string' ? JSON.parse(existingRaw) : existingRaw) : null;
+    const existing = await recordStore.getRecord(id);
     // A cataloger edits their own records; anyone else's are the Super Admin's to change.
     if (existing && !isAdmin && existing.cataloger && existing.cataloger !== session.username) {
       return c.json({ error: 'This record belongs to another cataloger' }, 403);
@@ -648,22 +654,45 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     const now = new Date().toISOString();
     const cataloger = isAdmin && existing?.cataloger ? existing.cataloger : session.username;
 
-    // Store entire document as JSON-LD with metadata
-    await kv.set(recordKey, JSON.stringify({
-      id,
-      title: title || existing?.title || 'Untitled',
-      document,
-      metadata: { ...(existing?.metadata || {}), ...(metadata || {}), status },
-      status,
-      cataloger,
-      createdAt: existing?.createdAt || existing?.saved || now,
-      ...(status === 'complete'
-        ? { approvedBy: isAdmin ? session!.username : existing?.approvedBy, approvedAt: now }
-        : {}),
-      saved: now,
-    }));
+    // Each save is a new version of the record.
+    let version: number;
+    try {
+      version = await recordStore.saveRecord({
+        id,
+        title: title || existing?.title || 'Untitled',
+        document,
+        metadata: { ...(existing?.metadata || {}), ...(metadata || {}), status },
+        status,
+        cataloger,
+        createdAt: existing?.createdAt || existing?.saved || now,
+        ...(status === 'complete'
+          ? { approvedBy: isAdmin ? session!.username : existing?.approvedBy, approvedAt: now }
+          : {}),
+        saved: now,
+      }, session.username, 'save', Number.isInteger(baseVersion) ? baseVersion : undefined);
+    } catch (error) {
+      if (!(error instanceof recordStore.VersionConflictError)) throw error;
+      const [latest] = await recordStore.listVersions(id);
+      return c.json({
+        error: 'This record was saved by someone else while you were editing it',
+        conflict: {
+          currentVersion: error.currentVersion,
+          savedBy: latest?.version === error.currentVersion ? latest.savedBy : undefined,
+          savedAt: latest?.version === error.currentVersion ? latest.savedAt : undefined,
+        },
+      }, 409);
+    }
 
-    console.log(`[RECORDS] Saved record ${id} "${title || 'Untitled'}" (${status}) by ${cataloger} with ${document['@graph'].length} nodes`);
+    console.log(`[RECORDS] Saved record ${id} v${version} "${title || 'Untitled'}" (${status}) by ${cataloger} with ${document['@graph'].length} nodes`);
+    // The Super Admin hears about every save that now waits for their review.
+    if (status === 'pending-review' && !isAdmin) {
+      const waiting = { id, title: title || existing?.title || 'Untitled' };
+      await recordStore.notify(SUPER_ADMIN_USERNAME, 'review', waiting, session.username);
+      // The reviewer it is assigned to hears too.
+      if (existing?.assignedTo && existing.assignedTo !== session.username && existing.assignedTo !== SUPER_ADMIN_USERNAME) {
+        await recordStore.notify(existing.assignedTo, 'review', waiting, session.username);
+      }
+    }
 
     return c.json({
       success: true,
@@ -671,6 +700,11 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
       title: title || 'Untitled',
       status,
       cataloger,
+      version,
+      // A cataloger's edit of a published record leaves the published version live until approval.
+      publishedVersion: status === 'complete' ? version : existing?.publishedVersion,
+      // The Super Admin's save that could not be published, and why.
+      ...(publishBlocked ? { publishBlocked } : {}),
       nodeCount: document['@graph'].length,
       saved: now,
     });
@@ -680,20 +714,218 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
   }
 });
 
+// 🌐 Resolvable URIs: https://mooon.site/resource/<kind>/<id> reaches here through the Cloudflare
+// Worker in workers/resource-router. The published record describing that URI is answered as
+// JSON-LD, Turtle or N-Triples (by extension, e.g. .ttl, or by the Accept header); a browser is sent
+// (303 See Other) to the record's page in the OPAC. Only published versions are ever served.
+// 📚 https://mooon.site/resource/ itself: a page listing every published record with its Work and Instance
+// addresses and data formats (JSON with ?format=json or Accept: application/json).
+async function resourceIndex(c: any) {
+  try {
+    const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+    const nodeId = (doc: any, cls: string) => (Array.isArray(doc?.['@graph']) ? doc['@graph'] : [])
+      .find((n: any) => [].concat(n?.['@type'] ?? []).some((t: any) => String(t).endsWith(cls)) && String(n?.['@id'] || '').startsWith(linkedData.BASE_URI))?.['@id'];
+    const records = (await recordStore.listPublishedRecords())
+      .map((r) => ({ id: r.id, title: r.title, work: nodeId(r.document, 'Work'), instance: nodeId(r.document, 'Instance'), saved: r.saved }))
+      .filter((r) => r.work)
+      .sort((a, b) => String(a.title).localeCompare(String(b.title)));
+    const wantsJson = c.req.query('format') === 'json' || /application\/json/.test(c.req.header('Accept') || '');
+    if (wantsJson) return c.json({ count: records.length, records }, 200, { 'Access-Control-Allow-Origin': '*' });
+    const rows = records.map((r) => `<li><a class="t" href="${esc(r.work)}" dir="auto">${esc(r.title)}</a>
+      <div class="u"><a href="${esc(r.work)}">${esc(r.work)}</a>${r.instance ? `<br><a href="${esc(r.instance)}">${esc(r.instance)}</a>` : ''}</div>
+      <div class="f"><a href="${esc(r.work)}.jsonld">JSON-LD</a> · <a href="${esc(r.work)}.ttl">Turtle</a> · <a href="${esc(r.work)}.nt">N-Triples</a></div></li>`).join('\n');
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moon — published records</title><style>
+body{font-family:system-ui,"Segoe UI",Tahoma,sans-serif;max-width:860px;margin:0 auto;padding:24px 16px;background:#0b1020;color:#e5e7eb}
+h1{font-size:1.5rem;margin:0 0 4px}p{color:#9ca3af;margin:0 0 20px}ul{list-style:none;padding:0;margin:0}
+li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:none}a:hover{text-decoration:underline}
+.t{font-weight:600;font-size:1.05rem;color:#f9fafb}.u{font-family:ui-monospace,monospace;font-size:.8rem;margin-top:4px;word-break:break-all}.f{font-size:.8rem;margin-top:4px;color:#9ca3af}
+</style></head><body><h1>Moon — published records</h1>
+<p>${records.length} BIBFRAME records. Each address opens the record's page in a browser, or its data for library systems (JSON-LD, Turtle, N-Triples). <a href="?format=json">This list as JSON</a> · <a href="/opac.html">Catalogue</a></p>
+<ul>${rows}</ul></body></html>`;
+    return c.html(html, 200, { 'Cache-Control': 'public, max-age=300' });
+  } catch (error) {
+    console.error('Resource index error:', error);
+    return c.json({ error: 'Failed to list records' }, 500);
+  }
+}
+app.get("/make-server-49c0e13c/resource", resourceIndex);
+app.get("/make-server-49c0e13c/resource/", resourceIndex);
+
+app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
+  const kind = c.req.param('kind');
+  const { id, format: fromExtension } = linkedData.splitExtension(c.req.param('id'));
+  if (!/^[a-z]+$/.test(kind) || !/^[A-Za-z0-9._:-]{1,120}$/.test(id)) {
+    return c.json({ error: 'Not a Moon resource URI' }, 404);
+  }
+  const uri = `${linkedData.BASE_URI}/${kind}/${id}`;
+  const format = fromExtension ?? linkedData.negotiate(c.req.header('Accept'));
+  try {
+    // Moon's own authority entries: /resource/agent|place|topic/<id>. A merged entry forwards (301).
+    if (kind === 'agent' || kind === 'place' || kind === 'topic') {
+      const entry = await recordStore.getAuthority(id);
+      if (!entry || entry.kind !== kind) return c.json({ error: 'No authority entry has this URI', uri }, 404);
+      const base = { Vary: 'Accept', 'Cache-Control': 'public, max-age=300', 'Access-Control-Allow-Origin': '*' };
+      if (entry.mergedInto) {
+        const ext = fromExtension ? `.${fromExtension}` : '';
+        return c.body(null, 301, { ...base, Location: `${linkedData.BASE_URI}/${kind}/${entry.mergedInto}${ext}` });
+      }
+      if (format === 'html') {
+        const page = new URL('/opac.html', linkedData.BASE_URI);
+        page.searchParams.set('q', entry.label);
+        return c.body(null, 303, { ...base, Location: page.toString() });
+      }
+      const doc = linkedData.authorityDocument(entry);
+      if (format === 'jsonld') {
+        return c.body(JSON.stringify(doc, null, 2), 200, { ...base, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
+      }
+      const text = format === 'ttl' ? await linkedData.authorityTurtle(doc) : await linkedData.authorityNTriples(doc);
+      return c.body(text, 200, { ...base, 'Content-Type': `${linkedData.MEDIA_TYPES[format]}; charset=utf-8` });
+    }
+    const record = await recordStore.findPublishedByUri(uri);
+    if (!record) {
+      return c.json({ error: 'No published record has this URI', uri }, 404);
+    }
+    const alternates = (['jsonld', 'ttl', 'nt'] as const)
+      .map((f) => `<${uri}.${f}>; rel="alternate"; type="${linkedData.MEDIA_TYPES[f]}"`)
+      .join(', ');
+    const headers: Record<string, string> = {
+      Vary: 'Accept',
+      Link: alternates,
+      'Cache-Control': 'public, max-age=300',
+      'Access-Control-Allow-Origin': '*',
+    };
+    if (format === 'html') {
+      const page = new URL('/opac.html', linkedData.BASE_URI);
+      page.searchParams.set('work', record.id);
+      return c.body(null, 303, { ...headers, Location: page.toString() });
+    }
+    if (format === 'jsonld') {
+      return c.body(JSON.stringify(linkedData.toJsonLd(record.document), null, 2), 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
+    }
+    const body = format === 'ttl' ? await linkedData.toTurtle(record.document) : await linkedData.toNTriples(record.document);
+    return c.body(body, 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES[format]}; charset=utf-8` });
+  } catch (error) {
+    console.error('Resolve URI error:', uri, error);
+    return c.json({ error: 'Failed to resolve the URI' }, 500);
+  }
+});
+
+// 🪪 Local authority file: Moon's own people, organizations, places and topics, each with a permanent
+// https://mooon.site/resource/<kind>/<id> address. Search is public (the entries are public data);
+// adding needs a signed-in account; merging two entries for one person needs an admin.
+const AUTHORITY_KINDS = ['agent', 'place', 'topic'];
+const withUri = (a: any) => ({ ...a, uri: `${linkedData.BASE_URI}/${a.kind}/${a.id}` });
+
+app.get("/make-server-49c0e13c/authorities", async (c) => {
+  try {
+    const q = (c.req.query('q') || '').trim().slice(0, 200);
+    const kind = c.req.query('kind') || null;
+    if (kind && !AUTHORITY_KINDS.includes(kind)) return c.json({ error: 'kind must be agent, place or topic' }, 400);
+    const limit = Math.min(Math.max(Number(c.req.query('limit')) || 20, 1), 100);
+    const found = await recordStore.searchAuthorities(q, kind as any, limit);
+    return c.json({ authorities: found.map(withUri) }, 200, { 'Access-Control-Allow-Origin': '*' });
+  } catch (error) {
+    console.error('Authority search error:', error);
+    return c.json({ error: 'Authority search failed' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/authorities", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to add authority entries' }, 401);
+    const body = await c.req.json().catch(() => ({}));
+    const label = typeof body.label === 'string' ? body.label.trim() : '';
+    if (!AUTHORITY_KINDS.includes(body.kind)) return c.json({ error: 'kind must be agent, place or topic' }, 400);
+    if (!label || label.length > 300) return c.json({ error: 'A name (label) of up to 300 characters is required' }, 400);
+    const strings = (v: unknown, max: number): string[] => (Array.isArray(v) ? v : [])
+      .filter((s) => typeof s === 'string' && s.trim()).map((s: string) => s.trim().slice(0, 300)).slice(0, max);
+    const data = body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? body.data : {};
+    if (JSON.stringify(data).length > 50_000) return c.json({ error: 'Details are too large' }, 413);
+    const result = await recordStore.addAuthority({
+      kind: body.kind, label, variants: strings(body.variants, 50), sameAs: strings(body.sameAs, 20),
+      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : undefined, data,
+    }, session.username);
+    return c.json({ existing: result.existing, authority: withUri(result.authority) }, result.existing ? 200 : 201);
+  } catch (error) {
+    console.error('Authority add error:', error);
+    return c.json({ error: 'Failed to add the authority entry' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/authorities/:id/merge", async (c) => {
+  try {
+    if (!(await isAdminSession(c))) return c.json({ error: 'Only an admin can merge authority entries' }, 403);
+    const { into } = await c.req.json().catch(() => ({}));
+    if (typeof into !== 'string' || !into) return c.json({ error: 'into (the entry to keep) is required' }, 400);
+    const ok = await recordStore.mergeAuthority(c.req.param('id'), into);
+    if (!ok) return c.json({ error: 'Both entries must exist, be unmerged, differ, and be of the same kind' }, 409);
+    const kept = await recordStore.getAuthority(into);
+    return c.json({ merged: true, authority: kept && withUri(kept) });
+  } catch (error) {
+    console.error('Authority merge error:', error);
+    return c.json({ error: 'Failed to merge the entries' }, 500);
+  }
+});
+
+// 👯 Before a save: other records that look like the same book (same ISBN, LCCN or normalized title), so
+// the editor can ask before a duplicate goes in. { id, document } → { duplicates: [{ id, title, reasons }] }.
+app.post("/make-server-49c0e13c/records/check-duplicates", async (c) => {
+  try {
+    if (!(await getSession(c))) return c.json({ error: 'Sign in to check records' }, 401);
+    const { id, document } = await c.req.json().catch(() => ({}));
+    if (!document || !Array.isArray(document['@graph'])) return c.json({ error: 'A JSON-LD document with @graph is required' }, 400);
+    if (JSON.stringify(document).length > 2_000_000) return c.json({ error: 'Record is too large' }, 413);
+    return c.json({ duplicates: await recordStore.findDuplicates(typeof id === 'string' ? id : null, document) });
+  } catch (error) {
+    console.error('Duplicate check error:', error);
+    return c.json({ error: 'Duplicate check failed' }, 500);
+  }
+});
+
+// 🔎 Search records on the server: ?q=words&status=&cataloger=&language=&template=&limit=&offset=
+// Every word must match, however it is spelled (Arabic letter variants and diacritics are folded).
+// Same visibility rule as the list: the public and ?view=published search published versions only.
+// Registered before /records/:id so "search" is not read as a record id.
+app.get("/make-server-49c0e13c/records/search", async (c) => {
+  try {
+    const published = c.req.query('view') === 'published' || !(await getSession(c));
+    const num = (v: string | undefined, d: number) => (v && /^\d+$/.test(v) ? Number(v) : d);
+    const result = await recordStore.searchRecords({
+      query: (c.req.query('q') || '').slice(0, 200),
+      published,
+      // A status filter only makes sense on working copies; published results are all 'complete'.
+      status: published ? undefined : c.req.query('status'),
+      cataloger: c.req.query('cataloger'),
+      language: c.req.query('language'),
+      template: c.req.query('template'),
+      limit: Math.min(num(c.req.query('limit'), 50), 200),
+      offset: num(c.req.query('offset'), 0),
+    });
+    return c.json({
+      ...result,
+      records: result.records.map((r) => ({ ...r, nodeCount: r.document?.['@graph']?.length || 0 })),
+    });
+  } catch (error) {
+    console.error('Search records error:', error);
+    return c.json({ error: 'Search failed' }, 500);
+  }
+});
+
 // 📖 Load BIBFRAME Record
 app.get("/make-server-49c0e13c/records/:id", async (c) => {
   try {
     const id = c.req.param('id');
-    const recordKey = `bibframe:record:${id}`;
-    
-    const data = await kv.get(recordKey);
-    
-    if (!data) {
+    // The public, and anyone asking with ?view=published (the OPAC), get the published version: an edit
+    // waiting for review never replaces what the catalogue shows. Signed-in catalogers get the working copy.
+    const published = c.req.query('view') === 'published' || !(await getSession(c));
+    const record = published ? await recordStore.getPublishedRecord(id) : await recordStore.getRecord(id);
+
+    if (!record) {
       return c.json({ error: 'Record not found' }, 404);
     }
-    
-    const record = JSON.parse(data);
-    console.log(`[RECORDS] Loaded record ${id}`);
+    console.log(`[RECORDS] Loaded record ${id}${published ? ' (published)' : ''}`);
     
     return c.json(record);
   } catch (error) {
@@ -705,26 +937,28 @@ app.get("/make-server-49c0e13c/records/:id", async (c) => {
 // 📋 List All Records
 app.get("/make-server-49c0e13c/records", async (c) => {
   try {
-    const records = await kv.getByPrefix('bibframe:record:');
-    
-    const recordList = records.map((r: string) => {
-      const record = JSON.parse(r);
-      return {
+    // Same rule as a single record: the public and ?view=published get published versions only.
+    const published = c.req.query('view') === 'published' || !(await getSession(c));
+    const records = published ? await recordStore.listPublishedRecords() : await recordStore.listRecords();
+
+    const recordList = records
+      .map((record) => ({
         id: record.id,
         title: record.title || 'Untitled',
         document: record.document,
         metadata: record.metadata,
-        // Records saved before the review workflow existed are treated as published.
-        status: record.status || record.metadata?.status || 'complete',
-        cataloger: record.cataloger || record.metadata?.catalogerId,
+        status: record.status,
+        cataloger: record.cataloger,
         approvedBy: record.approvedBy,
         approvedAt: record.approvedAt,
         createdAt: record.createdAt || record.saved,
         saved: record.saved,
+        version: record.version,
+        publishedVersion: record.publishedVersion,
+        assignedTo: record.assignedTo,
         nodeCount: record.document?.['@graph']?.length || 0,
-      };
-    });
-    
+      }));
+
     // Sort by saved date, newest first
     recordList.sort((a: any, b: any) => new Date(b.saved).getTime() - new Date(a.saved).getTime());
     
@@ -740,32 +974,41 @@ app.get("/make-server-49c0e13c/records", async (c) => {
 // ✅ Approve / reject a pending record (Super Admin only)
 async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
   try {
-    const admin = await isAdminSession(c);
-    if (!admin) {
-      return c.json({ success: false, error: 'Super Admin session required' }, 403);
+    // The Super Admin and reviewers review; a reviewer never reviews their own record.
+    const admin = await getSession(c);
+    if (!admin || !canReview(admin)) {
+      return c.json({ success: false, error: 'Only the Super Admin and reviewers can approve or return records' }, 403);
     }
     const id = c.req.param('id');
-    const recordKey = `bibframe:record:${id}`;
-    const raw = await kv.get(recordKey);
-    if (!raw) {
+    if (admin.role !== 'admin') {
+      const target = await recordStore.getRecord(id);
+      if (target?.cataloger === admin.username) {
+        return c.json({ success: false, error: 'You cannot review your own record' }, 403);
+      }
+    }
+    // A return can say what to fix: { "reason": "..." }, shown to the cataloger in their notification.
+    const { reason } = await c.req.json().catch(() => ({}));
+    if (decision === 'complete') {
+      const current = await recordStore.getRecord(id);
+      const missing = current ? missingForPublish(current.document) : [];
+      if (missing.length) {
+        return c.json({ success: false, error: 'This record is missing required fields and cannot be published yet', missing }, 422);
+      }
+    }
+    const record = await recordStore.reviewRecord(id, decision, admin.username);
+    if (!record) {
       return c.json({ success: false, error: 'Record not found' }, 404);
     }
-    const record = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    const now = new Date().toISOString();
-    record.status = decision;
-    record.metadata = { ...(record.metadata || {}), status: decision };
-    record.reviewedBy = admin.username;
-    record.reviewedAt = now;
-    if (decision === 'complete') {
-      record.approvedBy = admin.username;
-      record.approvedAt = now;
+    console.log(`[RECORDS] ${admin.username} set record ${id} -> ${decision} (v${record.version})`);
+    if (record.cataloger && record.cataloger !== admin.username) {
+      await recordStore.notify(record.cataloger, decision === 'complete' ? 'approved' : 'returned', record, admin.username,
+        typeof reason === 'string' ? reason.slice(0, 1000) : undefined);
     }
-    await kv.set(recordKey, JSON.stringify(record));
-    console.log(`[RECORDS] ${admin.username} set record ${id} -> ${decision}`);
     return c.json({
       success: true,
       id,
       status: decision,
+      version: record.version,
       approvedBy: record.approvedBy,
       approvedAt: record.approvedAt,
     });
@@ -778,27 +1021,237 @@ async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
 app.post("/make-server-49c0e13c/records/:id/approve", (c) => reviewRecord(c, 'complete'));
 app.post("/make-server-49c0e13c/records/:id/reject", (c) => reviewRecord(c, 'needs-review'));
 
+// 🔔 Notifications for the signed-in user: newest 30 and the unread count (a new user's welcome is
+// created on their first look). POST .../read marks { ids } read, or all of them without ids.
+app.get("/make-server-49c0e13c/notifications", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to see notifications' }, 401);
+    return c.json(await recordStore.listNotifications(session.username));
+  } catch (error) {
+    console.error('Notifications error:', error);
+    return c.json({ error: 'Failed to load notifications' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/notifications/read", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to see notifications' }, 401);
+    const { ids } = await c.req.json().catch(() => ({}));
+    const valid = Array.isArray(ids) ? ids.filter((i: unknown) => Number.isInteger(i)).slice(0, 200) : undefined;
+    return c.json({ marked: await recordStore.markNotificationsRead(session.username, valid) });
+  } catch (error) {
+    console.error('Mark notifications read error:', error);
+    return c.json({ error: 'Failed to update notifications' }, 500);
+  }
+});
+
+// 👤 Assign a record to a reviewer ({ username }), or clear it ({ username: null }). Super Admin only;
+// the reviewer is notified.
+app.post("/make-server-49c0e13c/records/:id/assign", async (c) => {
+  try {
+    const admin = await isAdminSession(c);
+    if (!admin) return c.json({ error: 'Super Admin session required' }, 403);
+    const { username } = await c.req.json().catch(() => ({}));
+    const who = typeof username === 'string' && username.trim() ? username.trim() : null;
+    if (who && !(await isReviewer(who))) return c.json({ error: `${who} is not a reviewer` }, 400);
+    const record = await recordStore.getRecord(c.req.param('id'));
+    if (!record || !(await recordStore.assignRecord(record.id, who))) return c.json({ error: 'Record not found' }, 404);
+    if (who && who !== admin.username) await recordStore.notify(who, 'assigned', record, admin.username);
+    return c.json({ success: true, id: record.id, assignedTo: who });
+  } catch (error) {
+    console.error('Assign record error:', error);
+    return c.json({ error: 'Failed to assign the record' }, 500);
+  }
+});
+
+// 💬 Comments on a record's fields. The Super Admin and the record's cataloger may comment and resolve;
+// a comment notifies the other side (the cataloger, or the Super Admin when the cataloger replies).
+async function commentAccess(c: any) {
+  const session = await getSession(c);
+  if (!session) return { error: c.json({ error: 'Sign in to see comments' }, 401) };
+  const record = await recordStore.getRecord(c.req.param('id'));
+  if (!record) return { error: c.json({ error: 'Record not found' }, 404) };
+  const mayWrite = canReview(session) || !record.cataloger || record.cataloger === session.username;
+  return { session, record, mayWrite };
+}
+
+app.get("/make-server-49c0e13c/records/:id/comments", async (c) => {
+  try {
+    const a = await commentAccess(c);
+    if (a.error) return a.error;
+    return c.json({ comments: await recordStore.listComments(a.record!.id), mayWrite: a.mayWrite });
+  } catch (error) {
+    console.error('List comments error:', error);
+    return c.json({ error: 'Failed to load comments' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/records/:id/comments", async (c) => {
+  try {
+    const a = await commentAccess(c);
+    if (a.error) return a.error;
+    if (!a.mayWrite) return c.json({ error: 'Only the Super Admin and the record\'s cataloger can comment' }, 403);
+    const { field, body } = await c.req.json().catch(() => ({}));
+    if (typeof field !== 'string' || !/^[A-Za-z]+:[A-Za-z0-9_.-]{1,80}$/.test(field)) return c.json({ error: 'Invalid field' }, 400);
+    if (typeof body !== 'string' || !body.trim() || body.length > 2000) return c.json({ error: 'A comment needs 1–2000 characters' }, 400);
+    const comment = await recordStore.addComment(a.record!.id, field, body, a.session!.username);
+    const to = a.session!.username === a.record!.cataloger ? SUPER_ADMIN_USERNAME : a.record!.cataloger;
+    if (to && to !== a.session!.username) {
+      await recordStore.notify(to, 'comment', a.record!, a.session!.username, body.trim().slice(0, 300));
+    }
+    return c.json({ comment });
+  } catch (error) {
+    console.error('Add comment error:', error);
+    return c.json({ error: 'Failed to add the comment' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/records/:id/comments/:cid/resolve", async (c) => {
+  try {
+    const a = await commentAccess(c);
+    if (a.error) return a.error;
+    if (!a.mayWrite) return c.json({ error: 'Only the Super Admin and the record\'s cataloger can resolve comments' }, 403);
+    const cid = Number(c.req.param('cid'));
+    if (!Number.isInteger(cid) || cid < 1) return c.json({ error: 'Invalid comment' }, 400);
+    const { resolved } = await c.req.json().catch(() => ({}));
+    const changed = await recordStore.resolveComment(a.record!.id, cid, a.session!.username, resolved !== false);
+    return c.json({ changed });
+  } catch (error) {
+    console.error('Resolve comment error:', error);
+    return c.json({ error: 'Failed to update the comment' }, 500);
+  }
+});
+
+// ✏️ Who is editing: the editor calls this every half minute while a record is open, and gets back the
+// other catalogers active on it, so it can warn "<username> is working on this record".
+app.post("/make-server-49c0e13c/records/:id/editing", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) {
+      return c.json({ error: 'Sign in to edit records' }, 401);
+    }
+    const editors = await recordStore.editingHeartbeat(c.req.param('id'), session.username);
+    return c.json({ editors });
+  } catch (error) {
+    console.error('Editing heartbeat error:', error);
+    return c.json({ error: 'Failed to update who is editing' }, 500);
+  }
+});
+
+app.delete("/make-server-49c0e13c/records/:id/editing", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) {
+      return c.json({ error: 'Sign in to edit records' }, 401);
+    }
+    await recordStore.editingLeave(c.req.param('id'), session.username);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Editing leave error:', error);
+    return c.json({ error: 'Failed to update who is editing' }, 500);
+  }
+});
+
+// 🕓 Version history: every save, approval, return and revert of a record (signed-in catalogers only,
+// since earlier versions can include unpublished states).
+app.get("/make-server-49c0e13c/records/:id/versions", async (c) => {
+  try {
+    if (!(await getSession(c))) {
+      return c.json({ error: 'Sign in to see a record\'s history' }, 401);
+    }
+    const id = c.req.param('id');
+    const record = await recordStore.getRecord(id);
+    if (!record) {
+      return c.json({ error: 'Record not found' }, 404);
+    }
+    const versions = await recordStore.listVersions(id);
+    return c.json({ id, current: record.version ?? null, published: record.publishedVersion ?? null, versions });
+  } catch (error) {
+    console.error('List versions error:', error);
+    return c.json({ error: 'Failed to load the record\'s history' }, 500);
+  }
+});
+
+app.get("/make-server-49c0e13c/records/:id/versions/:version", async (c) => {
+  try {
+    if (!(await getSession(c))) {
+      return c.json({ error: 'Sign in to see a record\'s history' }, 401);
+    }
+    const version = Number(c.req.param('version'));
+    if (!Number.isInteger(version) || version < 1) {
+      return c.json({ error: 'Invalid version' }, 400);
+    }
+    const found = await recordStore.getVersion(c.req.param('id'), version);
+    return found ? c.json(found) : c.json({ error: 'Version not found' }, 404);
+  } catch (error) {
+    console.error('Load version error:', error);
+    return c.json({ error: 'Failed to load the version' }, 500);
+  }
+});
+
+// ↩️ Revert: an earlier version becomes current again, saved as a new version. The same people who may
+// save the record may revert it, and the same review rule applies: a cataloger's revert waits for approval.
+app.post("/make-server-49c0e13c/records/:id/revert", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) {
+      return c.json({ error: 'Sign in to revert records' }, 401);
+    }
+    const id = c.req.param('id');
+    const { version } = await c.req.json().catch(() => ({}));
+    if (!Number.isInteger(version) || version < 1) {
+      return c.json({ error: 'Version number required' }, 400);
+    }
+    const current = await recordStore.getRecord(id);
+    if (!current) {
+      return c.json({ error: 'Record not found' }, 404);
+    }
+    const isAdmin = session.role === 'admin';
+    if (!isAdmin && current.cataloger && current.cataloger !== session.username) {
+      return c.json({ error: 'This record belongs to another cataloger' }, 403);
+    }
+    if (version === current.version) {
+      return c.json({ error: 'That version is already the current one' }, 400);
+    }
+    const target = await recordStore.getVersion(id, version);
+    if (!target) {
+      return c.json({ error: 'Version not found' }, 404);
+    }
+    // Reverting to a version that lacks required fields saves it, but leaves it unpublished.
+    const status = isAdmin && missingForPublish(target.document).length === 0 ? 'complete' : 'pending-review';
+    const newVersion = await recordStore.revertRecord(current, target, session.username, status);
+    console.log(`[RECORDS] ${session.username} reverted record ${id} to v${version} as v${newVersion}`);
+    if (status === 'pending-review' && !isAdmin) {
+      await recordStore.notify(SUPER_ADMIN_USERNAME, 'review', { id, title: target.title }, session.username);
+    }
+    return c.json({ success: true, id, version: newVersion, revertedTo: version, status });
+  } catch (error) {
+    console.error('Revert record error:', error);
+    return c.json({ error: 'Failed to revert the record' }, 500);
+  }
+});
+
 // 🗑️ Delete Record
 app.delete("/make-server-49c0e13c/records/:id", async (c) => {
   try {
     const id = c.req.param('id');
-    const recordKey = `bibframe:record:${id}`;
 
     // Only the Super Admin or the record's own cataloger may delete it.
     const session = await getSession(c);
     if (!session) {
       return c.json({ error: 'Please sign in to delete records' }, 401);
     }
-    const raw = await kv.get(recordKey);
-    if (raw && session.role !== 'admin') {
-      const existing = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      const owner = String(existing.cataloger || existing.metadata?.catalogerId || '').toLowerCase();
+    const existing = await recordStore.getRecord(id);
+    if (existing && session.role !== 'admin') {
+      const owner = String(existing.cataloger || '').toLowerCase();
       if (owner !== session.username.toLowerCase()) {
         return c.json({ error: 'Only the Super Admin or the record\'s cataloger can delete it' }, 403);
       }
     }
 
-    await kv.del(recordKey);
+    await recordStore.deleteRecord(id);
     console.log(`[RECORDS] ${session.username} deleted record ${id}`);
     
     return c.json({ success: true, id });
@@ -2635,77 +3088,6 @@ app.get("/make-server-49c0e13c/moon/search",
   } catch (error) {
     console.error('[MOON API] Search error:', error);
     return c.json({ error: 'Search failed' }, 500);
-  }
-});
-
-// 🐢 Export Record as Turtle (GET /moon/records/:id/turtle)
-app.get("/make-server-49c0e13c/moon/records/:id/turtle", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const record = await moonRecords.getMoonRecord(id);
-    
-    if (!record) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    
-    const turtle = await moonRecords.convertToTurtle(record.document);
-    return c.text(turtle, 200, { 'Content-Type': 'text/turtle' });
-  } catch (error) {
-    console.error('[MOON API] Turtle export error:', error);
-    return c.json({ error: 'Failed to export as Turtle' }, 500);
-  }
-});
-
-// 📄 Export Record as N-Triples (GET /moon/records/:id/ntriples)
-app.get("/make-server-49c0e13c/moon/records/:id/ntriples", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const record = await moonRecords.getMoonRecord(id);
-    
-    if (!record) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    
-    const ntriples = await moonRecords.convertToNTriples(record.document);
-    return c.text(ntriples, 200, { 'Content-Type': 'application/n-triples' });
-  } catch (error) {
-    console.error('[MOON API] N-Triples export error:', error);
-    return c.json({ error: 'Failed to export as N-Triples' }, 500);
-  }
-});
-
-// 📊 Export Record as JSON-LD (GET /moon/records/:id/jsonld)
-app.get("/make-server-49c0e13c/moon/records/:id/jsonld", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const record = await moonRecords.getMoonRecord(id);
-    
-    if (!record) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    
-    return c.json(record.document, 200, { 'Content-Type': 'application/ld+json' });
-  } catch (error) {
-    console.error('[MOON API] JSON-LD export error:', error);
-    return c.json({ error: 'Failed to export as JSON-LD' }, 500);
-  }
-});
-
-// 🕸️ Extract RDF Triples for Graph Visualization (GET /moon/records/:id/triples)
-app.get("/make-server-49c0e13c/moon/records/:id/triples", async (c) => {
-  try {
-    const id = c.req.param('id');
-    const record = await moonRecords.getMoonRecord(id);
-    
-    if (!record) {
-      return c.json({ error: 'Record not found' }, 404);
-    }
-    
-    const triples = await moonRecords.extractTriples(record.document);
-    return c.json({ triples, count: triples.length });
-  } catch (error) {
-    console.error('[MOON API] Triple extraction error:', error);
-    return c.json({ error: 'Failed to extract triples' }, 500);
   }
 });
 

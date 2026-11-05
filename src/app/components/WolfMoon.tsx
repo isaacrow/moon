@@ -30,7 +30,7 @@ import {
   Copy, ExternalLink, Settings, RefreshCw, Plus, X, Info, Home,
   Orbit, Languages, Scissors, 
   Sliders, LayoutGrid, List, Lock, Box,
-  Trash2
+  Trash2, History
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import moonLogoWhite from "../../assets/white.png";
@@ -78,11 +78,15 @@ import {
 } from "../../services/w3cJsonLdBuilder";
 
 // ===== APP UTILS =====
-import { saveRecord, getAllRecordsLocal } from "../utils/recordStorageBackend";
+import { saveRecord, getAllRecordsLocal, getRecordById, RecordConflictError, toServerDocument, checkDuplicates } from "../utils/recordStorageBackend";
+import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils/recordEditing";
+import { EditingWarning } from "./EditingWarning";
+import { RecordCommentsContext, useRecordComments } from "./FieldComments";
+import type { SaveConflict } from "./SaveConflictDialog";
 
 // ===== COMPONENTS =====
 import { OntologyField } from "./ontology/OntologyField";
-import { OntologyDrivenFormRenderer } from "./cataloging/OntologyDrivenFormRenderer";
+import { OntologyDrivenFormRenderer, PrefilledDefaultsContext } from "./cataloging/OntologyDrivenFormRenderer";
 import { IsbnAutofillBar } from "./cataloging/IsbnAutofillBar";
 import { ValidationPanel, validateGraph, ValidationResult } from "./cataloging/ValidationPanel";
 import { AuthoritySearchDialog } from "./AuthoritySearchDialog";
@@ -98,6 +102,8 @@ const RecordViewerDialog = React.lazy(() => import("./cataloging/RecordViewerDia
 const AuthorityGraph = React.lazy(() => import("./AuthorityGraph").then(m => ({ default: m.AuthorityGraph })));
 const LinkedDataDiscovery = React.lazy(() => import("./LinkedDataDiscovery"));
 const Marc21Viewer = React.lazy(() => import("./Marc21Viewer").then(m => ({ default: m.Marc21Viewer })));
+const RecordHistoryPanel = React.lazy(() => import("./RecordHistoryPanel"));
+const SaveConflictDialog = React.lazy(() => import("./SaveConflictDialog"));
 const BlueMoonAIPanel = React.lazy(() => import("./BlueMoonAIPanel").then(m => ({ default: m.BlueMoonAIPanel })));
 const MarvaToolsModal = React.lazy(() => import("./marva/MarvaToolsModal").then(m => ({ default: m.MarvaToolsModal })));
 const MarvaHubEditor = React.lazy(() => import("./marva/MarvaHubEditor").then(m => ({ default: m.MarvaHubEditor })));
@@ -142,7 +148,7 @@ import {
 
 // ============================== TYPES ==============================
 
-type OutputTab = "editor" | "jsonld" | "w3c-jsonld" | "rdf-xml" | "turtle" | "ntriples" | "marc" | "marc21-viewer" | "triples" | "opac" | "mindmap" | "validation" | "relationships" | "authority-graph" | "discovery" | "scriptshifter" | "lc-cutter" | "ai-engine" | "hubs" | "remerge-marc" | "marva-tools";
+type OutputTab = "editor" | "history" | "jsonld" | "w3c-jsonld" | "rdf-xml" | "turtle" | "ntriples" | "marc" | "marc21-viewer" | "triples" | "opac" | "mindmap" | "validation" | "relationships" | "authority-graph" | "discovery" | "scriptshifter" | "lc-cutter" | "ai-engine" | "hubs" | "remerge-marc" | "marva-tools";
 type MarvaLoadType = "work-instance" | "work-only" | "instance-only" | "hub-only" | "item-only";
 type SaveStatus = "saved" | "unsaved" | "saving" | "error";
 
@@ -169,6 +175,8 @@ interface WolfMoonProps {
   onRecordSaved?: (storageId: string) => void;
   // Reopens the editor on an unsaved draft (the parent remounts with it as the initial record).
   onRestoreDraft?: (draft: BIBFRAMERecord) => void;
+  // Reopens the editor on the saved record as the server now has it (after a revert).
+  onReloadRecord?: (record: BIBFRAMERecord) => void;
 }
 
 const DRAFT_KEY = "moon_wolf_draft";
@@ -372,7 +380,7 @@ function getPropertyValue(data: any, uri: string): any {
 // ============================== MAIN COMPONENT ==============================
 
 export default function WolfMoon({
-  onBack, initialWork, initialInstance, initialRecord, onRecordSaved, onRestoreDraft
+  onBack, initialWork, initialInstance, initialRecord, onRecordSaved, onRestoreDraft, onReloadRecord
 }: WolfMoonProps) {
   const { t, i18n } = useTranslation();
   const { username, user } = useAuth();
@@ -445,6 +453,17 @@ export default function WolfMoon({
   const [uriSet] = useState<UriSet>(() => mintUriSet(recordId));
   // Storage id of the saved record; set after the first save so later saves update that record.
   const storageIdRef = useRef<string | undefined>(initialRecord?.metadata?.storageId);
+  // The same id as state, so effects (who is editing) start once a new record is first saved.
+  const [storageId, setStorageId] = useState<string | undefined>(initialRecord?.metadata?.storageId);
+  // The server version this editor started from. A save sends it, so a newer save by someone else is
+  // never overwritten silently; the server answers with a conflict instead.
+  const baseVersionRef = useRef<number | undefined>((initialRecord?.metadata as any)?.serverVersion);
+  const [saveConflict, setSaveConflict] = useState<(SaveConflict & { myDocument: any }) | null>(null);
+  // Possible duplicates the cataloger already chose to save anyway, so later saves don't ask again.
+  const acceptedDuplicatesRef = useRef<Set<string>>(new Set());
+  const [otherEditors, setOtherEditors] = useState<ActiveEditor[]>([]);
+  // Comments on this record's fields (review v2); none until the record has been saved.
+  const recordComments = useRecordComments(storageId);
 
   // ===== GRAPH STORE =====
   const [graphStore] = useState(new GraphStore());
@@ -937,6 +956,16 @@ export default function WolfMoon({
     appliedDefaultsRef.current = next;
   }, [selectedTemplate, isNewRecord]);
 
+  // The pre-filled values nobody has changed yet, so their fields can say "LC default".
+  const prefilledDefaults = useMemo(() => {
+    const ids = new Set<string>();
+    const applied = isNewRecord ? LC_TEMPLATE_DEFAULTS[selectedTemplate] : undefined;
+    if (!applied) return ids;
+    for (const [key, d] of Object.entries(applied.work)) if (workData[key]?.["@id"] === d["@id"]) ids.add(d["@id"]);
+    for (const [key, d] of Object.entries(applied.instance)) if (instanceData[key]?.["@id"] === d["@id"]) ids.add(d["@id"]);
+    return ids;
+  }, [isNewRecord, selectedTemplate, workData, instanceData]);
+
   // A restored draft has not been saved yet, even though it arrived as the initial record.
   useEffect(() => {
     if ((initialRecord?.metadata as any)?.restoredFromDraft) setSaveStatus("unsaved");
@@ -1363,7 +1392,8 @@ export default function WolfMoon({
 
   // ============================== SAVE ==============================
 
-  const handleSave = async () => {
+  // overwriteVersion: set when the cataloger chose "Keep my edits" over a conflicting save.
+  const handleSave = async (overwriteVersion?: number) => {
     try {
       setSaveStatus("saving");
       let title = recordTitle;
@@ -1394,12 +1424,55 @@ export default function WolfMoon({
         },
       };
       // The server decides the final status from the signed-in user's session.
-      const saved = await saveRecord(record, username || "Anonymous");
+      // Before a duplicate goes in: is this book already catalogued (same ISBN, LCCN or title)?
+      if (overwriteVersion === undefined) {
+        const duplicates = (await checkDuplicates(record)).filter((d) => !acceptedDuplicatesRef.current.has(d.id));
+        if (duplicates.length) {
+          const why = (r: string) => (language === "ar"
+            ? ({ isbn: "نفس ردمك ISBN", lccn: "نفس رقم LCCN", title: "نفس العنوان" } as Record<string, string>)[r]
+            : ({ isbn: "same ISBN", lccn: "same LCCN", title: "same title" } as Record<string, string>)[r]) || r;
+          const list = duplicates.slice(0, 5).map((d) => `• ${d.title} — ${d.reasons.map(why).join(", ")}${d.cataloger ? ` (${d.cataloger})` : ""}`).join("\n");
+          const ok = window.confirm(language === "ar"
+            ? `قد تكون هذه المادة مفهرسة من قبل:\n\n${list}\n\nهل تريد الحفظ على أي حال؟`
+            : `This may already be catalogued:\n\n${list}\n\nSave anyway?`);
+          if (!ok) {
+            setSaveStatus("unsaved");
+            return;
+          }
+          duplicates.forEach((d) => acceptedDuplicatesRef.current.add(d.id));
+        }
+      }
+      let saved;
+      try {
+        saved = await saveRecord(record, username || "Anonymous", { baseVersion: overwriteVersion ?? baseVersionRef.current });
+      } catch (error) {
+        if (!(error instanceof RecordConflictError)) throw error;
+        // Someone saved meanwhile: nothing was saved; let the cataloger compare and choose.
+        setSaveStatus("unsaved");
+        setSaveConflict({ currentVersion: error.currentVersion, savedBy: error.savedBy, savedAt: error.savedAt, myDocument: toServerDocument(record) });
+        return;
+      }
       storageIdRef.current = saved.id;
+      setStorageId(saved.id);
+      baseVersionRef.current = saved.version;
+      setSaveConflict(null);
       clearDraft();
       const initialStatus = saved.status || "complete";
       setSaveStatus("saved");
-      if (initialStatus === "pending-review") {
+      if (saved.publishBlocked?.length) {
+        // The Super Admin's save went through but the record is not published until it is complete.
+        const list = saved.publishBlocked.map((m) => (language === "ar" ? m.ar : m.en)).join(language === "ar" ? "، " : ", ");
+        toast.warning(
+          language === "ar" ? "حُفظت التسجيلة لكنها لم تُنشر بعد" : "Saved, but not published yet",
+          { description: language === "ar" ? `حقول مطلوبة ناقصة: ${list}` : `Required fields still missing: ${list}`, duration: 10000 },
+        );
+      } else if (initialStatus === "pending-review" && saved.publishedVersion) {
+        // An edit to a published record: the catalogue keeps showing the published version meanwhile.
+        toast.info(
+          language === "ar" ? "تم حفظ التعديل وهو قيد المراجعة بانتظار اعتماد المشرف العام (isaac)" : "Edit saved and waiting for review by the Super Admin (isaac)",
+          { description: language === "ar" ? `يبقى الإصدار ${saved.publishedVersion} المنشور ظاهرًا في الفهرس العام حتى اعتماد التعديل.` : `The catalogue keeps showing the published version (v${saved.publishedVersion}) until your edit is approved.` },
+        );
+      } else if (initialStatus === "pending-review") {
         toast.info(language === "ar" ? "تم حفظ التسجيلة وهي قيد المراجعة بانتظار اعتماد المشرف العام (isaac)" : "Record saved! Status: Pending review by Super Admin (isaac)", { description: title });
       } else {
         toast.success(language === "ar" ? "تم حفظ التسجيلة واعتمادها في الفهرس العام!" : "Record saved and approved into catalog!", { description: title });
@@ -1410,6 +1483,57 @@ export default function WolfMoon({
       setSaveStatus("error");
       toast.error("Save failed", { description: error instanceof Error ? error.message : "Unknown error" });
     }
+  };
+
+  // Reports this cataloger as editing the record every 15 seconds while they are active (a key or
+  // click in the last two minutes, page visible), and shows who else is: both the one who opened the
+  // record first and the one who came after see the warning, and someone arriving also gets a toast.
+  // Going quiet or leaving the record drops them from others' warnings within a minute and a half.
+  useEffect(() => {
+    if (!storageId || !username) return;
+    let lastActivity = Date.now();
+    let stopped = false;
+    let known: Set<string> | null = null;
+    const onActivity = () => { lastActivity = Date.now(); };
+    const activity = ["keydown", "pointerdown", "input"] as const;
+    activity.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+    const beat = async () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastActivity > 120_000) return;
+      const editors = await reportEditing(storageId).catch(() => null);
+      if (stopped || !editors) return;
+      // Someone who opened the record after this cataloger: say so right away, not only in the banner.
+      if (known) {
+        for (const e of editors) {
+          if (!known.has(e.username)) {
+            toast.warning(language === "ar" ? `فتح ${e.username} هذه التسجيلة الآن` : `${e.username} just opened this record`, {
+              description: language === "ar" ? "إذا حفظتما معًا فستُسأل أي النسختين تبقى." : "If you both save, you'll be asked which version to keep.",
+            });
+          }
+        }
+      }
+      known = new Set(editors.map((e) => e.username));
+      setOtherEditors(editors);
+    };
+    beat();
+    const timer = window.setInterval(beat, 15_000);
+    const leave = () => reportStoppedEditing(storageId);
+    window.addEventListener("pagehide", leave);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      activity.forEach((e) => window.removeEventListener(e, onActivity));
+      window.removeEventListener("pagehide", leave);
+      leave();
+    };
+  }, [storageId, username, language]);
+
+  const loadLatestVersion = async () => {
+    if (!storageIdRef.current) return;
+    const latest = await getRecordById(storageIdRef.current);
+    if (!latest) return;
+    clearDraft();
+    setSaveConflict(null);
+    onReloadRecord?.(latest.record);
   };
 
   // ============================== DOWNLOAD ==============================
@@ -1466,6 +1590,8 @@ export default function WolfMoon({
 
   return (
     <BMThemeContext.Provider value={BM}>
+    <PrefilledDefaultsContext.Provider value={prefilledDefaults}>
+    <RecordCommentsContext.Provider value={recordComments}>
     <div
       className={`h-screen flex flex-col overflow-hidden relative ${gradientClass} ${!isClassic ? "dark" : ""}`}
       dir={language === "ar" ? "rtl" : "ltr"}
@@ -1683,7 +1809,7 @@ export default function WolfMoon({
 
           {/* Record Title input with Save Status indicator */}
           <div className="flex items-center gap-1.5 glass-bubble-pill px-2.5 py-1 text-xs shrink-0">
-            <BMSaveStatus status={saveStatus} />
+            <BMSaveStatus status={saveStatus} neverSaved={!storageIdRef.current} />
             <input
               type="text"
               value={recordTitle}
@@ -1696,7 +1822,7 @@ export default function WolfMoon({
           {/* Save Button */}
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => handleSave()}
             className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-3 py-1 text-xs font-black text-white cursor-pointer shadow-xl shrink-0"
           >
             <Save className="h-3 w-3 text-emerald-300 drop-shadow" />
@@ -1764,8 +1890,10 @@ export default function WolfMoon({
             { key: "rdf-xml" as OutputTab, icon: <Code className="h-3.5 w-3.5" />, label: "RDF/XML", color: "#10b981" },
             { key: "turtle" as OutputTab, icon: <Code className="h-3.5 w-3.5" />, label: t("turtle"), color: "#a78bfa" },
             { key: "ntriples" as OutputTab, icon: <FileText className="h-3.5 w-3.5" />, label: t("nTriples"), color: "#fb923c" },
-            { key: "marc21-viewer" as OutputTab, icon: <BookOpen className="h-3.5 w-3.5" />, label: "MARC 21 View", color: "#f43f5e" }
-          ] as const).map(tab => {
+            { key: "marc21-viewer" as OutputTab, icon: <BookOpen className="h-3.5 w-3.5" />, label: "MARC 21 View", color: "#f43f5e" },
+            // A record has a history once it has been saved.
+            ...(storageIdRef.current ? [{ key: "history" as OutputTab, icon: <History className="h-3.5 w-3.5" />, label: language === "ar" ? "السجل" : "History", color: "#fbbf24" }] : [])
+          ]).map(tab => {
             const isSelected = activeTab === tab.key;
             return (
               <button
@@ -1813,6 +1941,24 @@ export default function WolfMoon({
           <div className="absolute top-1/2 -right-40 w-[600px] h-[600px] rounded-full" style={{ background: "radial-gradient(circle, rgba(30,64,175,0.06), transparent 70%)" }} />
           <div className="absolute -bottom-32 left-1/3 w-[400px] h-[400px] rounded-full" style={{ background: "radial-gradient(circle, rgba(96,165,250,0.07), transparent 70%)" }} />
         </div>
+        )}
+
+        <EditingWarning editors={otherEditors} language={language} />
+
+        {saveConflict && storageIdRef.current && (
+          <React.Suspense fallback={null}>
+            <SaveConflictDialog
+              recordId={storageIdRef.current}
+              conflict={saveConflict}
+              myDocument={saveConflict.myDocument}
+              theme={BM}
+              language={language}
+              busy={saveStatus === "saving"}
+              onKeepMine={() => handleSave(saveConflict.currentVersion)}
+              onLoadTheirs={loadLatestVersion}
+              onCancel={() => setSaveConflict(null)}
+            />
+          </React.Suspense>
         )}
 
         {/* ===== BIBFRAME EDITOR ===== */}
@@ -2370,6 +2516,24 @@ export default function WolfMoon({
         )}
 
         {/* ===== VALIDATION ===== */}
+        {activeTab === "history" && storageIdRef.current && (
+          <React.Suspense fallback={<LazyPanelFallback />}>
+            <RecordHistoryPanel
+              recordId={storageIdRef.current}
+              theme={BM}
+              language={language}
+              hasUnsavedChanges={saveStatus === "unsaved"}
+              onReverted={async () => {
+                // Reload the editor on the reverted record; unsaved edits were confirmed away.
+                const saved = await getRecordById(storageIdRef.current!);
+                if (!saved) return;
+                clearDraft();
+                onReloadRecord?.(saved.record);
+              }}
+            />
+          </React.Suspense>
+        )}
+
         {activeTab === "validation" && (
           <div className="space-y-4">
             {graphValidation && (
@@ -2779,6 +2943,8 @@ export default function WolfMoon({
       <React.Suspense fallback={<LazyPanelFallback />}><ImportRecordDialog isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} onImport={handleImport} /></React.Suspense>
       <React.Suspense fallback={<LazyPanelFallback />}><RecordViewerDialog open={showRecordViewer} onOpenChange={setShowRecordViewer} jsonldData={graphJsonld || { "@graph": [] }} title={recordTitle} /></React.Suspense>
     </div>
+    </RecordCommentsContext.Provider>
+    </PrefilledDefaultsContext.Provider>
     </BMThemeContext.Provider>
   );
 }
@@ -3599,9 +3765,18 @@ function BMFieldWrapper({ children, fieldKey, onHide }: { children: React.ReactN
   );
 }
 
-function BMSaveStatus({ status }: { status: SaveStatus }) {
+function BMSaveStatus({ status, neverSaved = false }: { status: SaveStatus; neverSaved?: boolean }) {
   const t = useBMTheme();
-  const { t: tr } = useTranslation();
+  const { t: tr, i18n } = useTranslation();
+  // A new record with nothing typed yet is not "saved": it has never been saved.
+  if (status === "saved" && neverSaved) {
+    return (
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold"
+        style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.18)", color: t.textDim }}>
+        <Clock className="h-3 w-3" /> {i18n.language === "ar" ? "لم تُحفظ بعد" : "Not saved yet"}
+      </div>
+    );
+  }
   const meta = {
     saved: { bg: "rgba(52,199,89,0.1)", border: "rgba(52,199,89,0.25)", color: t.success, icon: <CheckCircle2 className="h-3 w-3" />, label: tr("saved") },
     unsaved: { bg: "rgba(255,149,0,0.1)", border: "rgba(255,149,0,0.25)", color: t.warning, icon: <Clock className="h-3 w-3" />, label: tr("unsaved") },

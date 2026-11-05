@@ -15,6 +15,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import moonLogo from '../../assets/white.png';
 import { TesterApprovalCenter } from './TesterApprovalCenter';
+import { NotificationBell } from './NotificationBell';
 import '../../styles/moon-space-theme.css';
 
 interface TopNavBarProps {
@@ -25,6 +26,8 @@ interface TopNavBarProps {
   /** Show a back button instead of dashboard button */
   showBack?: boolean;
   onBack?: () => void;
+  /** Opens a saved record in the editor (from a notification). */
+  onOpenRecord?: (recordId: string) => void;
 }
 
 export function TopNavBar({ 
@@ -34,6 +37,7 @@ export function TopNavBar({
   onToggleDarkMode: _externalToggle,
   showBack,
   onBack,
+  onOpenRecord,
 }: TopNavBarProps) {
   const { t, i18n } = useTranslation();
   const {
@@ -48,6 +52,7 @@ export function TopNavBar({
     approveUser,
     rejectUser,
     deleteUser,
+    setUserRole,
     pendingCount,
   } = useAuth();
   const { darkMode } = useTheme();
@@ -76,6 +81,8 @@ export function TopNavBar({
   };
 
   const handleApprove = (uName: string) => runAction(approveUser, uName);
+  const handleSetRole = (uName: string, role: 'tester' | 'cataloger' | 'reviewer') =>
+    runAction((u: string) => setUserRole(u, role), uName);
   const handleReject = (uName: string) => runAction(rejectUser, uName);
   const handleDelete = (uName: string) => {
     const ar = i18n.language === 'ar';
@@ -240,6 +247,9 @@ export function TopNavBar({
               </span>
             </motion.button>
 
+            {/* Notifications */}
+            {user && <NotificationBell isDark={isDark} onOpenRecord={onOpenRecord} />}
+
             {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -350,6 +360,7 @@ export function TopNavBar({
         onApprove={handleApprove}
         onReject={handleReject}
         onDelete={handleDelete}
+        onSetRole={handleSetRole}
       />
     </>
   );

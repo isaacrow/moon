@@ -36,7 +36,8 @@ interface StoredAccount {
   username: string;
   email: string;
   institution: string;
-  role: "tester" | "cataloger";
+  // A reviewer can approve, return and comment on others' records, like the Super Admin.
+  role: "tester" | "cataloger" | "reviewer";
   status: AccountStatus;
   registeredAt: string;
   approvedAt?: string;
@@ -47,7 +48,7 @@ interface StoredAccount {
 
 interface Session {
   username: string;
-  role: "admin" | "tester" | "cataloger";
+  role: "admin" | "tester" | "cataloger" | "reviewer";
   expiresAt: string;
 }
 
@@ -141,8 +142,22 @@ export async function getSession(c: any): Promise<Session | null> {
     // A tester who was later rejected or deleted loses access immediately.
     const account = await getAccount(session.username);
     if (!account || account.status !== "approved") return null;
+    // The account's current role, so a role the Super Admin changes applies at once.
+    return { ...session, role: account.role };
   }
   return session;
+}
+
+/** May review records: approve, return and comment on others' records. */
+export function canReview(session: Session | null): boolean {
+  return !!session && (session.role === "admin" || session.role === "reviewer");
+}
+
+/** Whether a username belongs to someone who may review (for assigning records). */
+export async function isReviewer(username: string): Promise<boolean> {
+  if (username.toLowerCase() === SUPER_ADMIN_USERNAME) return true;
+  const account = await getAccount(username);
+  return !!account && account.status === "approved" && account.role === "reviewer";
 }
 
 export async function isAdminSession(c: any): Promise<Session | null> {
@@ -296,6 +311,20 @@ async function setStatus(c: any, status: AccountStatus) {
 
 accountRoutes.post("/api/accounts/approve", (c) => setStatus(c, "approved"));
 accountRoutes.post("/api/accounts/reject", (c) => setStatus(c, "rejected"));
+
+// The Super Admin sets an account's role: tester, cataloger or reviewer.
+accountRoutes.post("/api/accounts/role", async (c) => {
+  const admin = await isAdminSession(c);
+  if (!admin) return c.json({ success: false, message: "Super Admin session required." }, 403);
+  const { username, role } = await c.req.json().catch(() => ({}));
+  if (!["tester", "cataloger", "reviewer"].includes(role)) return c.json({ success: false, message: "Unknown role." }, 400);
+  const account = await findAccount(String(username || ""));
+  if (!account) return c.json({ success: false, message: "Account not found." }, 404);
+  account.role = role;
+  await kv.set(ACCOUNT_PREFIX + account.username.toLowerCase(), account);
+  console.log(`[ACCOUNTS] ${admin.username} set ${account.username} role -> ${role}`);
+  return c.json({ success: true, user: toPublic(account) });
+});
 
 accountRoutes.post("/api/accounts/delete", async (c) => {
   if (!(await isAdminSession(c))) return c.json({ success: false, message: "Super Admin session required." }, 403);

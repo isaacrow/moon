@@ -139,21 +139,22 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
 
   // Extract Work Main Title
   const workTitleObj = workData["bf:title"] || workData.title;
-  const workMainTitle = getStr(workTitleObj?.["bf:mainTitle"] || workTitleObj?.mainTitle || workTitleObj, "القبسات");
-  const workUri = workData["@id"] || "http://example.org/records/al-qabasat-work";
+  const workMainTitle = getStr(workTitleObj?.["bf:mainTitle"] || workTitleObj?.mainTitle || workTitleObj, "—");
+  const workUri = workData["@id"] || "";
 
-  // Build Comprehensive Orbit Nodes from BIBFRAME Work and Instance Data
+  // Build the orbit nodes from the record's own Work and Instance; a field the record lacks shows "—".
   const allOrbitNodes = useMemo<OrbitNode[]>(() => {
     const nodes: OrbitNode[] = [];
     const minDim = Math.min(dimensions.width, dimensions.height);
     const baseOrbit = Math.max(50, minDim * 0.13);
+    const short = (v: string, n = 22) => (v.length > n ? v.substring(0, n - 2) + "..." : v);
 
     // 1. TITLE NODE (Inner Orbit)
-    const titleVal = getStr(workTitleObj?.["bf:mainTitle"] || workTitleObj?.mainTitle || workTitleObj, "القبسات");
+    const titleVal = getStr(workTitleObj?.["bf:mainTitle"] || workTitleObj?.mainTitle || workTitleObj, "—");
     nodes.push({
       id: "title",
       label: "Title / العنوان",
-      sublabel: titleVal.length > 22 ? titleVal.substring(0, 20) + "..." : titleVal,
+      sublabel: short(titleVal),
       category: "core",
       icon: <BookOpen className="h-4 w-4" />,
       color: "#3b82f6",
@@ -173,14 +174,14 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
     // 2. CREATOR / CONTRIBUTION
     const rawContribs = getArr(workData["bf:contribution"] || workData.contribution || []);
     const primaryAgent = rawContribs[0]?.["bf:agent"] || rawContribs[0]?.agent || {};
-    const creatorName = getStr(primaryAgent["rdfs:label"] || primaryAgent.name || workData.creator, "الميرداماد، محمد باقر الحسيني");
-    const creatorRole = getStr(rawContribs[0]?.["bf:role"]?.["rdfs:label"] || rawContribs[0]?.role, "مؤلف / Author");
-    const creatorUri = primaryAgent["@id"] || workData.creatorUri || "http://id.loc.gov/authorities/names/n85043844";
+    const creatorName = getStr(primaryAgent["rdfs:label"] || primaryAgent.name || workData.creator, "—");
+    const creatorRole = getStr(rawContribs[0]?.["bf:role"]?.["rdfs:label"] || rawContribs[0]?.role, "");
+    const creatorUri = primaryAgent["@id"] || workData.creatorUri || "";
 
     nodes.push({
       id: "creator",
       label: "Creator / المؤلف",
-      sublabel: creatorName.length > 22 ? creatorName.substring(0, 20) + "..." : creatorName,
+      sublabel: short(creatorName),
       category: "intellectual",
       icon: <User className="h-4 w-4" />,
       color: "#8b5cf6",
@@ -190,31 +191,27 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
       startAngle: 75,
       size: 42,
       rdfPredicate: "bf:contribution -> bf:agent",
-      fullValue: `${creatorName} (${creatorRole})`,
+      fullValue: creatorRole ? `${creatorName} (${creatorRole})` : creatorName,
       authorityUri: creatorUri,
       children: [
-        { id: "c-role", label: creatorRole, color: "#c084fc" },
-        { id: "c-dates", label: "توفي 1041 هـ", color: "#d8b4fe" },
-        ...(creatorUri ? [{ id: "c-uri", label: "LOC Authority", color: "#a855f7", uri: creatorUri }] : [])
+        ...(creatorRole ? [{ id: "c-role", label: creatorRole, color: "#c084fc" }] : []),
+        ...(creatorUri ? [{ id: "c-uri", label: "Authority", color: "#a855f7", uri: creatorUri }] : [])
       ]
     });
 
     // 3. CLASSIFICATION & SHELFMARK
-    const rawClass = workData["bf:classification"] || workData.classification || workData.classificationLcc || instanceData["bf:classification"] || instanceData.shelfMark;
-    let callNo = "B753.D363 Q23 1650";
-    if (typeof rawClass === "object" && rawClass) {
-      const p = rawClass["bf:classificationPortion"] || rawClass.classificationPortion || "";
-      const i = rawClass["bf:itemPortion"] || rawClass.itemPortion || "";
-      if (p || i) callNo = [p, i].filter(Boolean).join(" ");
-      else if (rawClass["rdfs:label"]) callNo = rawClass["rdfs:label"];
-    } else if (typeof rawClass === "string") {
-      callNo = rawClass;
-    }
+    const classes = getArr(workData["bf:classification"] || workData.classification || instanceData["bf:classification"]);
+    const classOf = (kind: string) => classes.find((c: any) => c && typeof c === "object" && String(c["@type"] || "").includes(kind));
+    const portion = (c: any) => c ? [c["bf:classificationPortion"] || c.classificationPortion, c["bf:itemPortion"] || c.itemPortion].filter(Boolean).join(" ") || getStr(c["rdfs:label"]) : "";
+    const lccObj = classOf("Lcc") || classes.find((c: any) => c && typeof c === "object" && !String(c["@type"] || "").includes("Ddc"));
+    const callNo = portion(lccObj) || (typeof workData.classificationLcc === "string" ? workData.classificationLcc : "") ||
+      (typeof classes[0] === "string" ? classes[0] : "") || getStr(instanceData.shelfMark);
+    const ddcNo = portion(classOf("Ddc")) || (typeof workData.classificationDdc === "string" ? workData.classificationDdc : "");
 
     nodes.push({
       id: "classification",
       label: "LCC / التصنيف",
-      sublabel: callNo,
+      sublabel: callNo || "—",
       category: "core",
       icon: <Hash className="h-4 w-4" />,
       color: "#f59e0b",
@@ -224,25 +221,20 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
       startAngle: 140,
       size: 38,
       rdfPredicate: "bf:classification -> bf:ClassificationLcc",
-      fullValue: `Call Number: ${callNo} (Library of Congress Classification B753)`,
+      fullValue: callNo ? `Call Number: ${callNo}` : "—",
       children: [
-        { id: "cl-lcc", label: callNo, color: "#fbbf24" },
-        { id: "cl-ddc", label: "DDC 181.07", color: "#fcd34d" }
+        ...(callNo ? [{ id: "cl-lcc", label: callNo, color: "#fbbf24" }] : []),
+        ...(ddcNo ? [{ id: "cl-ddc", label: `DDC ${ddcNo}`, color: "#fcd34d" }] : [])
       ]
     });
 
     // 4. SUBJECTS (TOPICAL & LCSH)
     const rawSubjects = getArr(workData["bf:subject"] || workData.subject || []);
+    const subjectLabels = rawSubjects.map((s: any, idx: number) => getStr(s?.["rdfs:label"] || s?.label || s, `موضوع ${idx + 1}`));
     const subjectItems = rawSubjects.slice(0, 4).map((s: any, idx: number) => {
-      const label = getStr(s?.["rdfs:label"] || s?.label || s, `موضوع ${idx + 1}`);
       const uri = s?.["@id"] || "";
-      return { id: `subj-${idx}`, label: label.length > 18 ? label.substring(0, 16) + "..." : label, color: "#34d399", uri };
+      return { id: `subj-${idx}`, label: short(subjectLabels[idx], 18), color: "#34d399", uri };
     });
-    if (subjectItems.length === 0) {
-      subjectItems.push({ id: "subj-1", label: "الفلسفة الإسلامية", color: "#34d399", uri: "" });
-      subjectItems.push({ id: "subj-2", label: "علم الكلام", color: "#6ee7b7", uri: "" });
-      subjectItems.push({ id: "subj-3", label: "الحدوث الدهري", color: "#a7f3d0", uri: "" });
-    }
 
     nodes.push({
       id: "subjects",
@@ -257,17 +249,20 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
       startAngle: 210,
       size: 38,
       rdfPredicate: "bf:subject -> bf:Topic",
-      fullValue: "الفلسفة الإسلامية -- علم الكلام -- الحدوث والقدم -- مخطوطات نادرة",
+      fullValue: subjectLabels.join(" -- ") || "—",
       children: subjectItems
     });
 
     // 5. PRIMARY INSTANCE (Major Planetary Body)
-    const rawIdent = instanceData["bf:identifiedBy"] || instanceData.identifiedBy || instanceData.identifier || "b125923";
-    const instIdStr = getStr(rawIdent, "b125923");
+    const identifiers = getArr(instanceData["bf:identifiedBy"] || instanceData.identifiedBy || instanceData.identifier);
+    const instIdStr = getStr(identifiers.map((i: any) => i?.["rdf:value"] || i?.value || i), "");
+    const provision = getArr(instanceData["bf:provisionActivity"] || instanceData.provisionActivity)[0] || {};
+    const dateVal = getStr(provision["bf:date"] || provision.date || instanceData.publicationDate || workData["bf:originDate"], "");
+    const carrierVal = getStr(getArr(instanceData["bf:carrier"] || instanceData.carrier)[0]?.["rdfs:label"] || instanceData["bf:carrier"], "");
     nodes.push({
       id: "instance",
       label: "Instance / النسخة",
-      sublabel: "مخطوطة أصلية 1061 هـ",
+      sublabel: dateVal || carrierVal || "—",
       category: "core",
       icon: <Package className="h-5 w-5" />,
       color: "#06b6d4",
@@ -277,28 +272,25 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
       startAngle: 270,
       size: 48,
       rdfPredicate: "bf:hasInstance -> bf:Instance",
-      fullValue: `${instanceData["@id"] || "http://example.org/records/al-qabasat-instance"} [Record ID: ${instIdStr}]`,
+      fullValue: [instanceData["@id"], instIdStr && `[ID: ${instIdStr}]`].filter(Boolean).join(" ") || "—",
       children: [
-        { id: "inst-id", label: `ID: ${instIdStr}`, color: "#67e8f9" },
-        { id: "inst-prov", label: "1061 هـ = [1650]", color: "#a5f3fc" },
-        { id: "inst-type", label: "مخطوط أصلي", color: "#22d3ee" }
+        ...(instIdStr ? [{ id: "inst-id", label: `ID: ${instIdStr}`, color: "#67e8f9" }] : []),
+        ...(dateVal ? [{ id: "inst-prov", label: dateVal, color: "#a5f3fc" }] : []),
+        ...(carrierVal ? [{ id: "inst-type", label: carrierVal, color: "#22d3ee" }] : [])
       ]
     });
 
-    // 6. MANUSCRIPT NOTES & INCIPIT
-    const rawNotes = getArr(workData["bf:note"] || workData.note || instanceData["bf:note"] || []);
-    let incipitNote = "الحمد لله الواحد الاحد الصمد المصمود مهيمن كل وجود...";
-    let explicitNote = "ولا تخلنا اللهم مع ذلك من عواطف رأفتك...";
-    rawNotes.forEach((n: any) => {
-      const s = getStr(n?.["rdfs:label"] || n);
-      if (s.startsWith("أوله") || s.includes("الحمد لله")) incipitNote = s;
-      if (s.startsWith("آخره") || s.includes("ولا تخلنا")) explicitNote = s;
-    });
+    // 6. NOTES (incipit and explicit when the record has them)
+    const noteTexts = getArr(workData["bf:note"] || workData.note || instanceData["bf:note"] || [])
+      .map((n: any) => getStr(n?.["rdfs:label"] || n))
+      .filter(Boolean);
+    const incipitNote = noteTexts.find((t: string) => t.startsWith("أوله")) || "";
+    const explicitNote = noteTexts.find((t: string) => t.startsWith("آخره")) || "";
 
     nodes.push({
       id: "manuscript-notes",
       label: "Incipit & Notes / الأوائل",
-      sublabel: "أوله: الحمد لله الواحد الأحد...",
+      sublabel: short(incipitNote || noteTexts[0] || "—", 30),
       category: "manuscript",
       icon: <Quote className="h-4 w-4" />,
       color: "#eab308",
@@ -308,21 +300,21 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
       startAngle: 330,
       size: 38,
       rdfPredicate: "bf:note -> bf:Note (Incipit / Explicit)",
-      fullValue: `أوله: ${incipitNote}\nآخره: ${explicitNote}`,
+      fullValue: noteTexts.join("\n") || "—",
       children: [
-        { id: "note-inc", label: "أول المخطوطة", color: "#fde047" },
-        { id: "note-exp", label: "آخر المخطوطة", color: "#fef08a" },
-        { id: "note-bib", label: "الذريعة ج17 ص32", color: "#facc15" }
+        ...(incipitNote ? [{ id: "note-inc", label: "أول المخطوطة", color: "#fde047" }] : []),
+        ...(explicitNote ? [{ id: "note-exp", label: "آخر المخطوطة", color: "#fef08a" }] : []),
+        ...(noteTexts.length ? [{ id: "note-count", label: `${noteTexts.length} ملاحظات`, color: "#facc15" }] : [])
       ]
     });
 
     // 7. PHYSICAL EXTENT & CARRIER
-    const extentVal = getStr(instanceData["bf:extent"] || instanceData.extent, "344 ورقة (18 سطرًا)");
-    const dimsVal = getStr(instanceData["bf:dimensions"] || instanceData.dimensions, "21 × 15 سم");
+    const extentVal = getStr(instanceData["bf:extent"] || instanceData.extent, "");
+    const dimsVal = getStr(instanceData["bf:dimensions"] || instanceData.dimensions, "");
     nodes.push({
       id: "physical",
       label: "Extent & Form / الوصف المادي",
-      sublabel: extentVal,
+      sublabel: extentVal || dimsVal || "—",
       category: "manuscript",
       icon: <Layers className="h-4 w-4" />,
       color: "#f43f5e",
@@ -332,20 +324,21 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
       startAngle: 45,
       size: 36,
       rdfPredicate: "bf:extent & bf:dimensions",
-      fullValue: `${extentVal} -- المقاس: ${dimsVal} -- خط النستعليق على ورق شرقي`,
+      fullValue: [extentVal, dimsVal && `المقاس: ${dimsVal}`].filter(Boolean).join(" -- ") || "—",
       children: [
-        { id: "ext-pages", label: "344 ورقة", color: "#fb7185" },
-        { id: "ext-lines", label: "18 سطرًا", color: "#fda4af" },
-        { id: "ext-dims", label: dimsVal, color: "#fecdd3" },
-        { id: "ext-scr", label: "خط النستعليق", color: "#f43f5e" }
+        ...(extentVal ? [{ id: "ext-pages", label: extentVal, color: "#fb7185" }] : []),
+        ...(dimsVal ? [{ id: "ext-dims", label: dimsVal, color: "#fecdd3" }] : [])
       ]
     });
 
     // 8. HOLDINGS & ITEM (Outer Orbit)
+    const items = getArr(instanceData["bf:hasItem"] || instanceData.hasItem);
+    const heldBy = getStr(items[0]?.["bf:heldBy"]?.["rdfs:label"] || items[0]?.["bf:heldBy"] || items[0]?.heldBy, "");
+    const shelfMark = getStr(items[0]?.["bf:shelfMark"]?.["rdfs:label"] || items[0]?.["bf:shelfMark"] || items[0]?.shelfMark, "");
     nodes.push({
       id: "holdings",
       label: "Holdings / المقتنى والمكان",
-      sublabel: "العتبة العباسية (IQ-KaCCS)",
+      sublabel: heldBy || (items.length ? `${items.length} نسخ` : "لا نسخ مسجلة"),
       category: "holding",
       icon: <Building2 className="h-4 w-4" />,
       color: "#ec4899",
@@ -355,19 +348,22 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
       startAngle: 110,
       size: 36,
       rdfPredicate: "bf:hasItem -> bf:Item",
-      fullValue: "مكتبة ودار مخطوطات العتبة العباسية المقدسة (IQ-KaCCS) -- الباركود: b125923 -- سيرسي: a209527",
+      fullValue: [heldBy, shelfMark].filter(Boolean).join(" -- ") || "لا نسخ مسجلة (no copies recorded)",
       children: [
-        { id: "h-lib", label: "IQ-KaCCS", color: "#f472b6" },
-        { id: "h-bar", label: "Barcode: b125923", color: "#fbcfe8" },
-        { id: "h-stat", label: "متاح للمطالعة", color: "#db2777" }
+        ...(heldBy ? [{ id: "h-lib", label: heldBy, color: "#f472b6" }] : []),
+        ...(shelfMark ? [{ id: "h-shelf", label: shelfMark, color: "#fbcfe8" }] : [])
       ]
     });
 
     // 9. ADMINISTRATIVE METADATA (Distant Orbit)
+    const admin = getArr(workData["bf:adminMetadata"] || instanceData["bf:adminMetadata"])[0] || {};
+    const adminAgency = getStr(admin["bf:assigner"]?.["rdfs:label"] || admin["bf:assigner"]?.["@id"]?.split("/").pop() || admin["bf:source"]?.["rdfs:label"], "");
+    const adminRules = getStr(getArr(admin["bf:descriptionConventions"])[0]?.["rdfs:label"] || getArr(admin["bf:descriptionConventions"])[0]?.["@id"]?.split("/").pop(), "");
+    const adminDate = getStr(admin["bf:date"] || admin["bf:creationDate"], "");
     nodes.push({
       id: "admin",
       label: "Admin / بيانات الفهرسة",
-      sublabel: "RDA / IQ-KaCCS / 008",
+      sublabel: [adminRules, adminAgency].filter(Boolean).join(" / ") || "—",
       category: "admin",
       icon: <Shield className="h-4 w-4" />,
       color: "#64748b",
@@ -377,11 +373,11 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
       startAngle: 185,
       size: 34,
       rdfPredicate: "bf:adminMetadata -> bf:AdminMetadata",
-      fullValue: "فهرسة مقننة بمعايير RDA ومكتبة الكونغرس -- رمز المفهرس: IQ-KaCCS -- التاريخ: 120203",
+      fullValue: [adminRules && `Rules: ${adminRules}`, adminAgency && `Org: ${adminAgency}`, adminDate && `Date: ${adminDate}`].filter(Boolean).join(" -- ") || "—",
       children: [
-        { id: "adm-org", label: "Org: IQ-KaCCS", color: "#94a3b8" },
-        { id: "adm-rul", label: "Rules: RDA", color: "#cbd5e1" },
-        { id: "adm-mod", label: "008: 1650 xx ara", color: "#64748b" }
+        ...(adminAgency ? [{ id: "adm-org", label: `Org: ${adminAgency}`, color: "#94a3b8" }] : []),
+        ...(adminRules ? [{ id: "adm-rul", label: `Rules: ${adminRules}`, color: "#cbd5e1" }] : []),
+        ...(adminDate ? [{ id: "adm-date", label: adminDate, color: "#64748b" }] : [])
       ]
     });
 
@@ -810,7 +806,7 @@ export function SolarSystemMindMap({ workData = {}, instanceData = {}, theme }: 
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Manifestations:</span>
-                  <span className="font-bold text-cyan-400">1 Instance (1650 Manuscript)</span>
+                  <span className="font-bold text-cyan-400">1 Instance</span>
                 </div>
               </div>
 

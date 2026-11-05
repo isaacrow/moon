@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Badge } from './ui/badge';
 import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
-import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, sendBackRecord } from '../utils/recordStorageBackend';
+import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, returnRecord, assignRecord } from '../utils/recordStorageBackend';
 import type { BIBFRAMERecord } from '../types/bibframe';
 import { ActivityLog } from './ActivityLog';
 import { toast } from 'sonner';
@@ -25,7 +25,7 @@ import {
   Zap,
   Search,
   Library,
-  Moon} from 'lucide-react';
+  Moon, Undo2} from 'lucide-react';
 import moonLogoWhite from '../../assets/white.png';
 import '../../styles/glassmorphism.css';
 
@@ -84,11 +84,15 @@ interface RecentRecord {
   timestamp: Date;
   status: 'complete' | 'draft' | 'needs-review' | 'pending-review';
   record?: BIBFRAMERecord;
+  cataloger?: string;
+  assignedTo?: string;
 }
 
 export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
   const { t } = useTranslation();
-  const { isAuthenticated, isSuperAdmin, user } = useAuth();
+  const { isAuthenticated, isSuperAdmin, canReview, user, users: accounts } = useAuth();
+  // Who a waiting record can be assigned to: the Super Admin and approved reviewers.
+  const reviewers = ['isaac', ...accounts.filter((a) => a.role === 'reviewer' && a.status === 'approved').map((a) => a.username)];
   const [showActivityLog, setShowActivityLog] = useState(false);
   const { themeStyle } = useTheme();
   const { moonEngineTheme } = useThemeSafe();
@@ -118,21 +122,6 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
   
   const isIsaac = user?.username?.toLowerCase() === 'isaac' || isSuperAdmin || user?.username?.toLowerCase() === 'admin';
 
-  const handleSendBackRecord = async (e: React.MouseEvent, recordId: string, recordTitle: string) => {
-    e.stopPropagation();
-    try {
-      await sendBackRecord(recordId, user?.username || 'isaac');
-      toast.success(`"${recordTitle}" was sent back to its cataloger for changes.`);
-      setSavedRecords(prev => prev.map(r => r.id === recordId ? {
-        ...r,
-        status: 'needs-review',
-        record: { ...r.record, metadata: { ...r.record?.metadata, status: 'needs-review' } as any }
-      } : r));
-    } catch (err) {
-      toast.error('Could not send the record back', { description: err instanceof Error ? err.message : undefined });
-    }
-  };
-
   const handleApproveRecord = async (e: React.MouseEvent, recordId: string, recordTitle: string) => {
     e.stopPropagation();
     try {
@@ -149,6 +138,29 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
       toast.error('Failed to approve record', {
         description: err instanceof Error ? err.message : undefined,
       });
+    }
+  };
+
+  const handleReturnRecord = async (e: React.MouseEvent, recordId: string, recordTitle: string) => {
+    e.stopPropagation();
+    const reason = window.prompt(`What should be fixed in "${recordTitle}"? The cataloger sees this.`);
+    if (reason === null) return;
+    try {
+      await returnRecord(recordId, reason);
+      toast.success(`"${recordTitle}" returned to the cataloger`);
+      setSavedRecords(prev => prev.map(r => r.id === recordId ? { ...r, status: 'needs-review' } : r));
+    } catch (err) {
+      toast.error('Failed to return record', { description: err instanceof Error ? err.message : undefined });
+    }
+  };
+
+  const handleAssignRecord = async (recordId: string, username: string) => {
+    try {
+      await assignRecord(recordId, username || null);
+      setSavedRecords(prev => prev.map(r => r.id === recordId ? { ...r, assignedTo: username || undefined } : r));
+      toast.success(username ? `Assigned to ${username}` : 'Assignment cleared');
+    } catch (err) {
+      toast.error('Failed to assign the record', { description: err instanceof Error ? err.message : undefined });
     }
   };
 
@@ -251,7 +263,9 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
     type: record.record?.metadata?.catalogingInterface || record.resourceType || 'Moon Engine',
     timestamp: new Date(record.modifiedAt || record.createdAt || Date.now()),
     status: (record.status || record.record?.metadata?.status || 'complete') as any,
-    record: record.record
+    record: record.record,
+    cataloger: record.cataloger,
+    assignedTo: record.assignedTo,
   }));
 
   const mainActions = [
@@ -691,7 +705,7 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                       <span
                         className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold"
                         style={{ borderRadius: '120px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#b91c1c' }}
-                        title="Sent back by the Super Admin: fix it and save again to resubmit"
+                        title="Returned by a reviewer: fix it and save again to resubmit"
                       >
                         <AlertCircle className="h-3.5 w-3.5 text-red-600" />
                         <span>Needs Changes</span>
@@ -714,8 +728,29 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                       </span>
                     )}
 
-                    {/* Approve button for Super Admin (isaac) */}
-                    {isIsaac && record.status === 'pending-review' && (
+                    {/* Assignment: who reviews this record. The Super Admin picks; everyone sees it. */}
+                    {record.status === 'pending-review' && isSuperAdmin && (
+                      <select
+                        value={record.assignedTo || ''}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleAssignRecord(record.id, e.target.value)}
+                        className="px-2 py-1 rounded-full text-xs font-bold bg-white/70 text-slate-700 border border-slate-300 cursor-pointer"
+                        title="Assign to a reviewer"
+                      >
+                        <option value="">Unassigned</option>
+                        {[...new Set([...reviewers, ...(record.assignedTo ? [record.assignedTo] : [])])].map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    )}
+                    {record.status === 'pending-review' && !isSuperAdmin && record.assignedTo && (
+                      <span className="px-2 py-1 rounded-full text-xs font-bold bg-white/60 text-slate-700 border border-slate-300">
+                        Reviewer: {record.assignedTo}
+                      </span>
+                    )}
+
+                    {/* Approve / Return: the Super Admin and reviewers, never on their own record */}
+                    {canReview && record.status === 'pending-review' && (isSuperAdmin || record.cataloger !== user?.username) && (
                       <button
                         type="button"
                         onClick={(e) => handleApproveRecord(e, record.id, record.title)}
@@ -726,15 +761,15 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                         <span>Approve</span>
                       </button>
                     )}
-                    {isIsaac && record.status === 'pending-review' && (
+                    {canReview && record.status === 'pending-review' && (isSuperAdmin || record.cataloger !== user?.username) && (
                       <button
                         type="button"
-                        onClick={(e) => handleSendBackRecord(e, record.id, record.title)}
-                        className="px-3 py-1 bg-white/70 hover:bg-white text-red-700 border border-red-300 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm hover:scale-105 active:scale-95 transition-all cursor-pointer"
-                        title="Send back to the cataloger for changes"
+                        onClick={(e) => handleReturnRecord(e, record.id, record.title)}
+                        className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-full text-xs font-bold flex items-center gap-1 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                        title="Return to the cataloger with a reason"
                       >
-                        <AlertCircle className="h-3.5 w-3.5" />
-                        <span>Send back</span>
+                        <Undo2 className="h-3.5 w-3.5" />
+                        <span>Return</span>
                       </button>
                     )}
                     

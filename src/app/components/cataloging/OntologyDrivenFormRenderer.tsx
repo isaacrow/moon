@@ -3,7 +3,8 @@
  * Registry-powered, no templates, pure semantic rendering
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useContext } from 'react';
+import { FieldComments } from '../FieldComments';
 import { ChevronDown, ChevronUp, Plus, X, Edit2, Link as LinkIcon, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n/config';
@@ -333,6 +334,12 @@ function useFormTheme() {
   return React.useContext(FormThemeContext);
 }
 
+/**
+ * URIs of values the editor pre-filled from LC's profile and nobody has changed yet. A field holding
+ * one shows "LC default", so a new record's starting values aren't mistaken for someone's data.
+ */
+export const PrefilledDefaultsContext = React.createContext<ReadonlySet<string>>(new Set());
+
 interface OntologyDrivenFormRendererProps {
   entityType: string; // 'Work', 'Expression', 'Instance', 'Item'
   nodeUri: string;
@@ -556,6 +563,7 @@ function CategorySection({
                 value={getFieldValue(node, property.shortName)}
                 onChange={(value) => onChange(nodeUri, property.shortName, value)}
               />
+              <FieldComments field={`${entityType}:${property.shortName}`} label={property.label} />
               {onHideField && (
                 <button
                   onClick={() => onHideField(`registry:${property.shortName}`)}
@@ -630,6 +638,8 @@ function SinglePropertyRenderer({
   onChange: (value: any) => void;
 }) {
   const { isLight, textColor, textDimColor, textMutedColor, inputBg, inputBorder, inputColor } = useFormTheme();
+  const prefilled = useContext(PrefilledDefaultsContext);
+  const isPrefilled = typeof value?.['@id'] === 'string' && prefilled.has(value['@id']);
 
   const getAuthoritySearch = () => {
     if (property.controlledVocab === 'languages') return searchLanguages;
@@ -694,6 +704,10 @@ function SinglePropertyRenderer({
           required={property.required}
           allowCustom
           isLight={isLight}
+          note={isPrefilled ? (i18n.language === 'ar' ? 'افتراضي من LC' : 'LC default') : undefined}
+          noteTitle={isPrefilled ? (i18n.language === 'ar'
+            ? 'قيمة ملأها المحرر مسبقًا من ملف مكتبة الكونغرس لهذا القالب. غيّرها أو احذفها إن لم تناسب المادة.'
+            : "Pre-filled from LC's profile for this template. Change or remove it if it doesn't fit the item.") : undefined}
         />
         {property.description && (
           <p className="text-xs" style={{ color: textDimColor }}>{i18n.language === 'ar' ? (ARABIC_DESC_FALLBACKS[property.description] || property.description) : property.description}</p>

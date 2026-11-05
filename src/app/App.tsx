@@ -168,6 +168,13 @@ function CatalogApp() {
     }
   };
 
+  // A record named in a notification.
+  const openRecordById = async (recordId: string) => {
+    const saved = await getRecordById(recordId);
+    if (saved) handleLoadRecordFromGallery(saved);
+    else toast.error('This record no longer exists');
+  };
+
   // A record from the dashboard or search: a BIBFRAMERecord, a SavedRecord, JSON text or a bare @graph.
   const handleLoadRecord = (importedData: any) => {
     let raw = importedData;
@@ -224,6 +231,7 @@ function CatalogApp() {
         onNewRecord={handleNewRecord}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
+        onOpenRecord={openRecordById}
       />
       {content}
     </div>
@@ -249,6 +257,12 @@ function CatalogApp() {
               setWork(draft.work);
               setInstance(draft.instance);
               setCurrentRecord(draft);
+            }}
+            onReloadRecord={(record) => {
+              setDraftRestores(n => n + 1);
+              setWork(record.work);
+              setInstance(record.instance);
+              setCurrentRecord(record);
             }}
           />
         </ErrorBoundary>
