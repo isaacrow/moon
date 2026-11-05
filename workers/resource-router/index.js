@@ -23,6 +23,11 @@ export default {
     });
     const response = new Response(upstream.body, upstream);
     response.headers.set('Access-Control-Allow-Origin', '*');
+    // Supabase sends every HTML page from its functions as text/plain; the record list at /resource/
+    // is a web page, so label it as one.
+    if ((url.pathname === '/resource' || url.pathname === '/resource/') && (response.headers.get('Content-Type') || '').startsWith('text/plain')) {
+      response.headers.set('Content-Type', 'text/html; charset=utf-8');
+    }
     return response;
   },
 };
