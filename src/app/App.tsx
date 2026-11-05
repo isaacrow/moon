@@ -12,6 +12,7 @@ import { Toaster } from './components/ui/sonner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { BASE_URI } from '../services/uriMintingService';
 import { getRecordById } from './utils/recordStorageBackend';
+import { usePresenceHeartbeat } from './utils/usePresenceHeartbeat';
 import './i18n/config';
 
 // Every screen loads on demand, so the login page doesn't download the editor.
@@ -83,6 +84,9 @@ function ScreenLoading() {
 
 function CatalogApp() {
   const { darkMode, setDarkMode } = useTheme();
+  const { user } = useAuth();
+  // Lets the Super Admin see who is online and when each user was last here.
+  usePresenceHeartbeat(user?.username);
   const [viewMode, setViewMode] = useState<ViewMode>(viewFromLocation);
 
   // Shows a screen and puts its address in the browser (Back/Forward and refresh follow it).

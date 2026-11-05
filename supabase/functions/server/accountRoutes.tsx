@@ -8,6 +8,7 @@
  * KV layout:
  *   moon:account:<username lowercased>  -> StoredAccount
  *   moon:session:<token>                -> Session
+ *   moon:lastseen:<username lowercased> -> { username, at } (last activity, for the Super Admin)
  *
  * The Super Admin is not stored as an account; its password comes from the
  * MOON_ADMIN_PASSWORD secret.
@@ -165,6 +166,48 @@ export async function isAdminSession(c: any): Promise<Session | null> {
   return session && session.role === "admin" ? session : null;
 }
 
+// ─── Last seen ───────────────────────────────────────────────
+// The app sends a heartbeat about once a minute while a tab is open and visible. Writes are
+// throttled to one per user every 30 s; someone seen within the last 2 minutes counts as online.
+// Only the Super Admin's account list ever reads these.
+const LAST_SEEN_PREFIX = "moon:lastseen:";
+const LAST_SEEN_WRITE_MS = 30_000;
+const ONLINE_WINDOW_MS = 2 * 60_000;
+const lastSeenWritten = new Map<string, number>();
+
+async function touchLastSeen(username: string, force = false): Promise<void> {
+  const key = username.trim().toLowerCase();
+  const now = Date.now();
+  if (!force) {
+    const cached = lastSeenWritten.get(key);
+    if (cached && now - cached < LAST_SEEN_WRITE_MS) return;
+    const stored = parse<{ at: string }>(await kv.get(LAST_SEEN_PREFIX + key));
+    const at = stored ? Date.parse(stored.at) : NaN;
+    if (Number.isFinite(at) && now - at < LAST_SEEN_WRITE_MS) {
+      lastSeenWritten.set(key, at);
+      return;
+    }
+  }
+  lastSeenWritten.set(key, now);
+  await kv.set(LAST_SEEN_PREFIX + key, { username: key, at: new Date(now).toISOString() });
+}
+
+async function lastSeenByUser(): Promise<Map<string, string>> {
+  const rows = await kv.getByPrefix(LAST_SEEN_PREFIX).catch(() => []);
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const v = parse<{ username: string; at: string }>(row);
+    if (v?.username && v.at) map.set(v.username.toLowerCase(), v.at);
+  }
+  return map;
+}
+
+function withPresence<T extends { username: string }>(account: T, seen: Map<string, string>, now: number) {
+  const lastSeenAt = seen.get(account.username.toLowerCase()) || null;
+  const online = !!lastSeenAt && now - Date.parse(lastSeenAt) < ONLINE_WINDOW_MS;
+  return { ...account, lastSeenAt, online };
+}
+
 // ─── Register ────────────────────────────────────────────────
 accountRoutes.post("/api/accounts/register", async (c) => {
   try {
@@ -238,6 +281,7 @@ accountRoutes.post("/api/accounts/login", async (c) => {
         return c.json({ success: false, status: "unknown", message: "Invalid password for Super Admin account." }, 401);
       }
       const token = await createSession(SUPER_ADMIN_USERNAME, "admin");
+      await touchLastSeen(SUPER_ADMIN_USERNAME, true).catch(() => {});
       return c.json({ success: true, status: "approved", token, user: SUPER_ADMIN_PUBLIC });
     }
 
@@ -261,6 +305,7 @@ accountRoutes.post("/api/accounts/login", async (c) => {
     }
 
     const token = await createSession(account.username, account.role);
+    await touchLastSeen(account.username, true).catch(() => {});
     return c.json({ success: true, status: "approved", token, user: toPublic(account) });
   } catch (error) {
     console.error("[ACCOUNTS] Login error:", error);
@@ -275,6 +320,14 @@ accountRoutes.get("/api/accounts/me", async (c) => {
   if (session.role === "admin") return c.json({ success: true, user: SUPER_ADMIN_PUBLIC });
   const account = await getAccount(session.username);
   return account ? c.json({ success: true, user: toPublic(account) }) : c.json({ success: false }, 401);
+});
+
+// Signed-in heartbeat: records when this user was last active (see "Last seen" above).
+accountRoutes.post("/api/accounts/me/heartbeat", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ success: false }, 401);
+  await touchLastSeen(session.username).catch((e) => console.error("[ACCOUNTS] Heartbeat error:", e));
+  return c.json({ success: true });
 });
 
 // ─── Profile pictures ────────────────────────────────────────
@@ -319,10 +372,13 @@ accountRoutes.post("/api/accounts/logout", async (c) => {
 // ─── Admin: list & review ────────────────────────────────────
 accountRoutes.get("/api/accounts", async (c) => {
   if (!(await isAdminSession(c))) return c.json({ success: false, message: "Super Admin session required." }, 403);
-  const accounts = (await listAccounts())
+  const [stored, seen] = await Promise.all([listAccounts(), lastSeenByUser()]);
+  const now = Date.now();
+  const accounts = stored
     .map(toPublic)
-    .sort((a, b) => new Date(b.registeredAt).getTime() - new Date(a.registeredAt).getTime());
-  return c.json({ success: true, accounts: [SUPER_ADMIN_PUBLIC, ...accounts] });
+    .sort((a, b) => new Date(b.registeredAt).getTime() - new Date(a.registeredAt).getTime())
+    .map((a) => withPresence(a, seen, now));
+  return c.json({ success: true, accounts: [withPresence(SUPER_ADMIN_PUBLIC, seen, now), ...accounts] });
 });
 
 async function setStatus(c: any, status: AccountStatus) {
@@ -365,6 +421,8 @@ accountRoutes.post("/api/accounts/delete", async (c) => {
   const account = await findAccount(String(username || ""));
   if (!account) return c.json({ success: false, message: "Account not found." }, 404);
   await kv.del(ACCOUNT_PREFIX + account.username.toLowerCase());
+  await kv.del(LAST_SEEN_PREFIX + account.username.toLowerCase()).catch(() => {});
+  lastSeenWritten.delete(account.username.toLowerCase());
   console.log(`[ACCOUNTS] Deleted ${account.username}`);
   return c.json({ success: true });
 });

@@ -2,13 +2,16 @@
  * Tester Approval Center: the Super Admin's list of tester accounts, in liquid glossy glass.
  * Shared by the top bar (signed-in isaac) and the login screen (after the admin password).
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ShieldCheck, X, CheckCircle2, XCircle, Trash2, RefreshCw, Search, Mail, Building2, CalendarDays, Undo2, Loader2,
 } from 'lucide-react';
 import type { AuthUser } from '../contexts/AuthContext';
 import { UserAvatar } from './UserAvatar';
+import { formatLastSeen, sortByPresence } from '../utils/presence';
+
+const LIST_REFRESH_MS = 30_000;
 
 type Filter = 'all' | 'pending' | 'approved' | 'rejected';
 
@@ -117,10 +120,21 @@ export function TesterApprovalCenter({
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return users
+    return sortByPresence(users
       .filter(u => filter === 'all' || u.status === filter)
-      .filter(u => !q || [u.username, u.email, u.institution].some(v => (v || '').toLowerCase().includes(q)));
+      .filter(u => !q || [u.username, u.email, u.institution].some(v => (v || '').toLowerCase().includes(q))));
   }, [users, filter, query]);
+
+  // Keep "online now" / "last seen" current while the list is open.
+  // (Through a ref: callers pass a new onRefresh each render, which would restart the timer.)
+  const refreshRef = useRef(onRefresh);
+  refreshRef.current = onRefresh;
+  const locked = !!lockedContent;
+  useEffect(() => {
+    if (!open || locked) return;
+    const timer = window.setInterval(() => refreshRef.current(), LIST_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [open, locked]);
 
   const tabs: Array<{ key: Filter; label: string }> = [
     { key: 'pending', label: ar ? 'بانتظار الموافقة' : 'Pending' },
@@ -244,7 +258,14 @@ export function TesterApprovalCenter({
                         className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                         style={u.status === 'pending' ? PENDING_ROW : ROW}>
                         <div className="flex items-center gap-3 min-w-0">
-                          <UserAvatar username={u.username || '?'} size={44} />
+                          <span className="relative shrink-0">
+                            <UserAvatar username={u.username || '?'} size={44} />
+                            {u.online && (
+                              <span className="absolute bottom-0 end-0 h-3.5 w-3.5 rounded-full bg-emerald-400"
+                                style={{ border: '2px solid rgba(15,23,42,0.85)', boxShadow: '0 0 8px rgba(52,211,153,0.9)' }}
+                                aria-hidden="true" />
+                            )}
+                          </span>
                           <div className="min-w-0 space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-black text-base truncate">{u.username}</span>
@@ -261,6 +282,13 @@ export function TesterApprovalCenter({
                               <span className="flex items-center gap-1 min-w-0"><Mail className="h-3.5 w-3.5 shrink-0 text-white/50" /><span className="truncate">{u.email}</span></span>
                               {u.institution && <span className="flex items-center gap-1 min-w-0 text-cyan-100"><Building2 className="h-3.5 w-3.5 shrink-0 text-cyan-200/70" /><span className="truncate">{u.institution}</span></span>}
                               {!isAdmin && dateOf(u.registeredAt) && <span className="flex items-center gap-1 text-white/55"><CalendarDays className="h-3.5 w-3.5" />{dateOf(u.registeredAt)}</span>}
+                            </div>
+                            <div className="text-xs flex items-center gap-1.5">
+                              {u.online ? (
+                                <span className="font-bold text-emerald-300">{ar ? 'متصل الآن' : 'Online now'}</span>
+                              ) : (
+                                <span className="text-white/60">{formatLastSeen(u.lastSeenAt, ar)}</span>
+                              )}
                             </div>
                           </div>
                         </div>
