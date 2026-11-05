@@ -27,7 +27,7 @@ import * as jwtAuth from "./jwtAuth.tsx";
 import * as observability from "./observability.tsx";
 import * as loadTesting from "./loadTesting.tsx";
 import recordRoutes from "./recordRoutes.tsx";
-import accountRoutes, { getSession, isAdminSession, SUPER_ADMIN_USERNAME } from "./accountRoutes.tsx";
+import accountRoutes, { getSession, isAdminSession, canReview, isReviewer, SUPER_ADMIN_USERNAME } from "./accountRoutes.tsx";
 import * as recordStore from "./recordStore.tsx";
 import * as linkedData from "./linkedData.tsx";
 import { missingForPublish } from "./publishGate.tsx";
@@ -686,7 +686,12 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     console.log(`[RECORDS] Saved record ${id} v${version} "${title || 'Untitled'}" (${status}) by ${cataloger} with ${document['@graph'].length} nodes`);
     // The Super Admin hears about every save that now waits for their review.
     if (status === 'pending-review' && !isAdmin) {
-      await recordStore.notify(SUPER_ADMIN_USERNAME, 'review', { id, title: title || existing?.title || 'Untitled' }, session.username);
+      const waiting = { id, title: title || existing?.title || 'Untitled' };
+      await recordStore.notify(SUPER_ADMIN_USERNAME, 'review', waiting, session.username);
+      // The reviewer it is assigned to hears too.
+      if (existing?.assignedTo && existing.assignedTo !== session.username && existing.assignedTo !== SUPER_ADMIN_USERNAME) {
+        await recordStore.notify(existing.assignedTo, 'review', waiting, session.username);
+      }
     }
 
     return c.json({
@@ -856,6 +861,7 @@ app.get("/make-server-49c0e13c/records", async (c) => {
         saved: record.saved,
         version: record.version,
         publishedVersion: record.publishedVersion,
+        assignedTo: record.assignedTo,
         nodeCount: record.document?.['@graph']?.length || 0,
       }));
 
@@ -874,11 +880,18 @@ app.get("/make-server-49c0e13c/records", async (c) => {
 // ✅ Approve / reject a pending record (Super Admin only)
 async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
   try {
-    const admin = await isAdminSession(c);
-    if (!admin) {
-      return c.json({ success: false, error: 'Super Admin session required' }, 403);
+    // The Super Admin and reviewers review; a reviewer never reviews their own record.
+    const admin = await getSession(c);
+    if (!admin || !canReview(admin)) {
+      return c.json({ success: false, error: 'Only the Super Admin and reviewers can approve or return records' }, 403);
     }
     const id = c.req.param('id');
+    if (admin.role !== 'admin') {
+      const target = await recordStore.getRecord(id);
+      if (target?.cataloger === admin.username) {
+        return c.json({ success: false, error: 'You cannot review your own record' }, 403);
+      }
+    }
     // A return can say what to fix: { "reason": "..." }, shown to the cataloger in their notification.
     const { reason } = await c.req.json().catch(() => ({}));
     if (decision === 'complete') {
@@ -940,6 +953,25 @@ app.post("/make-server-49c0e13c/notifications/read", async (c) => {
   }
 });
 
+// 👤 Assign a record to a reviewer ({ username }), or clear it ({ username: null }). Super Admin only;
+// the reviewer is notified.
+app.post("/make-server-49c0e13c/records/:id/assign", async (c) => {
+  try {
+    const admin = await isAdminSession(c);
+    if (!admin) return c.json({ error: 'Super Admin session required' }, 403);
+    const { username } = await c.req.json().catch(() => ({}));
+    const who = typeof username === 'string' && username.trim() ? username.trim() : null;
+    if (who && !(await isReviewer(who))) return c.json({ error: `${who} is not a reviewer` }, 400);
+    const record = await recordStore.getRecord(c.req.param('id'));
+    if (!record || !(await recordStore.assignRecord(record.id, who))) return c.json({ error: 'Record not found' }, 404);
+    if (who && who !== admin.username) await recordStore.notify(who, 'assigned', record, admin.username);
+    return c.json({ success: true, id: record.id, assignedTo: who });
+  } catch (error) {
+    console.error('Assign record error:', error);
+    return c.json({ error: 'Failed to assign the record' }, 500);
+  }
+});
+
 // 💬 Comments on a record's fields. The Super Admin and the record's cataloger may comment and resolve;
 // a comment notifies the other side (the cataloger, or the Super Admin when the cataloger replies).
 async function commentAccess(c: any) {
@@ -947,7 +979,7 @@ async function commentAccess(c: any) {
   if (!session) return { error: c.json({ error: 'Sign in to see comments' }, 401) };
   const record = await recordStore.getRecord(c.req.param('id'));
   if (!record) return { error: c.json({ error: 'Record not found' }, 404) };
-  const mayWrite = session.role === 'admin' || !record.cataloger || record.cataloger === session.username;
+  const mayWrite = canReview(session) || !record.cataloger || record.cataloger === session.username;
   return { session, record, mayWrite };
 }
 

@@ -23,6 +23,8 @@ interface TesterApprovalCenterProps {
   onApprove: (username: string) => void;
   onReject: (username: string) => void;
   onDelete: (username: string) => void;
+  /** Sets an approved account's role; reviewers may approve, return and comment on others' records. */
+  onSetRole?: (username: string, role: 'tester' | 'cataloger' | 'reviewer') => void;
   /** Shown instead of the list (e.g. the login screen's admin password form). */
   lockedContent?: React.ReactNode;
 }
@@ -87,7 +89,7 @@ const STATUS_STYLE: Record<AuthUser['status'], React.CSSProperties> = {
 
 export function TesterApprovalCenter({
   open, onClose, users, loading, error, busyUser, subtitle,
-  onRefresh, onApprove, onReject, onDelete, lockedContent,
+  onRefresh, onApprove, onReject, onDelete, onSetRole, lockedContent,
 }: TesterApprovalCenterProps) {
   const ar = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
   const [filter, setFilter] = useState<Filter>('pending');
@@ -267,6 +269,19 @@ export function TesterApprovalCenter({
 
                         {!isAdmin && (
                           <div className={`flex items-center gap-2 shrink-0 ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
+                            {onSetRole && u.status === 'approved' && (
+                              <select
+                                value={u.role}
+                                onChange={(e) => onSetRole(u.username, e.target.value as 'tester' | 'cataloger' | 'reviewer')}
+                                title={ar ? 'الدور' : 'Role'}
+                                className="h-9 px-2 text-xs font-bold text-white cursor-pointer outline-none"
+                                style={PILL}
+                              >
+                                <option value="tester" className="text-slate-900">{ar ? 'فاحص' : 'Tester'}</option>
+                                <option value="cataloger" className="text-slate-900">{ar ? 'مفهرس' : 'Cataloger'}</option>
+                                <option value="reviewer" className="text-slate-900">{ar ? 'مراجع' : 'Reviewer'}</option>
+                              </select>
+                            )}
                             {u.status !== 'approved' && (
                               <button type="button" onClick={() => onApprove(u.username)}
                                 className="px-4 h-9 text-xs font-black flex items-center gap-1.5 text-white hover:scale-105 active:scale-95 transition-all cursor-pointer"

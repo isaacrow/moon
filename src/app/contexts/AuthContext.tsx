@@ -5,7 +5,7 @@ export interface AuthUser {
   username: string;
   email: string;
   institution: string;
-  role: 'admin' | 'tester' | 'cataloger';
+  role: 'admin' | 'tester' | 'cataloger' | 'reviewer';
   status: 'pending' | 'approved' | 'rejected';
   registeredAt: string;
   approvedAt?: string;
@@ -40,6 +40,8 @@ export interface AdminActionResult {
 interface AuthContextType {
   isAuthenticated: boolean;
   isSuperAdmin: boolean;
+  /** May approve, return and comment on others' records: the Super Admin and reviewers. */
+  canReview: boolean;
   username: string | null;
   user: AuthUser | null;
   accessToken: string | null;
@@ -56,6 +58,7 @@ interface AuthContextType {
   approveUser: (usernameOrEmail: string) => Promise<AdminActionResult>;
   rejectUser: (usernameOrEmail: string) => Promise<AdminActionResult>;
   deleteUser: (usernameOrEmail: string) => Promise<AdminActionResult>;
+  setUserRole: (username: string, role: 'tester' | 'cataloger' | 'reviewer') => Promise<AdminActionResult>;
   pendingCount: number;
 }
 
@@ -252,6 +255,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [adminToken, refreshUsers]
   );
 
+  const setUserRole = useCallback(
+    async (target: string, role: 'tester' | 'cataloger' | 'reviewer'): Promise<AdminActionResult> => {
+      const token = adminToken();
+      if (!token) return { success: false, message: 'Only the Super Admin can do this.' };
+      try {
+        const { ok, data } = await moonFetch('/api/accounts/role', { body: { username: target.trim(), role }, sessionToken: token });
+        if (ok && data?.success) {
+          await refreshUsers();
+          return { success: true };
+        }
+        return { success: false, message: data?.message || 'Failed to change the role.' };
+      } catch {
+        return { success: false, message: NETWORK_ERROR };
+      }
+    },
+    [adminToken, refreshUsers]
+  );
+
   const approveUser = useCallback((u: string) => adminAction('approve', u), [adminAction]);
   const rejectUser = useCallback((u: string) => adminAction('reject', u), [adminAction]);
   const deleteUser = useCallback(
@@ -359,6 +380,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         isAuthenticated,
         isSuperAdmin,
+        canReview: isSuperAdmin || user?.role === 'reviewer',
         username,
         user,
         accessToken,
@@ -374,6 +396,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         approveUser,
         rejectUser,
         deleteUser,
+        setUserRole,
         pendingCount,
       }}
     >

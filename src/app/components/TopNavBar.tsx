@@ -52,6 +52,7 @@ export function TopNavBar({
     approveUser,
     rejectUser,
     deleteUser,
+    setUserRole,
     pendingCount,
   } = useAuth();
   const { darkMode } = useTheme();
@@ -80,6 +81,8 @@ export function TopNavBar({
   };
 
   const handleApprove = (uName: string) => runAction(approveUser, uName);
+  const handleSetRole = (uName: string, role: 'tester' | 'cataloger' | 'reviewer') =>
+    runAction((u: string) => setUserRole(u, role), uName);
   const handleReject = (uName: string) => runAction(rejectUser, uName);
   const handleDelete = (uName: string) => {
     const ar = i18n.language === 'ar';
@@ -357,6 +360,7 @@ export function TopNavBar({
         onApprove={handleApprove}
         onReject={handleReject}
         onDelete={handleDelete}
+        onSetRole={handleSetRole}
       />
     </>
   );
