@@ -80,6 +80,7 @@ import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils
 import { EditingWarning } from "./EditingWarning";
 import { RecordCoverPanel } from "./RecordCoverPanel";
 import { CopiesPanel } from "./CopiesPanel";
+import { RomanizePanel } from "./RomanizePanel";
 import { ItemCopy, nodeToCopy, copyToNode } from "../../services/itemCopies";
 import { findIsbn, uploadCover } from "../utils/recordCovers";
 import { RecordCommentsContext, useRecordComments } from "./FieldComments";
@@ -1805,6 +1806,10 @@ export default function WolfMoon({
             <div className="mt-3">
               <CopiesPanel copies={copies} instanceId={uriSet.instance} language={language}
                 onChange={(next) => { setCopies(next); setSaveStatus("unsaved"); }} />
+            </div>
+            <div className="mt-3">
+              <RomanizePanel work={workData} instance={instanceData} language={language}
+                onApply={(w, inst) => { setWorkData(w); setInstanceData(inst); setSaveStatus("unsaved"); }} />
             </div>
           </div>
         )}
