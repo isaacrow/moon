@@ -87,6 +87,7 @@ interface RecentRecord {
   record?: BIBFRAMERecord;
   cataloger?: string;
   assignedTo?: string;
+  coverUrl?: string;
 }
 
 export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
@@ -267,6 +268,7 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
     record: record.record,
     cataloger: record.cataloger,
     assignedTo: record.assignedTo,
+    coverUrl: record.coverUrl,
   }));
 
   const mainActions = [
@@ -692,6 +694,9 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                 }}
               >
                 <div className="flex items-center justify-between flex-wrap gap-4">
+                  {record.coverUrl && (
+                    <img src={record.coverUrl} alt="" loading="lazy" className="h-20 w-14 shrink-0 rounded-md object-cover shadow-md" />
+                  )}
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-lg font-bold transition-colors" style={{ color: '#1a202c' }}>

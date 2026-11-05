@@ -78,6 +78,8 @@ import {
 import { saveRecord, getAllRecordsLocal, getRecordById, RecordConflictError, toServerDocument, checkDuplicates } from "../utils/recordStorageBackend";
 import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils/recordEditing";
 import { EditingWarning } from "./EditingWarning";
+import { RecordCoverPanel } from "./RecordCoverPanel";
+import { findIsbn } from "../utils/recordCovers";
 import { RecordCommentsContext, useRecordComments } from "./FieldComments";
 import type { SaveConflict } from "./SaveConflictDialog";
 
@@ -268,6 +270,7 @@ export default function WolfMoon({
 
   // ===== ACTIVE TAB =====
   const [activeTab, setActiveTab] = useState<OutputTab>("editor");
+  const [coverUrl, setCoverUrl] = useState<string | undefined>((initialRecord?.metadata as any)?.coverUrl);
 
   // ===== URI MINTING =====
   // A record that already has a Moon URI keeps its id, and every entity URI derives from it. Any other
@@ -1774,6 +1777,12 @@ export default function WolfMoon({
         )}
 
         <EditingWarning editors={otherEditors} language={language} />
+
+        {activeTab === "editor" && (
+          <div className="mb-4">
+            <RecordCoverPanel recordId={storageId} coverUrl={coverUrl} isbn={findIsbn(instanceData)} language={language} onChange={setCoverUrl} />
+          </div>
+        )}
 
         {saveConflict && storageIdRef.current && (
           <React.Suspense fallback={null}>

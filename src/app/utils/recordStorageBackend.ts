@@ -25,6 +25,8 @@ export interface SavedRecord {
   cataloger?: string;
   resourceType?: string;
   coverImage?: string;
+  /** The cover stored for this record on the server (uploaded, or taken from Open Library / Google Books). */
+  coverUrl?: string;
   status?: RecordStatus;
   approvedBy?: string;
   approvedAt?: string;
@@ -627,6 +629,7 @@ function fromServerRecord(serverRecord: any): SavedRecord {
       catalogerId: serverRecord.metadata?.catalogerId,
       status,
       serverVersion: serverRecord.version,
+      coverUrl: serverRecord.coverUrl,
     } as any
   };
 
@@ -645,6 +648,8 @@ function fromServerRecord(serverRecord: any): SavedRecord {
     version: serverRecord.version,
     publishedVersion: serverRecord.publishedVersion,
     assignedTo: serverRecord.assignedTo,
+    coverUrl: serverRecord.coverUrl,
+    coverImage: serverRecord.coverUrl,
   };
 }
 

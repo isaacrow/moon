@@ -35,6 +35,8 @@ export interface StoredRecord {
   /** The version the public catalogue shows; may be older than `version` while an edit waits for review. */
   publishedVersion?: number;
   /** The reviewer this record is assigned to, if any. */
+  /** Public address of the record's cover picture, if it has one. */
+  coverUrl?: string;
   assignedTo?: string;
 }
 
@@ -55,6 +57,7 @@ function fromRow(row: any): StoredRecord {
     version: row.current_version,
     publishedVersion: row.published_version ?? undefined,
     assignedTo: row.assigned_to ?? undefined,
+    coverUrl: row.cover_url ?? undefined,
   };
 }
 
@@ -73,6 +76,7 @@ function fromPublishedRow(row: any): StoredRecord {
     approvedAt: row.approved_at ?? undefined,
     version: row.published_version,
     publishedVersion: row.published_version,
+    coverUrl: row.cover_url ?? undefined,
   };
 }
 
@@ -500,4 +504,87 @@ export async function mergeAuthority(from: string, into: string): Promise<boolea
   const { data, error } = await sb().rpc("moon_merge_authority", { p_from: from, p_into: into });
   if (error) throw new Error(`[authorities] merge ${from} → ${into} failed: ${error.message}`);
   return data === true;
+}
+
+// ── Record covers: one picture per record in the public Storage bucket "covers" ───────────────────
+
+export const COVER_MAX_BYTES = 512 * 1024;
+const COVER_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
+/** The image type of these bytes, from their first bytes (never trusted from a header or a name). */
+export function sniffImageType(bytes: Uint8Array): string | null {
+  if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes.length > 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "image/webp";
+  return null;
+}
+
+/**
+ * Stores the picture as the record's cover (replacing any earlier one) and returns its public address.
+ * The address carries ?v=<time> so browsers fetch the new picture rather than a cached old one.
+ */
+export async function putCover(id: string, bytes: Uint8Array, source: "upload" | "openlibrary" | "googlebooks"): Promise<string> {
+  const type = sniffImageType(bytes);
+  if (!type) throw new Error("not a JPEG, PNG or WebP image");
+  if (bytes.length > COVER_MAX_BYTES) throw new Error("the picture is larger than 512 KB");
+  const bucket = sb().storage.from("covers");
+  const name = `${id}.${COVER_TYPES[type]}`;
+  const others = Object.values(COVER_TYPES).map((ext) => `${id}.${ext}`).filter((n) => n !== name);
+  await bucket.remove(others).catch(() => {});
+  const { error } = await bucket.upload(name, bytes, { contentType: type, upsert: true, cacheControl: "86400" });
+  if (error) throw new Error(`[covers] upload ${name} failed: ${error.message}`);
+  const url = `${bucket.getPublicUrl(name).data.publicUrl}?v=${Date.now()}`;
+  const { data, error: setError } = await sb().rpc("moon_set_cover", { p_id: id, p_url: url, p_source: source });
+  if (setError) throw new Error(`[covers] set ${id} failed: ${setError.message}`);
+  if (data !== true) throw new Error("record not found");
+  return url;
+}
+
+export async function removeCover(id: string): Promise<void> {
+  await sb().storage.from("covers").remove(Object.values(COVER_TYPES).map((ext) => `${id}.${ext}`)).catch(() => {});
+  const { error } = await sb().rpc("moon_set_cover", { p_id: id, p_url: null, p_source: null });
+  if (error) throw new Error(`[covers] clear ${id} failed: ${error.message}`);
+}
+
+/** An ISBN-10 or ISBN-13 as digits (and a final X), or null. */
+export function cleanIsbn(raw: unknown): string | null {
+  const d = String(raw ?? "").toUpperCase().replace(/[^0-9X]/g, "");
+  return /^(\d{9}[\dX]|97[89]\d{10})$/.test(d) ? d : null;
+}
+
+async function fetchImage(url: string): Promise<Uint8Array | null> {
+  const allowed = /^https:\/\/(covers\.openlibrary\.org|([a-z0-9-]+\.)*archive\.org|books\.google\.com|([a-z0-9-]+\.)*googleusercontent\.com)\//;
+  let current = url;
+  // Follow redirects by hand so every hop stays on the publishers' image hosts.
+  for (let hop = 0; hop < 4; hop++) {
+    if (!allowed.test(current)) return null;
+    const res = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
+    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+      current = new URL(res.headers.get("location")!, current).toString();
+      continue;
+    }
+    if (!res.ok) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    // Open Library answers a 1×1 pixel or tiny placeholder for some books; Google a "no image" picture.
+    return bytes.length > 2_000 && bytes.length <= COVER_MAX_BYTES && sniffImageType(bytes) ? bytes : null;
+  }
+  return null;
+}
+
+/** A cover for this ISBN: Open Library first (large, then medium), then Google Books. */
+export async function findCoverByIsbn(isbn: string): Promise<{ bytes: Uint8Array; source: "openlibrary" | "googlebooks" } | null> {
+  for (const size of ["L", "M"]) {
+    const bytes = await fetchImage(`https://covers.openlibrary.org/b/isbn/${isbn}-${size}.jpg?default=false`).catch(() => null);
+    if (bytes) return { bytes, source: "openlibrary" };
+  }
+  try {
+    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&fields=items(volumeInfo/imageLinks)`, { signal: AbortSignal.timeout(10_000) });
+    const links = res.ok ? (await res.json())?.items?.[0]?.volumeInfo?.imageLinks : null;
+    const link = links?.thumbnail || links?.smallThumbnail;
+    if (link) {
+      const bytes = await fetchImage(String(link).replace(/^http:/, "https:").replace(/&edge=curl/, ""));
+      if (bytes) return { bytes, source: "googlebooks" };
+    }
+  } catch { /* no Google cover */ }
+  return null;
 }

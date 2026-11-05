@@ -1184,6 +1184,63 @@ app.post("/make-server-49c0e13c/records/:id/assign", async (c) => {
   }
 });
 
+// 🖼️ A record's cover. Set by the record's cataloger, a reviewer or the admin: either a picture
+// ({ image: "data:image/jpeg;base64,…" }, shrunk in the browser first) or { isbn } to take the cover
+// from Open Library or Google Books. Stored in the public "covers" bucket; no new version, no review.
+async function coverAccess(c: any) {
+  const session = await getSession(c);
+  if (!session) return { error: c.json({ error: 'Sign in to change covers' }, 401) };
+  const record = await recordStore.getRecord(c.req.param('id'));
+  if (!record) return { error: c.json({ error: 'Record not found' }, 404) };
+  if (record.cataloger !== session.username && !canReview(session)) {
+    return { error: c.json({ error: "Only the record's cataloger or a reviewer can change its cover" }, 403) };
+  }
+  return { record };
+}
+
+app.put("/make-server-49c0e13c/records/:id/cover", async (c) => {
+  try {
+    const a = await coverAccess(c);
+    if (a.error) return a.error;
+    const body = await c.req.json().catch(() => ({}));
+    let bytes: Uint8Array;
+    let source: 'upload' | 'openlibrary' | 'googlebooks' = 'upload';
+    if (typeof body.image === 'string') {
+      const m = body.image.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
+      if (!m) return c.json({ error: 'image must be a JPEG, PNG or WebP data URL' }, 400);
+      if (m[2].length > Math.ceil(recordStore.COVER_MAX_BYTES / 3) * 4) return c.json({ error: 'The picture is larger than 512 KB' }, 413);
+      bytes = Uint8Array.from(atob(m[2]), (ch) => ch.charCodeAt(0));
+    } else if (body.isbn !== undefined) {
+      const isbn = recordStore.cleanIsbn(body.isbn);
+      if (!isbn) return c.json({ error: 'Not a valid ISBN' }, 400);
+      const found = await recordStore.findCoverByIsbn(isbn);
+      if (!found) return c.json({ error: 'No cover found for this ISBN in Open Library or Google Books' }, 404);
+      bytes = found.bytes;
+      source = found.source;
+    } else {
+      return c.json({ error: 'Send { image } or { isbn }' }, 400);
+    }
+    if (!recordStore.sniffImageType(bytes)) return c.json({ error: 'Not a JPEG, PNG or WebP image' }, 400);
+    const coverUrl = await recordStore.putCover(a.record!.id, bytes, source);
+    return c.json({ success: true, coverUrl, source });
+  } catch (error) {
+    console.error('Set cover error:', error);
+    return c.json({ error: 'Failed to save the cover' }, 500);
+  }
+});
+
+app.delete("/make-server-49c0e13c/records/:id/cover", async (c) => {
+  try {
+    const a = await coverAccess(c);
+    if (a.error) return a.error;
+    await recordStore.removeCover(a.record!.id);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Remove cover error:', error);
+    return c.json({ error: 'Failed to remove the cover' }, 500);
+  }
+});
+
 // 💬 Comments on a record's fields. The Super Admin and the record's cataloger may comment and resolve;
 // a comment notifies the other side (the cataloger, or the Super Admin when the cataloger replies).
 async function commentAccess(c: any) {
