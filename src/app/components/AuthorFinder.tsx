@@ -23,6 +23,7 @@ import {
   AISuggestionProfile,
   DEFAULT_GEMINI_API_KEY
 } from '../../services/authorFinderService';
+import { saveProfileAsMoonAuthority } from '../../services/moonAuthorities';
 import { VERIFIED_IRAQI_AUTHORS, IraqiAuthorRecord } from '../../services/iraqiAuthorAIService';
 import moonWhiteLogo from '../../assets/white.png';
 
@@ -515,7 +516,8 @@ function AuthorMultiSourceProfileModal({
   });
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const canonicalUri = suggestion.moonUri || generateCanonicalMoonUri(suggestion.suggestedNameArabic || suggestion.primarySuggestion);
+  const [savedUri, setSavedUri] = useState<string | null>(null);
+  const canonicalUri = savedUri || suggestion.moonUri || generateCanonicalMoonUri(suggestion.suggestedNameArabic || suggestion.primarySuggestion);
   const authorNameAr = suggestion.suggestedNameArabic || suggestion.primarySuggestion;
   const authorNameEn = suggestion.suggestedNameEnglish || suggestion.primarySuggestion;
 
@@ -531,19 +533,28 @@ function AuthorMultiSourceProfileModal({
     setTimeout(() => setCopiedCode(null), 2500);
   };
 
-  const handleSaveToSystem = () => {
-    const res = saveAuthorityProfileToMoonSystem({
+  // Saves into Moon's authority file on the server, which gives the person a permanent
+  // https://mooon.site/resource/agent/<id> address that every cataloger's name search then finds.
+  const handleSaveToSystem = async () => {
+    const res = await saveProfileAsMoonAuthority(suggestion);
+    if (!res.ok) {
+      toast.error(res.status === 401
+        ? 'سجّل الدخول لحفظ السجل الاستنادي في ملف MOON'
+        : `حدث خطأ أثناء حفظ السجل الاستنادي (${res.error})`);
+      return;
+    }
+    setSavedUri(res.authority.uri);
+    // Kept in this browser too, for the screens that still read saved profiles from here.
+    saveAuthorityProfileToMoonSystem({
       ...suggestion,
-      moonUri: canonicalUri,
+      moonUri: res.authority.uri,
       marc21Authority: marc21Content,
       jsonLd: jsonLdContent
     });
-    if (res.success) {
-      setIsSaved(true);
-      toast.success(`تم حفظ السجل الاستنادي لـ "${authorNameAr}" في قاعدة بيانات MOON المركزية بنجاح`);
-    } else {
-      toast.error('حدث خطأ أثناء حفظ السجل الاستنادي');
-    }
+    setIsSaved(true);
+    toast.success(res.existing
+      ? `"${res.authority.label}" موجود في ملف MOON الاستنادي من قبل — ${res.authority.uri}`
+      : `تم حفظ "${authorNameAr}" في ملف MOON الاستنادي — ${res.authority.uri}`);
   };
 
   const handleCopyCodeSnippet = (text: string, formatName: string) => {

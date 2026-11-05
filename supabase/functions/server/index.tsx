@@ -761,6 +761,27 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
   const uri = `${linkedData.BASE_URI}/${kind}/${id}`;
   const format = fromExtension ?? linkedData.negotiate(c.req.header('Accept'));
   try {
+    // Moon's own authority entries: /resource/agent|place|topic/<id>. A merged entry forwards (301).
+    if (kind === 'agent' || kind === 'place' || kind === 'topic') {
+      const entry = await recordStore.getAuthority(id);
+      if (!entry || entry.kind !== kind) return c.json({ error: 'No authority entry has this URI', uri }, 404);
+      const base = { Vary: 'Accept', 'Cache-Control': 'public, max-age=300', 'Access-Control-Allow-Origin': '*' };
+      if (entry.mergedInto) {
+        const ext = fromExtension ? `.${fromExtension}` : '';
+        return c.body(null, 301, { ...base, Location: `${linkedData.BASE_URI}/${kind}/${entry.mergedInto}${ext}` });
+      }
+      if (format === 'html') {
+        const page = new URL('/opac.html', linkedData.BASE_URI);
+        page.searchParams.set('q', entry.label);
+        return c.body(null, 303, { ...base, Location: page.toString() });
+      }
+      const doc = linkedData.authorityDocument(entry);
+      if (format === 'jsonld') {
+        return c.body(JSON.stringify(doc, null, 2), 200, { ...base, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
+      }
+      const text = format === 'ttl' ? await linkedData.authorityTurtle(doc) : await linkedData.authorityNTriples(doc);
+      return c.body(text, 200, { ...base, 'Content-Type': `${linkedData.MEDIA_TYPES[format]}; charset=utf-8` });
+    }
     const record = await recordStore.findPublishedByUri(uri);
     if (!record) {
       return c.json({ error: 'No published record has this URI', uri }, 404);
@@ -787,6 +808,64 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
   } catch (error) {
     console.error('Resolve URI error:', uri, error);
     return c.json({ error: 'Failed to resolve the URI' }, 500);
+  }
+});
+
+// 🪪 Local authority file: Moon's own people, organizations, places and topics, each with a permanent
+// https://mooon.site/resource/<kind>/<id> address. Search is public (the entries are public data);
+// adding needs a signed-in account; merging two entries for one person needs an admin.
+const AUTHORITY_KINDS = ['agent', 'place', 'topic'];
+const withUri = (a: any) => ({ ...a, uri: `${linkedData.BASE_URI}/${a.kind}/${a.id}` });
+
+app.get("/make-server-49c0e13c/authorities", async (c) => {
+  try {
+    const q = (c.req.query('q') || '').trim().slice(0, 200);
+    const kind = c.req.query('kind') || null;
+    if (kind && !AUTHORITY_KINDS.includes(kind)) return c.json({ error: 'kind must be agent, place or topic' }, 400);
+    const limit = Math.min(Math.max(Number(c.req.query('limit')) || 20, 1), 100);
+    const found = await recordStore.searchAuthorities(q, kind as any, limit);
+    return c.json({ authorities: found.map(withUri) }, 200, { 'Access-Control-Allow-Origin': '*' });
+  } catch (error) {
+    console.error('Authority search error:', error);
+    return c.json({ error: 'Authority search failed' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/authorities", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to add authority entries' }, 401);
+    const body = await c.req.json().catch(() => ({}));
+    const label = typeof body.label === 'string' ? body.label.trim() : '';
+    if (!AUTHORITY_KINDS.includes(body.kind)) return c.json({ error: 'kind must be agent, place or topic' }, 400);
+    if (!label || label.length > 300) return c.json({ error: 'A name (label) of up to 300 characters is required' }, 400);
+    const strings = (v: unknown, max: number): string[] => (Array.isArray(v) ? v : [])
+      .filter((s) => typeof s === 'string' && s.trim()).map((s: string) => s.trim().slice(0, 300)).slice(0, max);
+    const data = body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? body.data : {};
+    if (JSON.stringify(data).length > 50_000) return c.json({ error: 'Details are too large' }, 413);
+    const result = await recordStore.addAuthority({
+      kind: body.kind, label, variants: strings(body.variants, 50), sameAs: strings(body.sameAs, 20),
+      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : undefined, data,
+    }, session.username);
+    return c.json({ existing: result.existing, authority: withUri(result.authority) }, result.existing ? 200 : 201);
+  } catch (error) {
+    console.error('Authority add error:', error);
+    return c.json({ error: 'Failed to add the authority entry' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/authorities/:id/merge", async (c) => {
+  try {
+    if (!(await isAdminSession(c))) return c.json({ error: 'Only an admin can merge authority entries' }, 403);
+    const { into } = await c.req.json().catch(() => ({}));
+    if (typeof into !== 'string' || !into) return c.json({ error: 'into (the entry to keep) is required' }, 400);
+    const ok = await recordStore.mergeAuthority(c.req.param('id'), into);
+    if (!ok) return c.json({ error: 'Both entries must exist, be unmerged, differ, and be of the same kind' }, 409);
+    const kept = await recordStore.getAuthority(into);
+    return c.json({ merged: true, authority: kept && withUri(kept) });
+  } catch (error) {
+    console.error('Authority merge error:', error);
+    return c.json({ error: 'Failed to merge the entries' }, 500);
   }
 });
 

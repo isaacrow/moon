@@ -4,11 +4,13 @@
  * Provides unified authority search for cataloging
  */
 import { lookupIsbnEverywhere, normalizeIsbn, IsbnInfo, IsbnRecord, IsbnSource } from './isbnLookup';
+import { searchMoonAuthorities } from './moonAuthorities';
 
 export interface AuthorityResult {
   label: string;
   uri: string;
-  source: 'LOC' | 'VIAF' | 'Wikidata' | 'Local';
+  /** Moon = Moon's own authority file (https://mooon.site/resource/agent|place|topic/…). */
+  source: 'LOC' | 'VIAF' | 'Wikidata' | 'Local' | 'Moon';
   type?: string;
   description?: string;
 }
@@ -155,6 +157,8 @@ export async function searchAllAuthorities(
     switch (context) {
       case 'person':
       case 'organization':
+        // Moon's own authority file first: names LC and VIAF don't have yet.
+        searches.push(searchMoonAuthorities(query, 'agent'));
         searches.push(searchLOCAuthorities(query, 'names'));
         searches.push(searchVIAF(query));
         searches.push(searchWikidata(query, 'item'));
@@ -163,11 +167,13 @@ export async function searchAllAuthorities(
       case 'holder':
         // Holding institutions: MARC organization codes first, then name authorities.
         searches.push(searchLOCAuthorities(query, 'organizations'));
+        searches.push(searchMoonAuthorities(query, 'agent'));
         searches.push(searchLOCAuthorities(query, 'names'));
         searches.push(searchWikidata(query, 'item'));
         break;
 
       case 'subject':
+        searches.push(searchMoonAuthorities(query, 'topic'));
         searches.push(searchLOCAuthorities(query, 'subjects'));
         searches.push(searchWikidata(query, 'item'));
         break;
@@ -178,6 +184,7 @@ export async function searchAllAuthorities(
         break;
 
       case 'place':
+        searches.push(searchMoonAuthorities(query, 'place'));
         searches.push(searchLOCAuthorities(query, 'countries'));
         searches.push(searchLOCAuthorities(query, 'geographicAreas'));
         searches.push(searchWikidata(query, 'item'));

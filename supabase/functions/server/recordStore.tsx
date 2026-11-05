@@ -442,3 +442,62 @@ export async function findDuplicates(id: string | null, document: any): Promise<
   if (error) throw new Error(`[records] duplicate check failed: ${error.message}`);
   return data || [];
 }
+
+// ── Local authority file: Moon's own people, organizations, places and topics ─────────────────────
+
+export type AuthorityKind = "agent" | "place" | "topic";
+
+export interface Authority {
+  id: string;
+  kind: AuthorityKind;
+  label: string;
+  variants: string[];
+  sameAs: string[];
+  note?: string | null;
+  data: Record<string, unknown>;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  mergedInto?: string | null;
+}
+
+/** A readable, permanent id: the name's Latin letters (if any) plus a random tail, e.g. ali-al-wardi-3f9a1c2e. */
+export function newAuthorityId(kind: AuthorityKind, label: string, variants: string[] = []): string {
+  const latin = [label, ...variants].find((n) => /[a-z]/i.test(n)) || "";
+  const slug = latin.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
+  const tail = Array.from(crypto.getRandomValues(new Uint8Array(4))).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${slug || kind}-${tail}`;
+}
+
+/** Adds an entry, or returns the existing one of the same kind with that name (any spelling). */
+export async function addAuthority(input: {
+  kind: AuthorityKind; label: string; variants?: string[]; sameAs?: string[]; note?: string; data?: Record<string, unknown>;
+}, by: string): Promise<{ existing: boolean; authority: Authority }> {
+  const { data, error } = await sb().rpc("moon_add_authority", {
+    p_id: newAuthorityId(input.kind, input.label, input.variants), p_kind: input.kind, p_label: input.label,
+    p_variants: input.variants || [], p_same_as: input.sameAs || [], p_note: input.note ?? null,
+    p_data: input.data || {}, p_by: by,
+  });
+  if (error) throw new Error(`[authorities] add failed: ${error.message}`);
+  return data;
+}
+
+export async function searchAuthorities(query: string, kind?: AuthorityKind | null, limit = 20): Promise<Authority[]> {
+  const { data, error } = await sb().rpc("moon_search_authorities", { p_query: query, p_kind: kind ?? null, p_limit: limit });
+  if (error) throw new Error(`[authorities] search failed: ${error.message}`);
+  return data || [];
+}
+
+export async function getAuthority(id: string): Promise<Authority | null> {
+  const { data, error } = await sb().rpc("moon_get_authority", { p_id: id });
+  if (error) throw new Error(`[authorities] get ${id} failed: ${error.message}`);
+  return data || null;
+}
+
+/** Merges `from` into `into` (same kind); false when either is missing, already merged, or of another kind. */
+export async function mergeAuthority(from: string, into: string): Promise<boolean> {
+  const { data, error } = await sb().rpc("moon_merge_authority", { p_from: from, p_into: into });
+  if (error) throw new Error(`[authorities] merge ${from} → ${into} failed: ${error.message}`);
+  return data === true;
+}
