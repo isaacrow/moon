@@ -30,7 +30,8 @@ import recordRoutes from "./recordRoutes.tsx";
 import accountRoutes, { getSession, isAdminSession, canReview, isReviewer, SUPER_ADMIN_USERNAME } from "./accountRoutes.tsx";
 import * as recordStore from "./recordStore.tsx";
 import * as linkedData from "./linkedData.tsx";
-import { missingForPublish } from "./publishGate.tsx";
+import { missingForPublish, shapesFromProfile } from "./publishGate.tsx";
+import { PROFILES } from "./profiles.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
@@ -136,6 +137,17 @@ const supabase = createClient(
 // Health check endpoint
 app.get("/make-server-49c0e13c/health", (c) => {
   return c.json({ status: "ok" });
+});
+
+// Cataloguing profiles (LC Marva JSON) and the SHACL shapes the publish gate enforces, both public.
+app.get("/make-server-49c0e13c/profiles/:id", (c) => {
+  const profile = PROFILES[c.req.param("id")];
+  return profile ? c.json(profile) : c.json({ error: "No such profile" }, 404);
+});
+app.get("/make-server-49c0e13c/profiles/:id/shapes.ttl", (c) => {
+  const profile = PROFILES[c.req.param("id")];
+  if (!profile) return c.json({ error: "No such profile" }, 404);
+  return c.body(shapesFromProfile(profile), 200, { "Content-Type": "text/turtle; charset=utf-8" });
 });
 
 // 🌙 Moon Engine Status Endpoint
