@@ -21,8 +21,15 @@ export default {
       return new Response('Method not allowed', { status: 405, headers: { Allow: allowed.join(', ') } });
     }
     // https://mooon.site/sitemap.xml (every published record's page, for search engines) is built by the server.
-    const path = url.pathname === '/sitemap.xml' ? '/resource/sitemap.xml' : url.pathname;
-    const target = `${env.MOON_API}${path}${url.search}`;
+    // The public API (see /api.html): /resource/search searches the published catalogue only, and
+    // /resource/authorities searches Moon's authority file.
+    let path = url.pathname;
+    const search = new URLSearchParams(url.search);
+    if (path === '/sitemap.xml') path = '/resource/sitemap.xml';
+    else if (path === '/resource/search') { path = '/records/search'; search.set('view', 'published'); }
+    else if (path === '/resource/authorities') path = '/authorities';
+    const qs = search.toString();
+    const target = `${env.MOON_API}${path}${qs ? `?${qs}` : ''}`;
     const upstream = await fetch(target, {
       method: request.method,
       body: request.method === 'POST' ? await request.text() : undefined,

@@ -531,6 +531,7 @@ function Home({ ctx }: { ctx: Ctx }) {
               <a href="/resource/sparql">SPARQL</a>
               <a href="/resource/dump.jsonld">تنزيل الفهرس (JSON-LD)</a>
               <a href="/resource/dump.nt">N-Triples</a>
+              <a href="/api.html">واجهة البرمجة (API)</a>
             </div>
           </div>
         </section>
