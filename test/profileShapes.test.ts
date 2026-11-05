@@ -6,7 +6,9 @@ import { Parser as N3Parser } from 'n3';
 import SHACLValidator from 'rdf-validate-shacl';
 import factory from 'rdf-validate-shacl/src/defaultEnv.js';
 import { missingForPublish, shapesFromProfile } from '../supabase/functions/server/publishGate.tsx';
-import { MONOGRAPH_PROFILE } from '../supabase/functions/server/profiles.tsx';
+import { MONOGRAPH_PROFILE, PROFILES, profileDefaults, profileRequired } from '../supabase/functions/server/profiles.tsx';
+import { getPropertiesByDomain } from '../src/services/ontologyRegistry';
+import { getRequiredPropertiesByDomain } from '../src/services/bibframePropertyRegistry';
 import { toTurtle } from '../src/services/rdfGraphBuilder';
 
 const dataset = (ttl: string) => factory.dataset(new N3Parser().parse(ttl) as any);
@@ -54,6 +56,36 @@ const cases: [string, (doc: any) => void][] = [
   ['no carrier and no issuance', (d) => { delete d['@graph'][1]['bf:carrier']; delete d['@graph'][1]['bf:issuance']; }],
   ['no link between Instance and Work', (d) => { delete d['@graph'][1]['bf:instanceOf']; delete d['@graph'][0]['bf:hasInstance']; }],
 ];
+test('the form marks as required exactly what the profile requires (Category Cards and the header counts)', () => {
+  for (const entity of ['Work', 'Instance'] as const) {
+    const required = profileRequired(MONOGRAPH_PROFILE, entity);
+    const cards = getPropertiesByDomain(entity).filter((p) => p.required).map((p) => p.shortName);
+    assert.ok(cards.every((p) => required.has(p)), `${entity}: the form requires ${cards.filter((p) => !required.has(p))}, the gate does not`);
+    const header = getRequiredPropertiesByDomain(entity).map((p) => p.shortName);
+    assert.ok(header.every((p) => required.has(p)), `${entity}: header counts ${header}`);
+    // Every required field the form shows is one the gate checks, and the gate's fields all appear in the form
+    // (bf:instanceOf is built by Moon itself, not typed).
+    for (const p of required) if (p !== 'bf:instanceOf') assert.ok(cards.includes(p), `${entity}: ${p} is required but not marked in the form`);
+  }
+});
+
+test('every template\'s pre-filled values plus titles make a record the gate accepts', () => {
+  for (const [key, profile] of Object.entries(PROFILES)) {
+    const d = profileDefaults(profile);
+    const doc = {
+      '@graph': [
+        { '@id': 'https://mooon.site/resource/work/p1', '@type': 'bf:Work', 'bf:title': { 'bf:mainTitle': 'x' }, ...d.work },
+        { '@id': 'https://mooon.site/resource/instance/p1', '@type': 'bf:Instance', 'bf:title': { 'bf:mainTitle': 'x' },
+          'bf:instanceOf': { '@id': 'https://mooon.site/resource/work/p1' }, ...d.instance },
+      ],
+    };
+    assert.deepEqual(missingForPublish(doc, profile), [], key);
+  }
+  assert.equal(profileDefaults(PROFILES.music).work['bf:content']['@id'], 'http://id.loc.gov/vocabulary/contentTypes/ntm');
+  assert.equal(profileDefaults(PROFILES.map).instance['bf:carrier']['@id'], 'http://id.loc.gov/vocabulary/carriers/nb');
+  assert.equal(profileDefaults(PROFILES.serial).instance['bf:issuance']['@id'], 'http://id.loc.gov/vocabulary/issuance/serl');
+});
+
 for (const [name, breakIt] of cases) {
   test(`SHACL engine and gate report the same missing fields: ${name}`, async () => {
     const doc = record();

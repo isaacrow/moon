@@ -119,6 +119,7 @@ function LazyPanelFallback() {
 
 // ===== CONTEXTS =====
 import { useAuth } from "../contexts/AuthContext";
+import { PROFILES, profileDefaults } from "../../../supabase/functions/server/profiles.tsx";
 import { BIBFRAMERecord } from "../types/bibframe";
 
 // ===== ASSETS & CONFIG =====
@@ -181,21 +182,12 @@ interface WolfMoonProps {
 
 const DRAFT_KEY = "moon_wolf_draft";
 
-// The values LC's profiles pre-fill (as Marva does) for the fields LC requires, per Moon template.
+// The values each template's profile pre-fills (as Marva does) for the fields LC requires; the profiles
+// (supabase/functions/server/profiles.tsx) are also what the server's publish gate checks.
 type LcDefault = { "@id": string; "rdfs:label": string };
-const LC_VOCAB_BASE = "http://id.loc.gov/vocabulary";
-const lcValue = (path: string, label: string): LcDefault => ({ "@id": `${LC_VOCAB_BASE}/${path}`, "rdfs:label": label });
-const TEXT = lcValue("contentTypes/txt", "text");
-const UNMEDIATED = lcValue("mediaTypes/n", "unmediated");
-const VOLUME = lcValue("carriers/nc", "volume");
-const SINGLE_UNIT = lcValue("issuance/mono", "single unit");
-const LC_TEMPLATE_DEFAULTS: Record<string, { work: Record<string, LcDefault>; instance: Record<string, LcDefault> }> = {
-  "monograph-complete": { work: { "bf:content": TEXT }, instance: { "bf:media": UNMEDIATED, "bf:carrier": VOLUME, "bf:issuance": SINGLE_UNIT } },
-  manuscript: { work: { "bf:content": TEXT }, instance: { "bf:media": UNMEDIATED, "bf:carrier": VOLUME, "bf:issuance": SINGLE_UNIT } },
-  serial: { work: { "bf:content": TEXT }, instance: { "bf:media": UNMEDIATED, "bf:carrier": VOLUME, "bf:issuance": lcValue("issuance/serl", "serial") } },
-  music: { work: { "bf:content": lcValue("contentTypes/ntm", "notated music") }, instance: { "bf:media": UNMEDIATED, "bf:carrier": VOLUME, "bf:issuance": SINGLE_UNIT } },
-  map: { work: { "bf:content": lcValue("contentTypes/cri", "cartographic image") }, instance: { "bf:media": UNMEDIATED, "bf:carrier": lcValue("carriers/nb", "sheet"), "bf:issuance": SINGLE_UNIT } },
-};
+const LC_TEMPLATE_DEFAULTS = Object.fromEntries(
+  ["monograph-complete", "manuscript", "serial", "music", "map"].map((id) => [id, profileDefaults(PROFILES[id])]),
+);
 
 /** True when a field holds nothing a cataloger entered (empty string, empty list, or a node with no text). */
 function isBlankValue(value: any): boolean {

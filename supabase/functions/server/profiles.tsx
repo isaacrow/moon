@@ -65,6 +65,32 @@ const P = (
 
 const vocab = (path: string) => `http://id.loc.gov/vocabulary/${path}`;
 
+const lcDefault = (path: string, label: string) => [{ defaultURI: vocab(path), defaultLiteral: label }];
+
+interface ProfileDefaults { content: [string, string]; media: [string, string]; carrier: [string, string]; issuance: [string, string] }
+
+/**
+ * A profile with LC's core requirements (as LC's Monograph profile): the same required fields for every
+ * Moon template; what differs is the values pre-filled for them (music is notated music, a map a sheet...).
+ */
+function coreProfile(key: string, title: string, description: string, d: ProfileDefaults): Profile {
+  const base = JSON.parse(JSON.stringify(MONOGRAPH_PROFILE)) as Profile;
+  const id = `moon:${key}`;
+  const rename = (s: string) => s.replace("moon:Monograph", id);
+  base.Profile.id = id;
+  base.Profile.title = title;
+  base.Profile.description = description;
+  for (const t of base.Profile.resourceTemplates) {
+    t.id = rename(t.id);
+    for (const p of t.propertyTemplates) {
+      p.valueConstraint.valueTemplateRefs = p.valueConstraint.valueTemplateRefs?.map(rename);
+      const name = p.propertyURI.slice(BF.length) as keyof ProfileDefaults;
+      if (d[name] && (t.resourceURI === BF + "Work" || t.resourceURI === BF + "Instance")) p.valueConstraint.defaults = lcDefault(...d[name]);
+    }
+  }
+  return base;
+}
+
 /** LC's core requirements for a printed monograph (BIBFRAME Monograph profile), with Moon's labels. */
 export const MONOGRAPH_PROFILE: Profile = {
   Profile: {
@@ -126,4 +152,46 @@ export const MONOGRAPH_PROFILE: Profile = {
   },
 };
 
-export const PROFILES: Record<string, Profile> = { monograph: MONOGRAPH_PROFILE };
+const TEXT: [string, string] = ["contentTypes/txt", "text"];
+const UNMEDIATED: [string, string] = ["mediaTypes/n", "unmediated"];
+const VOLUME: [string, string] = ["carriers/nc", "volume"];
+const SINGLE_UNIT: [string, string] = ["issuance/mono", "single unit"];
+
+export const MANUSCRIPT_PROFILE = coreProfile("Manuscript", "Manuscript",
+  "Handwritten works and their copies.", { content: TEXT, media: UNMEDIATED, carrier: VOLUME, issuance: SINGLE_UNIT });
+export const SERIAL_PROFILE = coreProfile("Serial", "Serial",
+  "Journals and other publications issued in successive parts.", { content: TEXT, media: UNMEDIATED, carrier: VOLUME, issuance: ["issuance/serl", "serial"] });
+export const MUSIC_PROFILE = coreProfile("Music", "Notated music",
+  "Printed scores and other notated music.", { content: ["contentTypes/ntm", "notated music"], media: UNMEDIATED, carrier: VOLUME, issuance: SINGLE_UNIT });
+export const MAP_PROFILE = coreProfile("Map", "Cartographic material",
+  "Printed maps and atlases.", { content: ["contentTypes/cri", "cartographic image"], media: UNMEDIATED, carrier: ["carriers/nb", "sheet"], issuance: SINGLE_UNIT });
+
+/** Profiles by their address (/profiles/<key>); the editor's template ids are listed too. */
+export const PROFILES: Record<string, Profile> = {
+  monograph: MONOGRAPH_PROFILE,
+  manuscript: MANUSCRIPT_PROFILE,
+  serial: SERIAL_PROFILE,
+  music: MUSIC_PROFILE,
+  map: MAP_PROFILE,
+  "monograph-complete": MONOGRAPH_PROFILE,
+};
+
+/** The values a profile pre-fills, per entity: { "bf:content": { "@id", "rdfs:label" }, ... }. */
+export function profileDefaults(profile: Profile): { work: Record<string, { "@id": string; "rdfs:label": string }>; instance: Record<string, { "@id": string; "rdfs:label": string }> } {
+  const out = { work: {} as Record<string, any>, instance: {} as Record<string, any> };
+  for (const t of profile.Profile.resourceTemplates) {
+    const entity = t.resourceURI === BF + "Work" ? out.work : t.resourceURI === BF + "Instance" ? out.instance : null;
+    if (!entity) continue;
+    for (const p of t.propertyTemplates) {
+      const d = p.valueConstraint.defaults?.[0];
+      if (d?.defaultURI) entity[`bf:${p.propertyURI.slice(BF.length)}`] = { "@id": d.defaultURI, "rdfs:label": d.defaultLiteral || "" };
+    }
+  }
+  return out;
+}
+
+/** bf: properties (prefixed, e.g. "bf:title") a profile requires on a Work or an Instance. */
+export function profileRequired(profile: Profile, entity: "Work" | "Instance"): Set<string> {
+  const t = profile.Profile.resourceTemplates.find((r) => r.resourceURI === BF + entity);
+  return new Set((t?.propertyTemplates || []).filter((p) => p.mandatory === "true").map((p) => `bf:${p.propertyURI.slice(BF.length)}`));
+}
