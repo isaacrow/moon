@@ -84,12 +84,8 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
         onClose();
         return;
       }
-      if (fileType === 'xml') {
-        setError('RDF/XML import is not available yet. Please export the record as JSON-LD, Turtle or N-Triples.');
-        return;
-      }
-      // Any BIBFRAME description: LC's id.loc.gov records, Moon exports, Turtle or N-Triples.
-      const format: ImportFormat = fileType === 'jsonld' ? 'jsonld' : selectedFile?.name.toLowerCase().endsWith('.nt') ? 'ntriples' : 'turtle';
+      // Any BIBFRAME description: LC's id.loc.gov records, Moon exports, RDF/XML, Turtle or N-Triples.
+      const format: ImportFormat = fileType === 'xml' ? 'rdfxml' : fileType === 'jsonld' ? 'jsonld' : selectedFile?.name.toLowerCase().endsWith('.nt') ? 'ntriples' : 'turtle';
       const record = await importBibframe(fileContent, format);
       if (!record || (Object.keys(record.work).length <= 1 && Object.keys(record.instance).length <= 1)) {
         setError('No BIBFRAME Work or Instance found in file');
@@ -130,7 +126,7 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
         {/* Content */}
         <div className="p-6 space-y-5">
           <p className="text-sm text-white/80">
-            Import a MARC record (from Koha, MarcEdit or any library system) or a BIBFRAME record (JSON-LD, Turtle or N-Triples, including id.loc.gov records) into MOON.
+            Import a MARC record (from Koha, MarcEdit or any library system) or a BIBFRAME record (RDF/XML, JSON-LD, Turtle or N-Triples, including id.loc.gov records) into MOON.
           </p>
 
           {/* File Upload Drop Area */}
@@ -167,7 +163,7 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
                 Click to upload or drag and drop
               </span>
               <span className="text-xs text-white/60 mt-1 font-mono">
-                MARC (.mrc, .mrk, MARCXML), JSON-LD, Turtle, N-Triples
+                MARC (.mrc, .mrk, MARCXML), RDF/XML, JSON-LD, Turtle, N-Triples
               </span>
             </label>
           </div>
