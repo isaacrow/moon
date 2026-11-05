@@ -25,7 +25,7 @@ import {
   Zap,
   Search,
   Library,
-  Moon, Undo2} from 'lucide-react';
+  Moon, Undo2, Download} from 'lucide-react';
 import moonLogoWhite from '../../assets/white.png';
 import '../../styles/glassmorphism.css';
 
@@ -632,6 +632,28 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                 <span>{showAllRecords ? 'Show Recent (5)' : `View All (${savedRecords.length})`}</span>
                 <ArrowRight className={`h-3.5 w-3.5 transition-transform ${showAllRecords ? 'rotate-90' : ''}`} />
               </button>
+
+              {/* Every published record in one file (the public data dump) */}
+              {(['jsonld', 'nt'] as const).map((f) => (
+                <a
+                  key={f}
+                  href={`https://mooon.site/resource/dump.${f}`}
+                  download={`moon-published-records.${f}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-4 py-2 text-xs font-bold text-[#1a202c] cursor-pointer shadow-md"
+                  style={{
+                    borderRadius: '120px',
+                    background: 'rgba(255, 255, 255, 0.28)',
+                    backdropFilter: 'blur(9px) saturate(1.5) brightness(1.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.75)',
+                  }}
+                  title={f === 'jsonld' ? 'Download every published record as JSON-LD' : 'Download every published record as N-Triples'}
+                >
+                  <Download className="h-3.5 w-3.5 text-blue-600" />
+                  <span>{f === 'jsonld' ? 'All published · JSON-LD' : 'All published · N-Triples'}</span>
+                </a>
+              ))}
 
               {/* Activity Log Button - Super Admin (isaac) only */}
               {isIsaac && (

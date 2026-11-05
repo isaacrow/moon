@@ -112,3 +112,34 @@ export async function authorityTurtle(doc: any): Promise<string> {
   return await new Promise<string>((resolve, reject) =>
     writer.end((err: Error | null, out: string) => (err ? reject(err) : resolve(out))));
 }
+
+/**
+ * Gives a record's blank nodes (_:b0 …) names of their own (_:r3-b0), so that when many records go
+ * into one dump file, two records' blank nodes are never read as the same node.
+ */
+export function scopeBlankNodes(value: any, prefix: string): any {
+  if (Array.isArray(value)) return value.map((v) => scopeBlankNodes(v, prefix));
+  if (!value || typeof value !== "object") return value;
+  const out: any = {};
+  for (const [k, v] of Object.entries(value)) {
+    out[k] = k === "@id" && typeof v === "string" && v.startsWith("_:") ? `_:${prefix}-${v.slice(2)}` : scopeBlankNodes(v, prefix);
+  }
+  return out;
+}
+
+/** All the given records in one JSON-LD document (one @graph), blank nodes kept apart per record. */
+export function dumpJsonLd(documents: any[]): any {
+  const graph = documents.flatMap((doc, i) =>
+    (Array.isArray(doc?.["@graph"]) ? doc["@graph"] : []).map((n: any) => scopeBlankNodes(n, `r${i}`)));
+  return { "@context": CONTEXT, "@graph": graph };
+}
+
+/** All the given records as N-Triples, record by record; blank nodes renamed per record. */
+export async function dumpNTriples(documents: any[]): Promise<string> {
+  const parts: string[] = [];
+  for (let i = 0; i < documents.length; i++) {
+    const nt = await toNTriples(documents[i]);
+    parts.push(nt.replace(/_:([A-Za-z0-9_-]+)/g, `_:r${i}-$1`));
+  }
+  return parts.join("");
+}

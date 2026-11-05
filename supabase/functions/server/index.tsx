@@ -754,6 +754,7 @@ li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:n
 .t{font-weight:600;font-size:1.05rem;color:#f9fafb}.u{font-family:ui-monospace,monospace;font-size:.8rem;margin-top:4px;word-break:break-all}.f{font-size:.8rem;margin-top:4px;color:#9ca3af}
 </style></head><body><h1>Moon — published records</h1>
 <p>${records.length} BIBFRAME records. Each address opens the record's page in a browser, or its data for library systems (JSON-LD, Turtle, N-Triples). <a href="?format=json">This list as JSON</a> · <a href="/opac.html">Catalogue</a></p>
+<p>Every record in one file: <a href="/resource/dump.jsonld">JSON-LD</a> · <a href="/resource/dump.nt">N-Triples</a> · <a href="https://github.com/isaacrow/moon3/releases/tag/data-dump">nightly copy</a></p>
 <ul>${rows}</ul></body></html>`;
     return c.html(html, 200, { 'Cache-Control': 'public, max-age=300' });
   } catch (error) {
@@ -761,6 +762,30 @@ li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:n
     return c.json({ error: 'Failed to list records' }, 500);
   }
 }
+// 📦 Data dump: every published record in one file, https://mooon.site/resource/dump.jsonld or dump.nt
+// (always current; a dated copy is also saved nightly by .github/workflows/data-dump.yml).
+async function resourceDump(c: any, format: 'jsonld' | 'nt') {
+  try {
+    const records = (await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const documents = records.map((r) => r.document);
+    const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=3600',
+      'Content-Disposition': `inline; filename="moon-published-records.${format}"`,
+      'X-Record-Count': String(records.length),
+    };
+    if (format === 'jsonld') {
+      return c.body(JSON.stringify(linkedData.dumpJsonLd(documents)), 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
+    }
+    return c.body(await linkedData.dumpNTriples(documents), 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES.nt}; charset=utf-8` });
+  } catch (error) {
+    console.error('Data dump error:', error);
+    return c.json({ error: 'Failed to build the data dump' }, 500);
+  }
+}
+app.get("/make-server-49c0e13c/resource/dump.jsonld", (c) => resourceDump(c, 'jsonld'));
+app.get("/make-server-49c0e13c/resource/dump.nt", (c) => resourceDump(c, 'nt'));
+
 app.get("/make-server-49c0e13c/resource", resourceIndex);
 app.get("/make-server-49c0e13c/resource/", resourceIndex);
 
