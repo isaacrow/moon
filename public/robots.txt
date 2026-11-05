@@ -1,0 +1,5 @@
+# Moon: the catalogue (opac.html) and every record's page are open to search engines.
+User-agent: *
+Allow: /
+
+Sitemap: https://mooon.site/sitemap.xml

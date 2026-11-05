@@ -860,6 +860,28 @@ async function resourceDump(c: any, format: 'jsonld' | 'nt') {
     return c.json({ error: 'Failed to build the data dump' }, 500);
   }
 }
+// 🗺️ Sitemap for search engines (served at https://mooon.site/sitemap.xml by the Worker): the catalogue's
+// home and every published record's page, with the date it last changed.
+app.get("/make-server-49c0e13c/resource/sitemap.xml", async (c) => {
+  try {
+    const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+    const records = (await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const urls = [
+      `<url><loc>https://mooon.site/opac.html</loc><changefreq>daily</changefreq></url>`,
+      ...records.map((r) => {
+        const lastmod = r.saved ? new Date(r.saved) : null;
+        const when = lastmod && !isNaN(lastmod.getTime()) ? `<lastmod>${lastmod.toISOString().slice(0, 10)}</lastmod>` : '';
+        return `<url><loc>${esc(`https://mooon.site/opac.html?work=${encodeURIComponent(r.id)}`)}</loc>${when}</url>`;
+      }),
+    ];
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`;
+    return c.body(xml, 200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });
+  } catch (error) {
+    console.error('Sitemap error:', error);
+    return c.json({ error: 'Failed to build the sitemap' }, 500);
+  }
+});
+
 app.get("/make-server-49c0e13c/resource/dump.jsonld", (c) => resourceDump(c, 'jsonld'));
 app.get("/make-server-49c0e13c/resource/dump.nt", (c) => resourceDump(c, 'nt'));
 
