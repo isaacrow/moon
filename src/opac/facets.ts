@@ -79,7 +79,8 @@ export function workYearOf(w: FacetWork): number | undefined {
   return undefined;
 }
 
-export function realCopies(w: FacetWork) {
+/** The copies a library really holds (never the OPAC's made-up placeholders), with all their fields. */
+export function realCopies<T extends { synthetic?: boolean }>(w: { holdingItems?: T[] }): T[] {
   return (w.holdingItems || []).filter((h) => !h.synthetic);
 }
 

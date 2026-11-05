@@ -492,3 +492,30 @@ details.panel[open] > :not(summary) { animation: rise 0.35s var(--ease-out) both
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; transition-duration: 0.01ms !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
+
+/* Record page in the manner of Libris: result navigation, title block, details, libraries, linked data. */
+.result-nav { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 12px; margin-top: 16px; }
+.result-nav .pos { color: var(--ink-2); font-size: 14px; }
+.result-nav .pn { display: inline-flex; gap: 8px; margin-inline-start: auto; }
+.work-intro .kicker { font-size: 13px; color: var(--ink-3); margin-bottom: 6px; }
+.byline .people { line-height: 1.8; }
+.byline .role, .dl .role { color: var(--ink-3); font-size: 14px; }
+.pubfacts { margin-top: 16px; color: var(--ink-2); font-size: 15px; display: grid; gap: 4px; }
+.inline-link { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.holdings-cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 20px; }
+.holdings-cta a { text-decoration: none; display: inline-flex; align-items: center; }
+.terms { display: grid; gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--hair); }
+.terms > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.terms .lbl, .linked .lbl { color: var(--ink-3); font-size: 13px; min-width: 64px; }
+.muted { color: var(--ink-2); font-size: 14px; margin: 0 0 8px; }
+.libraries { display: grid; gap: 18px; }
+.lib-name { font-weight: 700; font-size: 16px; }
+.lib-name .n { font-weight: 400; color: var(--ink-3); font-size: 13px; margin-inline-start: 8px; }
+.linked .perma { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; margin-bottom: 10px; }
+.linked .perma a { overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: 13px; color: var(--ink); }
+.linked .dl-links { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; margin-bottom: 12px; }
+.linked .dl-links a { color: var(--ink); font-size: 14px; }
+.linked .dl-links .inline-link { font-size: 14px; }
+.linked .muted a { color: var(--ink); }
+.byline .people { display: block; }
+.byline .people > button, .byline .people > span { display: inline; }
