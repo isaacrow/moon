@@ -78,7 +78,7 @@ import {
 } from "../../services/w3cJsonLdBuilder";
 
 // ===== APP UTILS =====
-import { saveRecord, getAllRecordsLocal, getRecordById, RecordConflictError, toServerDocument } from "../utils/recordStorageBackend";
+import { saveRecord, getAllRecordsLocal, getRecordById, RecordConflictError, toServerDocument, checkDuplicates } from "../utils/recordStorageBackend";
 import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils/recordEditing";
 import { EditingWarning } from "./EditingWarning";
 import { RecordCommentsContext, useRecordComments } from "./FieldComments";
@@ -457,6 +457,8 @@ export default function WolfMoon({
   // never overwritten silently; the server answers with a conflict instead.
   const baseVersionRef = useRef<number | undefined>((initialRecord?.metadata as any)?.serverVersion);
   const [saveConflict, setSaveConflict] = useState<(SaveConflict & { myDocument: any }) | null>(null);
+  // Possible duplicates the cataloger already chose to save anyway, so later saves don't ask again.
+  const acceptedDuplicatesRef = useRef<Set<string>>(new Set());
   const [otherEditors, setOtherEditors] = useState<ActiveEditor[]>([]);
   // Comments on this record's fields (review v2); none until the record has been saved.
   const recordComments = useRecordComments(storageId);
@@ -1399,6 +1401,24 @@ export default function WolfMoon({
         },
       };
       // The server decides the final status from the signed-in user's session.
+      // Before a duplicate goes in: is this book already catalogued (same ISBN, LCCN or title)?
+      if (overwriteVersion === undefined) {
+        const duplicates = (await checkDuplicates(record)).filter((d) => !acceptedDuplicatesRef.current.has(d.id));
+        if (duplicates.length) {
+          const why = (r: string) => (language === "ar"
+            ? ({ isbn: "نفس ردمك ISBN", lccn: "نفس رقم LCCN", title: "نفس العنوان" } as Record<string, string>)[r]
+            : ({ isbn: "same ISBN", lccn: "same LCCN", title: "same title" } as Record<string, string>)[r]) || r;
+          const list = duplicates.slice(0, 5).map((d) => `• ${d.title} — ${d.reasons.map(why).join(", ")}${d.cataloger ? ` (${d.cataloger})` : ""}`).join("\n");
+          const ok = window.confirm(language === "ar"
+            ? `قد تكون هذه المادة مفهرسة من قبل:\n\n${list}\n\nهل تريد الحفظ على أي حال؟`
+            : `This may already be catalogued:\n\n${list}\n\nSave anyway?`);
+          if (!ok) {
+            setSaveStatus("unsaved");
+            return;
+          }
+          duplicates.forEach((d) => acceptedDuplicatesRef.current.add(d.id));
+        }
+      }
       let saved;
       try {
         saved = await saveRecord(record, username || "Anonymous", { baseVersion: overwriteVersion ?? baseVersionRef.current });

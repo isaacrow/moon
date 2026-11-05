@@ -427,3 +427,18 @@ export async function resolveComment(recordId: string, id: number, by: string, r
   if (error) throw new Error(`[comments] resolve ${id} failed: ${error.message}`);
   return data as number;
 }
+
+export interface PossibleDuplicate {
+  id: string;
+  title: string;
+  status: string;
+  cataloger?: string;
+  reasons: Array<"isbn" | "lccn" | "title">;
+}
+
+/** Other records that look like the same book as `document` (same ISBN, LCCN or title). */
+export async function findDuplicates(id: string | null, document: any): Promise<PossibleDuplicate[]> {
+  const { data, error } = await sb().rpc("moon_find_duplicates", { p_id: id, p_doc: document });
+  if (error) throw new Error(`[records] duplicate check failed: ${error.message}`);
+  return data || [];
+}
