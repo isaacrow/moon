@@ -74,3 +74,41 @@ export async function toTurtle(document: any): Promise<string> {
   return await new Promise<string>((resolve, reject) =>
     writer.end((err: Error | null, out: string) => (err ? reject(err) : resolve(out))));
 }
+
+const AUTHORITY_CONTEXT: Record<string, string> = {
+  ...CONTEXT,
+  skos: "http://www.w3.org/2004/02/skos/core#",
+  owl: "http://www.w3.org/2002/07/owl#",
+};
+
+/**
+ * A local authority entry as linked data: the thing itself (bf:Person, bf:Organization, bf:Place or
+ * bf:Topic) with its preferred and variant names, owl:sameAs links to LC / VIAF / Wikidata, and dates.
+ */
+export function authorityDocument(a: {
+  id: string; kind: string; label: string; variants: string[]; sameAs: string[]; note?: string | null; data?: any;
+}): any {
+  const uri = `${BASE_URI}/${a.kind}/${a.id}`;
+  const agentType = String(a.data?.agentType || "").toLowerCase();
+  const type = a.kind === "place" ? "bf:Place" : a.kind === "topic" ? "bf:Topic"
+    : agentType === "organization" ? "bf:Organization" : agentType === "family" ? "bf:Family" : "bf:Person";
+  const node: any = { "@id": uri, "@type": [type], "rdfs:label": a.label, "skos:prefLabel": a.label };
+  if (a.variants.length) node["skos:altLabel"] = a.variants;
+  if (a.sameAs.length) node["owl:sameAs"] = a.sameAs.map((s) => ({ "@id": s }));
+  if (a.note) node["skos:note"] = a.note;
+  if (a.data?.birthDate) node["madsrdf:birthDate"] = String(a.data.birthDate);
+  if (a.data?.deathDate) node["madsrdf:deathDate"] = String(a.data.deathDate);
+  return { "@context": AUTHORITY_CONTEXT, "@graph": [node] };
+}
+
+export async function authorityNTriples(doc: any): Promise<string> {
+  return await jsonld.toRDF(doc, { format: "application/n-quads" }) as string;
+}
+
+export async function authorityTurtle(doc: any): Promise<string> {
+  const quads = new Parser({ format: "N-Triples" }).parse(await authorityNTriples(doc));
+  const writer = new Writer({ prefixes: AUTHORITY_CONTEXT });
+  writer.addQuads(quads);
+  return await new Promise<string>((resolve, reject) =>
+    writer.end((err: Error | null, out: string) => (err ? reject(err) : resolve(out))));
+}

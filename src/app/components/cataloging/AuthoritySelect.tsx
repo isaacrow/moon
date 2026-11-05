@@ -459,7 +459,8 @@ export function AuthorityMultiSelect({
                   <span className={`px-2 py-0.5 rounded-full text-xs text-white ${
                     value.source === 'LOC' ? 'bg-blue-500' :
                     value.source === 'VIAF' ? 'bg-green-500' :
-                    value.source === 'Wikidata' ? 'bg-orange-500' : 'bg-gray-500'
+                    value.source === 'Wikidata' ? 'bg-orange-500' :
+                    value.source === 'Moon' ? 'bg-indigo-500' : 'bg-gray-500'
                   }`}>
                     {value.source}
                   </span>
