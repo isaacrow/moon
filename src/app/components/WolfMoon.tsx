@@ -2109,7 +2109,7 @@ export default function WolfMoon({
 
         {/* ===== MARC 21 VIEWER ===== */}
         {activeTab === "marc21-viewer" && (
-          <React.Suspense fallback={<LazyPanelFallback />}><Marc21Viewer workData={workData} instanceData={instanceData} theme={BM} isLegacy={isLegacy} /></React.Suspense>
+          <React.Suspense fallback={<LazyPanelFallback />}><Marc21Viewer workData={workData} instanceData={instanceData} theme={BM} isLegacy={isLegacy} w3cJsonLd={w3cJsonLd} recordId={recordId} /></React.Suspense>
         )}
 
         {/* ===== TRIPLES ===== */}
