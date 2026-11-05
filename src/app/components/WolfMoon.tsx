@@ -81,7 +81,7 @@ import { EditingWarning } from "./EditingWarning";
 import { RecordCoverPanel } from "./RecordCoverPanel";
 import { CopiesPanel } from "./CopiesPanel";
 import { ItemCopy, nodeToCopy, copyToNode } from "../../services/itemCopies";
-import { findIsbn } from "../utils/recordCovers";
+import { findIsbn, uploadCover } from "../utils/recordCovers";
 import { RecordCommentsContext, useRecordComments } from "./FieldComments";
 import type { SaveConflict } from "./SaveConflictDialog";
 
@@ -273,6 +273,10 @@ export default function WolfMoon({
   // ===== ACTIVE TAB =====
   const [activeTab, setActiveTab] = useState<OutputTab>("editor");
   const [coverUrl, setCoverUrl] = useState<string | undefined>((initialRecord?.metadata as any)?.coverUrl);
+  // A cover picked on a new record before its first save; uploaded by handleSave once it has an id.
+  const [pendingCover, setPendingCover] = useState<File | null>(null);
+  const pendingCoverRef = useRef<File | null>(null);
+  pendingCoverRef.current = pendingCover;
   // The record's copies (holdings), saved as bf:Item nodes of the Instance.
   const [copies, setCopies] = useState<ItemCopy[]>(() => (initialRecord?.copies || []).map(nodeToCopy));
 
@@ -1295,6 +1299,16 @@ export default function WolfMoon({
       setStorageId(saved.id);
       baseVersionRef.current = saved.version;
       setSaveConflict(null);
+      // A cover chosen before the first save goes up now that the record exists.
+      const pending = pendingCoverRef.current;
+      if (pending) {
+        pendingCoverRef.current = null;
+        setPendingCover(null);
+        uploadCover(saved.id, pending).then((res) => {
+          if (res.ok) setCoverUrl(res.coverUrl);
+          else toast.error(language === "ar" ? "حُفظت التسجيلة لكن تعذّر رفع الغلاف" : "Saved, but the cover could not be uploaded", { description: res.error });
+        });
+      }
       clearDraft();
       const initialStatus = saved.status || "complete";
       setSaveStatus("saved");
@@ -1786,7 +1800,8 @@ export default function WolfMoon({
 
         {activeTab === "editor" && (
           <div className="mb-4">
-            <RecordCoverPanel recordId={storageId} coverUrl={coverUrl} isbn={findIsbn(instanceData)} language={language} onChange={setCoverUrl} />
+            <RecordCoverPanel recordId={storageId} coverUrl={coverUrl} isbn={findIsbn(instanceData)} language={language} onChange={setCoverUrl}
+              pendingCover={pendingCover} onPendingCoverChange={setPendingCover} />
             <div className="mt-3">
               <CopiesPanel copies={copies} instanceId={uriSet.instance} language={language}
                 onChange={(next) => { setCopies(next); setSaveStatus("unsaved"); }} />

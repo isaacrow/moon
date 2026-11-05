@@ -5,6 +5,7 @@
  * results that are not there. The choice lives in the address (?f_lang=…&sort=…), so a filtered list
  * can be shared or bookmarked.
  */
+import { t, opacLang } from './i18n';
 
 export type FacetKey = 'avail' | 'category' | 'format' | 'lang' | 'library' | 'decade' | 'author' | 'subject' | 'kind';
 export type Selection = Partial<Record<FacetKey, string[]>>;
@@ -28,25 +29,25 @@ export interface FacetWork {
   expressionOfHub?: { uri: string; label: string };
 }
 
-export const FACETS: Array<{ key: FacetKey; title: string }> = [
-  { key: 'avail', title: 'الإتاحة' },
-  { key: 'category', title: 'الفئة' },
-  { key: 'format', title: 'الشكل' },
-  { key: 'lang', title: 'اللغة' },
-  { key: 'library', title: 'المكتبة' },
-  { key: 'decade', title: 'سنة النشر' },
-  { key: 'author', title: 'المؤلف والمساهمون' },
-  { key: 'subject', title: 'الموضوع' },
-  { key: 'kind', title: 'نوع العمل' },
+export const FACETS: Array<{ key: FacetKey; title: string; en: string }> = [
+  { key: 'avail', title: 'الإتاحة', en: 'Availability' },
+  { key: 'category', title: 'الفئة', en: 'Category' },
+  { key: 'format', title: 'الشكل', en: 'Format' },
+  { key: 'lang', title: 'اللغة', en: 'Language' },
+  { key: 'library', title: 'المكتبة', en: 'Library' },
+  { key: 'decade', title: 'سنة النشر', en: 'Year published' },
+  { key: 'author', title: 'المؤلف والمساهمون', en: 'Authors and contributors' },
+  { key: 'subject', title: 'الموضوع', en: 'Subject' },
+  { key: 'kind', title: 'نوع العمل', en: 'Kind of work' },
 ];
 
-export const SORTS: Array<{ v: SortKey; l: string }> = [
-  { v: 'relevance', l: 'الأكثر صلة' },
-  { v: 'title-asc', l: 'العنوان (أ–ي)' },
-  { v: 'title-desc', l: 'العنوان (ي–أ)' },
-  { v: 'date-desc', l: 'الأحدث نشراً' },
-  { v: 'date-asc', l: 'الأقدم نشراً' },
-  { v: 'copies', l: 'الأكثر نسخاً' },
+export const SORTS: Array<{ v: SortKey; l: string; en: string }> = [
+  { v: 'relevance', l: 'الأكثر صلة', en: 'Most relevant' },
+  { v: 'title-asc', l: 'العنوان (أ–ي)', en: 'Title (A–Z)' },
+  { v: 'title-desc', l: 'العنوان (ي–أ)', en: 'Title (Z–A)' },
+  { v: 'date-desc', l: 'الأحدث نشراً', en: 'Newest first' },
+  { v: 'date-asc', l: 'الأقدم نشراً', en: 'Oldest first' },
+  { v: 'copies', l: 'الأكثر نسخاً', en: 'Most copies' },
 ];
 
 const UNKNOWN = /^(unknown|anonymous|غير معروف|مؤلف غير معروف|مجهول)$/i;
@@ -56,6 +57,23 @@ const LANGUAGE_NAMES: Record<string, string> = {
   tur: 'التركية', ota: 'التركية العثمانية', urd: 'الأردية', kur: 'الكردية', heb: 'العبرية', syr: 'السريانية', spa: 'الإسبانية',
   ita: 'الإيطالية', rus: 'الروسية', lat: 'اللاتينية', grc: 'اليونانية القديمة', gre: 'اليونانية', mul: 'متعددة اللغات',
 };
+
+const LANGUAGE_NAMES_EN: Record<string, string> = {
+  'العربية': 'Arabic', 'الإنجليزية': 'English', 'الفارسية': 'Persian', 'الفرنسية': 'French', 'الألمانية': 'German',
+  'التركية': 'Turkish', 'التركية العثمانية': 'Ottoman Turkish', 'الأردية': 'Urdu', 'الكردية': 'Kurdish', 'العبرية': 'Hebrew',
+  'السريانية': 'Syriac', 'الإسبانية': 'Spanish', 'الإيطالية': 'Italian', 'الروسية': 'Russian', 'اللاتينية': 'Latin',
+  'اليونانية القديمة': 'Ancient Greek', 'اليونانية': 'Greek', 'متعددة اللغات': 'Multiple languages',
+};
+
+const FORMATS_EN: Record<string, string> = {
+  'مصدر إلكتروني': 'Electronic resource', 'تسجيل صوتي': 'Sound recording', 'فيديو': 'Video', 'مصغّرات': 'Microform',
+  'مخطوط': 'Manuscript', 'خريطة': 'Map', 'كتاب مطبوع': 'Printed book',
+};
+
+/** A language name (as languageName gives it) in the reader's language. */
+export function languageDisplay(name: string): string {
+  return opacLang() === 'en' ? LANGUAGE_NAMES_EN[name] || name : name;
+}
 
 /** A language as readers know it: an LC language URI or code (…/languages/eng, ara) becomes its Arabic name. */
 export function languageName(label?: string, code?: string): string {
@@ -138,9 +156,11 @@ export function valuesOf(w: FacetWork, key: FacetKey): string[] {
 }
 
 export function valueLabel(key: FacetKey, value: string): string {
-  if (key === 'avail') return value === 'online' ? 'متاح على الإنترنت' : value === 'physical' ? 'نسخة ورقية في مكتبة' : value;
+  if (key === 'avail') return value === 'online' ? t('متاح على الإنترنت', 'Available online') : value === 'physical' ? t('نسخة ورقية في مكتبة', 'Print copy in a library') : value;
   if (key === 'decade') return `${value}–${Number(value) + 9}`;
-  if (key === 'kind') return value === 'translation' ? 'ترجمة' : value === 'hub' ? 'له طبعات وترجمات أخرى' : value;
+  if (key === 'kind') return value === 'translation' ? t('ترجمة', 'Translation') : value === 'hub' ? t('له طبعات وترجمات أخرى', 'Has other editions and translations') : value;
+  if (key === 'lang') return languageDisplay(value);
+  if (key === 'format') return opacLang() === 'en' ? FORMATS_EN[value] || value : value;
   return value;
 }
 
@@ -170,7 +190,7 @@ export function facetCounts(works: FacetWork[], sel: Selection): Record<FacetKey
     const list = [...counts].map(([value, count]) => ({ value, label: valueLabel(key, value), count }));
     list.sort(key === 'decade'
       ? (a, b) => Number(b.value) - Number(a.value)
-      : (a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ar'));
+      : (a, b) => b.count - a.count || a.label.localeCompare(b.label, opacLang()));
     out[key] = list;
   }
   return out;

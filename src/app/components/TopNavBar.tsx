@@ -220,13 +220,13 @@ export function TopNavBar({
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
               className="flex items-center gap-2 px-5 py-2 text-xs font-bold text-white cursor-pointer shadow-lg transition-all"
+              // A solid blue pill: the white glass version was unreadable on the light page.
               style={{
                 borderRadius: '120px',
-                background: 'rgba(255, 255, 255, 0.21)',
-                backdropFilter: 'blur(9px) saturate(1.5) brightness(1.1)',
-                WebkitBackdropFilter: 'blur(36px) saturate(1.8) brightness(1.15) contrast(1.05)',
-                boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.15), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5), inset 0 0 12px rgba(255, 255, 255, 0.2), 0 8px 32px rgba(0, 0, 0, 0.2)',
-                border: '1px solid rgba(255, 255, 255, 0.4)',
+                background: 'linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%)',
+                boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -2px 6px rgba(30, 58, 138, 0.45), 0 6px 18px rgba(29, 78, 216, 0.35)',
+                border: '1px solid rgba(147, 197, 253, 0.7)',
+                textShadow: '0 1px 1px rgba(30, 58, 138, 0.5)',
               }}
             >
               <FilePlus className="h-3.5 w-3.5 text-white" />

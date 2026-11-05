@@ -51,6 +51,11 @@ export async function uploadCover(recordId: string, file: File): Promise<CoverRe
   return put(recordId, { image });
 }
 
+/** Stores a picture that is already a small JPEG/PNG/WebP data URL (e.g. one drawn on a canvas). */
+export function uploadCoverImage(recordId: string, dataUrl: string): Promise<CoverResult> {
+  return put(recordId, { image: dataUrl });
+}
+
 /** Takes the cover from Open Library or Google Books by ISBN. */
 export function coverFromIsbn(recordId: string, isbn: string): Promise<CoverResult> {
   return put(recordId, { isbn });
