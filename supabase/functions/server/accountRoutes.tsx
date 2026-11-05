@@ -277,6 +277,39 @@ accountRoutes.get("/api/accounts/me", async (c) => {
   return account ? c.json({ success: true, user: toPublic(account) }) : c.json({ success: false }, 401);
 });
 
+// ─── Profile pictures ────────────────────────────────────────
+// Stored as a small image the browser has already shrunk (128×128), under moon:avatar:<username>.
+// Read with fetch (the function needs its Authorization header, which an <img> cannot send).
+const AVATAR_PREFIX = "moon:avatar:";
+const AVATAR_DATA_URI = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/;
+const AVATAR_MAX_CHARS = 100_000; // about 75 KB of image
+
+accountRoutes.get("/api/accounts/avatar/:username", async (c) => {
+  const username = c.req.param("username").trim().toLowerCase();
+  const stored = parse<{ image: string; updatedAt: string }>(await kv.get(AVATAR_PREFIX + username));
+  c.header("Cache-Control", "public, max-age=300");
+  return c.json({ success: true, image: stored?.image || null, updatedAt: stored?.updatedAt || null });
+});
+
+accountRoutes.put("/api/accounts/me/avatar", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ success: false, message: "Sign in to change your photo." }, 401);
+  const { image } = await c.req.json().catch(() => ({ image: null }));
+  if (typeof image !== "string" || image.length > AVATAR_MAX_CHARS || !AVATAR_DATA_URI.test(image)) {
+    return c.json({ success: false, message: "The photo must be a PNG, JPEG or WebP image under 75 KB." }, 400);
+  }
+  const updatedAt = new Date().toISOString();
+  await kv.set(AVATAR_PREFIX + session.username.toLowerCase(), { image, updatedAt });
+  return c.json({ success: true, updatedAt });
+});
+
+accountRoutes.delete("/api/accounts/me/avatar", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ success: false, message: "Sign in to change your photo." }, 401);
+  await kv.del(AVATAR_PREFIX + session.username.toLowerCase());
+  return c.json({ success: true });
+});
+
 accountRoutes.post("/api/accounts/logout", async (c) => {
   const token = c.req.header("X-Moon-Session");
   if (token && /^[0-9a-f]{64}$/.test(token)) await kv.del(SESSION_PREFIX + token).catch(() => {});
