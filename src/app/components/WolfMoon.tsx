@@ -87,6 +87,7 @@ import type { SaveConflict } from "./SaveConflictDialog";
 // ===== COMPONENTS =====
 import { OntologyField } from "./ontology/OntologyField";
 import { OntologyDrivenFormRenderer, PrefilledDefaultsContext } from "./cataloging/OntologyDrivenFormRenderer";
+import { IsbnAutofillBar } from "./cataloging/IsbnAutofillBar";
 import { ValidationPanel, validateGraph, ValidationResult } from "./cataloging/ValidationPanel";
 import { AuthoritySearchDialog } from "./AuthoritySearchDialog";
 import { MarcView } from "./RecordView/MarcView";
@@ -170,7 +171,8 @@ interface WolfMoonProps {
   initialInstance?: any;
   // The full saved record being edited: its Item, Expression, AdminMetadata and storage id.
   initialRecord?: BIBFRAMERecord | null;
-  onRecordSaved?: () => void;
+  /** Called after a save with the record's storage id. */
+  onRecordSaved?: (storageId: string) => void;
   // Reopens the editor on an unsaved draft (the parent remounts with it as the initial record).
   onRestoreDraft?: (draft: BIBFRAMERecord) => void;
   // Reopens the editor on the saved record as the server now has it (after a revert).
@@ -1111,6 +1113,24 @@ export default function WolfMoon({
       const data: ISBNData = value._isbnLookupData;
       const cleanValue = { ...value };
       delete cleanValue._isbnLookupData;
+      fillFromIsbnData(data, [cleanValue.isbn], { [propertyName]: cleanValue, [bfKey]: cleanValue, [unprefixed]: cleanValue });
+      return;
+    }
+    setInstanceData((prev: any) => ({
+      ...prev,
+      [propertyName]: value,
+      [bfKey]: value,
+      [unprefixed]: value,
+    }));
+    setSaveStatus("unsaved");
+  }, [language, uriSet, workData, instanceData]);
+
+  /**
+   * Fills the empty Work/Instance fields from an ISBN lookup (Standard fields and Category Cards both use
+   * this). Anything the cataloger already entered is kept. `instanceExtra` is merged into the Instance too.
+   */
+  const fillFromIsbnData = useCallback((data: ISBNData, enteredIsbns: (string | undefined)[], instanceExtra: any = {}) => {
+    {
       const ar = language === "ar";
       // Auto-fill only fills what is empty: anything the cataloger already entered is kept.
       const filled: string[] = [];
@@ -1164,9 +1184,7 @@ export default function WolfMoon({
 
       setInstanceData((prev: any) => ({
         ...prev,
-        [propertyName]: cleanValue,
-        [bfKey]: cleanValue,
-        [unprefixed]: cleanValue,
+        ...instanceExtra,
         ...instancePatch,
       }));
       if (Object.keys(workPatch).length) setWorkData((prev: any) => ({ ...prev, ...workPatch }));
@@ -1174,7 +1192,7 @@ export default function WolfMoon({
       setSaveStatus("unsaved");
 
       // Like Marva's copy-cataloging check: warn when another saved record already has this ISBN.
-      const isbns = [data.isbn13, data.isbn10, cleanValue.isbn].filter(Boolean) as string[];
+      const isbns = [data.isbn13, data.isbn10, ...enteredIsbns].filter(Boolean) as string[];
       const duplicate = getAllRecordsLocal().find(r =>
         r.record?.work?.["@id"] !== uriSet.work &&
         isbns.some(isbn => JSON.stringify(r.record?.instance || {}).replace(/[-\s]/g, "").includes(isbn))
@@ -1189,16 +1207,21 @@ export default function WolfMoon({
           { description: ar ? "تحقق من أنك لا تفهرس الكتاب مرتين." : "Check that you are not cataloging the same book twice.", duration: 10000 }
         );
       }, 0);
-      return;
     }
-    setInstanceData((prev: any) => ({
-      ...prev,
-      [propertyName]: value,
-      [bfKey]: value,
-      [unprefixed]: value,
-    }));
-    setSaveStatus("unsaved");
   }, [language, uriSet, workData, instanceData]);
+
+  /** Category Cards ISBN auto-fill: adds the ISBN as a bf:Isbn identifier, then fills the empty fields. */
+  const handleCategoryIsbn = useCallback((isbn: string, data: ISBNData | null) => {
+    const current = instanceData["bf:identifiedBy"];
+    const list = Array.isArray(current) ? current : current ? [current] : [];
+    const digits = (v: any) => String(v ?? "").replace(/[^0-9Xx]/g, "");
+    const has = list.some((id: any) => [id?.value, id?.isbn, id?.["rdf:value"]].some(v => digits(v) === isbn));
+    const identifiers = has ? list : [...list, { type: "Isbn", value: isbn }];
+    graphStore.setProperty(uriSet.instance, "bf:identifiedBy", identifiers);
+    const extra = { "bf:identifiedBy": identifiers, identifiedBy: identifiers };
+    if (data) fillFromIsbnData(data, [isbn], extra);
+    else { setInstanceData((prev: any) => ({ ...prev, ...extra })); setSaveStatus("unsaved"); }
+  }, [instanceData, graphStore, uriSet, fillFromIsbnData]);
 
   // ============================== RELATIONSHIPS ==============================
 
@@ -1454,7 +1477,7 @@ export default function WolfMoon({
       } else {
         toast.success(language === "ar" ? "تم حفظ التسجيلة واعتمادها في الفهرس العام!" : "Record saved and approved into catalog!", { description: title });
       }
-      if (onRecordSaved) onRecordSaved();
+      if (onRecordSaved) onRecordSaved(saved.id);
     } catch (error) {
       console.error("Save error:", error);
       setSaveStatus("error");
@@ -2175,8 +2198,11 @@ export default function WolfMoon({
                 requiredCount={instanceRequiredProps.length} groupCount={templateInstanceGroups.length}>
                 
                 {(fieldViewMode === "both" || fieldViewMode === "categories") && (
-                  <OntologyDrivenFormRenderer entityType="Instance" nodeUri={uriSet.instance} graphStore={graphStore} data={instanceData} onChange={handlePropertyChange}
-                    hiddenFields={hiddenFields} onHideField={hideField} isLight={isLight} />
+                  <>
+                    <IsbnAutofillBar language={language} isLight={isLight} onResult={handleCategoryIsbn} />
+                    <OntologyDrivenFormRenderer entityType="Instance" nodeUri={uriSet.instance} graphStore={graphStore} data={instanceData} onChange={handlePropertyChange}
+                      hiddenFields={hiddenFields} onHideField={hideField} isLight={isLight} />
+                  </>
                 )}
                 {(fieldViewMode === "both" || fieldViewMode === "standard") && (
                   <div className={(fieldViewMode === "both" ? "mt-6 pt-4 " : "")} style={fieldViewMode === "both" ? { borderTop: `1px solid ${BM.cardBorder}` } : undefined}>

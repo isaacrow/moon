@@ -701,6 +701,15 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                         <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
                         <span>Pending Review</span>
                       </span>
+                    ) : record.status === 'needs-review' ? (
+                      <span
+                        className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold"
+                        style={{ borderRadius: '120px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#b91c1c' }}
+                        title="Returned by a reviewer: fix it and save again to resubmit"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5 text-red-600" />
+                        <span>Needs Changes</span>
+                      </span>
                     ) : (
                       <span
                         className="flex items-center gap-1.5 px-3.5 py-1 text-xs font-bold"

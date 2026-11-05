@@ -1,5 +1,6 @@
 import { defineConfig, Plugin } from 'vite'
 import path from 'path'
+import fs from 'fs'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
@@ -27,12 +28,42 @@ function figmaAssetPlugin(): Plugin {
   };
 }
 
+/**
+ * The app's screens have their own addresses (/dashboard/, /records/, ...; see VIEW_PATHS in App.tsx).
+ * GitHub Pages only serves files, so the build copies Moon Studio's page into each screen's folder,
+ * and the dev server answers those addresses with it too. Its asset links are relative (../assets/),
+ * which works from any folder at the same depth.
+ */
+const SCREEN_FOLDERS = ['dashboard', 'records', 'search', 'authors', 'activity'];
+function screenPagesPlugin(): Plugin {
+  return {
+    name: 'moon-screen-pages',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const [pathname, query] = (req.url || '').split('?');
+        const folder = pathname.replace(/^\/|\/$/g, '');
+        if (SCREEN_FOLDERS.includes(folder)) req.url = `/moon/index.html${query ? `?${query}` : ''}`;
+        next();
+      });
+    },
+    closeBundle() {
+      const page = path.resolve(__dirname, 'dist/moon/index.html');
+      if (!fs.existsSync(page)) return;
+      for (const folder of SCREEN_FOLDERS) {
+        fs.mkdirSync(path.resolve(__dirname, 'dist', folder), { recursive: true });
+        fs.copyFileSync(page, path.resolve(__dirname, 'dist', folder, 'index.html'));
+      }
+    },
+  };
+}
+
 export default defineConfig({
   base: './',
   plugins: [
     // The React and Tailwind plugins are both required for Make, even if
     // Tailwind is not being actively used – do not remove them
     figmaAssetPlugin(),
+    screenPagesPlugin(),
     react(),
     tailwindcss(),
   ],
