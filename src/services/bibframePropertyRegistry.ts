@@ -18,6 +18,8 @@ export type PropertyType =
 
 export type PropertyDomain = 'Work' | 'Expression' | 'Instance' | 'Item' | 'AdminMetadata';
 
+import { MONOGRAPH_PROFILE, profileRequired } from '../../supabase/functions/server/profiles.tsx';
+
 export interface BibframePropertyDefinition {
   uri: string;
   shortName: string;
@@ -896,6 +898,11 @@ export function getPropertyByName(shortName: string): BibframePropertyDefinition
  * Get required properties for domain
  */
 export function getRequiredPropertiesByDomain(domain: PropertyDomain): BibframePropertyDefinition[] {
+  // A Work's or an Instance's required fields are its profile's, the ones the publish gate checks.
+  if (domain === 'Work' || domain === 'Instance') {
+    const required = profileRequired(MONOGRAPH_PROFILE, domain);
+    return BIBFRAME_PROPERTY_REGISTRY.filter(prop => prop.domain.includes(domain) && required.has(prop.shortName));
+  }
   return BIBFRAME_PROPERTY_REGISTRY.filter(
     prop => prop.domain.includes(domain) && prop.required
   );

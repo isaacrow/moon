@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ðŸ§  BIBFRAME Ontology Registry - Single Source of Truth
  * Fully ontology-driven property definitions
  * No templates, no hardcoded fields - pure semantic modeling
@@ -36,6 +36,8 @@ export interface SHACLValidation {
   nodeKind?: 'IRI' | 'Literal' | 'BlankNode';
   classType?: string;
 }
+
+import { MONOGRAPH_PROFILE, profileRequired } from '../../supabase/functions/server/profiles.tsx';
 
 export interface OntologyProperty {
   uri: string;
@@ -1032,10 +1034,18 @@ export const ONTOLOGY_REGISTRY: Record<string, OntologyProperty> = {
  * ðŸ” Query Functions
  */
 
+// On a Work or an Instance, "required" is what the profile requires (the fields the server's publish gate
+// checks), so the form's red * and the gate never disagree. Other entities keep the registry's flag.
+const PROFILE_REQUIRED: Record<string, Set<string>> = {
+  Work: profileRequired(MONOGRAPH_PROFILE, 'Work'),
+  Instance: profileRequired(MONOGRAPH_PROFILE, 'Instance'),
+};
+
 export function getPropertiesByDomain(domain: string): OntologyProperty[] {
-  return Object.values(ONTOLOGY_REGISTRY).filter(prop => 
-    prop.domain.includes(domain)
-  );
+  const required = PROFILE_REQUIRED[domain];
+  return Object.values(ONTOLOGY_REGISTRY)
+    .filter(prop => prop.domain.includes(domain))
+    .map(prop => (required ? { ...prop, required: required.has(prop.shortName) } : prop));
 }
 
 export function getPropertiesByCategory(domain: string, category: string): OntologyProperty[] {
