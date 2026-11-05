@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>واجهة مون البرمجية — Moon API</title>
+<meta name="description" content="كيف تستعمل المكتبات والمطورون بيانات فهرس مون: العناوين الدائمة بصيغ BIBFRAME، والبحث، وملف الاستناد، وSPARQL، والتنزيل الكامل.">
+<link rel="icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1d1d1f;--ink-2:#4a4a4f;--ink-3:#6b6b70;--hair:rgba(0,0,0,.08);--bg-top:#f5f5f6;--bg-bottom:#c9c9cc;--glass-bg:rgba(255,255,255,.6);--code:#111318;--code-ink:#e8e8ea}
+*{box-sizing:border-box}
+body{margin:0;font-family:'IBM Plex Sans Arabic',system-ui,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:var(--ink);background:linear-gradient(180deg,var(--bg-top) 0%,#e4e4e6 38%,var(--bg-bottom) 100%) fixed;background-color:var(--bg-top)}
+a{color:var(--ink)}
+.glass{background:var(--glass-bg);border-radius:16px;box-shadow:0 4px 30px rgba(0,0,0,.1);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid #fff}
+.wrap{max-width:1000px;margin:0 auto;padding:0 16px}
+header.bar{position:sticky;top:12px;z-index:5;margin:12px auto 0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px}
+header.bar img{height:36px;width:auto;display:block}
+header.bar nav{display:flex;gap:4px;flex-wrap:wrap}
+header.bar nav a{text-decoration:none;color:var(--ink-2);padding:6px 10px;border-radius:9px;font-size:14px}
+header.bar nav a:hover{background:rgba(255,255,255,.8);color:var(--ink)}
+h1{font-family:'Noto Naskh Arabic',serif;font-size:clamp(32px,5vw,48px);line-height:1.25;margin:40px 0 8px}
+.lede{color:var(--ink-2);font-size:18px;margin:0 0 24px;max-width:62ch}
+section.card{padding:24px 26px;margin:18px 0}
+section.card h2{margin:0 0 6px;font-size:22px}
+section.card h3{margin:20px 0 6px;font-size:16px}
+p,li{color:var(--ink-2)}
+code{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;font-size:.88em;background:rgba(0,0,0,.06);padding:1px 6px;border-radius:6px;direction:ltr;unicode-bidi:isolate}
+pre{direction:ltr;text-align:left;background:var(--code);color:var(--code-ink);padding:14px 16px;border-radius:12px;overflow-x:auto;font-size:13px;line-height:1.6;margin:10px 0}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}
+th,td{text-align:start;padding:8px 10px;border-top:1px solid var(--hair);vertical-align:top}
+th{color:var(--ink-3);font-weight:600}
+td code{white-space:nowrap}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 8px}
+.toc a{text-decoration:none;background:rgba(255,255,255,.6);border:1px solid #fff;border-radius:999px;padding:5px 12px;font-size:14px}
+.note{border-inline-start:3px solid var(--ink);padding:4px 12px;margin:12px 0;color:var(--ink-2)}
+footer{margin:32px 0 40px;padding:16px 20px;color:var(--ink-2);font-size:14px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+@media (max-width:640px){section.card{padding:18px 16px} td code{white-space:normal;word-break:break-all} header.bar nav{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar glass">
+    <a href="/opac.html" aria-label="فهرس مون"><img src="/opac-logo.png" alt="مون" width="230" height="120"></a>
+    <nav aria-label="أقسام الصفحة">
+      <a href="#uris">العناوين</a><a href="#search">البحث</a><a href="#authorities">الاستناد</a><a href="#sparql">SPARQL</a><a href="#dump">التنزيل</a>
+    </nav>
+  </header>
+
+  <h1>واجهة مون البرمجية</h1>
+  <p class="lede">كل كتاب منشور في فهرس مون، وكل شخص وموضوع ومحور، بيانات <b>BIBFRAME</b> مترابطة لها عنوان دائم على <code>mooon.site</code>. هذه الصفحة تشرح كيف تقرؤها المكتبات والباحثون والبرامج. لا تحتاج إلى مفتاح أو تسجيل دخول: كل ما هنا عام، وتُعرض فيه النسخ المنشورة وحدها.</p>
+  <div class="toc">
+    <a href="#uris">العناوين الدائمة</a><a href="#list">قائمة السجلات</a><a href="#search">البحث</a><a href="#authorities">ملف الاستناد</a><a href="#sparql">SPARQL</a><a href="#dump">التنزيل الكامل</a><a href="#web">محركات البحث</a><a href="#notes">ملاحظات</a>
+  </div>
+
+  <section class="card glass" id="uris">
+    <h2>العناوين الدائمة (Resolvable URIs)</h2>
+    <p>لكل كيان عنوان لا يتغير. يفتحه المتصفح على صفحة الكتاب في الفهرس، وتأخذ منه البرامج البيانات بالصيغة التي تطلبها، إما بلاحقة في العنوان أو بترويسة <code>Accept</code> (content negotiation).</p>
+    <table>
+      <tr><th>الكيان</th><th>العنوان</th></tr>
+      <tr><td>العمل (Work)</td><td><code>https://mooon.site/resource/work/{id}</code></td></tr>
+      <tr><td>الطبعة (Instance)</td><td><code>https://mooon.site/resource/instance/{id}</code></td></tr>
+      <tr><td>النسخة (Item)</td><td><code>https://mooon.site/resource/item/{id}</code></td></tr>
+      <tr><td>شخص أو هيئة</td><td><code>https://mooon.site/resource/agent/{id}</code></td></tr>
+      <tr><td>مكان / موضوع</td><td><code>https://mooon.site/resource/place/{id}</code> · <code>/topic/{id}</code></td></tr>
+      <tr><td>محور (Hub)</td><td><code>https://mooon.site/resource/hub/{id}</code></td></tr>
+    </table>
+    <table>
+      <tr><th>الصيغة</th><th>اللاحقة</th><th>Accept</th></tr>
+      <tr><td>صفحة ويب (تحويل 303 إلى الفهرس)</td><td>—</td><td><code>text/html</code></td></tr>
+      <tr><td>JSON-LD</td><td><code>.jsonld</code></td><td><code>application/ld+json</code></td></tr>
+      <tr><td>Turtle</td><td><code>.ttl</code></td><td><code>text/turtle</code></td></tr>
+      <tr><td>N-Triples</td><td><code>.nt</code></td><td><code>application/n-triples</code></td></tr>
+    </table>
+<pre><code>curl https://mooon.site/resource/work/record-1789649846891.ttl
+curl -H "Accept: application/ld+json" https://mooon.site/resource/work/record-1789649846891</code></pre>
+    <p class="note">السجل المدمج في ملف الاستناد يحوّل بـ<code>301</code> إلى السجل الذي دُمج فيه. والعنوان الذي لا يقابله سجل منشور يعيد <code>404</code>.</p>
+  </section>
+
+  <section class="card glass" id="list">
+    <h2>قائمة السجلات</h2>
+    <p>كل السجلات المنشورة مع عناوين العمل والطبعة: صفحة للقراءة، أو JSON للبرامج.</p>
+<pre><code>https://mooon.site/resource/
+https://mooon.site/resource/?format=json</code></pre>
+<pre><code>{ "count": 21,
+  "records": [ { "id": "record-…", "title": "…", "work": "https://mooon.site/resource/work/…",
+                 "instance": "https://mooon.site/resource/instance/…", "saved": "2026-11-04T…" } ] }</code></pre>
+  </section>
+
+  <section class="card glass" id="search">
+    <h2>البحث</h2>
+    <p>بحث في الفهرس المنشور يفهم العربية: يساوي بين أ وإ وآ وا، وبين ة وه، وبين ى وي، ويتجاهل التشكيل. يجب أن تظهر كل كلمات البحث في السجل، بأي ترتيب.</p>
+<pre><code>GET https://mooon.site/resource/search?q=بغداد&amp;limit=20&amp;offset=0</code></pre>
+    <table>
+      <tr><th>المعامل</th><th>المعنى</th></tr>
+      <tr><td><code>q</code></td><td>كلمات البحث (حتى 200 حرف)</td></tr>
+      <tr><td><code>language</code></td><td>رمز اللغة، مثل <code>ara</code></td></tr>
+      <tr><td><code>limit</code> · <code>offset</code></td><td>حجم الصفحة (حتى 200، والافتراضي 50) وموضع البدء</td></tr>
+    </table>
+<pre><code>{ "total": 3,
+  "facets": { "language": { "ara": 2, "eng": 1 }, … },
+  "records": [ { "id": "record-…", "title": "…", "saved": "…", "document": { "@graph": [ … ] } } ] }</code></pre>
+    <p>يحمل كل سجل في <code>document</code> رسمه البياني BIBFRAME كاملاً بصيغة JSON-LD.</p>
+  </section>
+
+  <section class="card glass" id="authorities">
+    <h2>ملف الاستناد</h2>
+    <p>ملف مون الاستنادي يضم الأشخاص والهيئات والأماكن والموضوعات والمحاور. لكل منها عنوان دائم، مع أشكال الاسم الأخرى، وروابط <code>owl:sameAs</code> إلى مكتبة الكونغرس وVIAF وويكي بيانات.</p>
+<pre><code>GET https://mooon.site/resource/authorities?q=الوردي&amp;kind=agent&amp;limit=10</code></pre>
+    <table>
+      <tr><th>المعامل</th><th>المعنى</th></tr>
+      <tr><td><code>q</code></td><td>الاسم أو جزء منه (يطابق الأشكال الأخرى أيضاً)</td></tr>
+      <tr><td><code>kind</code></td><td><code>agent</code> · <code>place</code> · <code>topic</code> · <code>hub</code></td></tr>
+    </table>
+<pre><code>{ "authorities": [ { "id": "ali-al-wardi-3f9a1c2e", "kind": "agent", "label": "الوردي، علي",
+    "variants": ["Wardi, Ali al-"], "sameAs": ["https://viaf.org/viaf/…"],
+    "uri": "https://mooon.site/resource/agent/ali-al-wardi-3f9a1c2e" } ] }</code></pre>
+  </section>
+
+  <section class="card glass" id="sparql">
+    <h2>SPARQL</h2>
+    <p>نقطة SPARQL 1.1 للقراءة فقط، تعمل على كل السجلات المنشورة. فيها <code>SELECT</code> و<code>ASK</code> و<code>CONSTRUCT</code> و<code>DESCRIBE</code>، أما أوامر التعديل فمرفوضة. وفي المتصفح صفحة لتجربة الاستعلامات: <a href="/resource/sparql">mooon.site/resource/sparql</a>.</p>
+<pre><code>curl -G https://mooon.site/resource/sparql \
+  --data-urlencode 'query=PREFIX bf: &lt;http://id.loc.gov/ontologies/bibframe/&gt;
+SELECT ?work ?title WHERE { ?work a bf:Work ; bf:title/bf:mainTitle ?title } LIMIT 25'
+
+curl -X POST https://mooon.site/resource/sparql \
+  -H "Content-Type: application/sparql-query" -H "Accept: text/csv" \
+  --data 'ASK { ?s ?p ?o }'</code></pre>
+    <table>
+      <tr><th>نوع الاستعلام</th><th>الصيغ (<code>Accept</code> أو <code>&amp;format=</code>)</th></tr>
+      <tr><td>SELECT · ASK</td><td>SPARQL JSON (الافتراضي) · XML · CSV · TSV — <code>json</code> <code>xml</code> <code>csv</code> <code>tsv</code></td></tr>
+      <tr><td>CONSTRUCT · DESCRIBE</td><td>Turtle (الافتراضي) · N-Triples · RDF/XML — <code>ttl</code> <code>nt</code> <code>rdfxml</code></td></tr>
+    </table>
+  </section>
+
+  <section class="card glass" id="dump">
+    <h2>التنزيل الكامل</h2>
+    <p>كل السجلات المنشورة في ملف واحد، محدَّث دائماً ومخزَّن لساعة. العقد الفارغة (blank nodes) لكل سجل تحمل أسماء خاصة به، فلا تختلط بين السجلات.</p>
+<pre><code>https://mooon.site/resource/dump.jsonld
+https://mooon.site/resource/dump.nt</code></pre>
+    <p>ويمكن تنزيل كل سجل بصيغ MARC 21 (ISO 2709) وMARCXML و<code>.mrk</code> من صفحته في الفهرس.</p>
+  </section>
+
+  <section class="card glass" id="web">
+    <h2>محركات البحث</h2>
+    <p>صفحة كل كتاب في الفهرس تحمل وصفاً بصيغة <code>schema.org/Book</code> بلغة JSON-LD، ورابطاً قانونياً (canonical). وخريطة الموقع تسرد كل الكتب المنشورة:</p>
+<pre><code>https://mooon.site/sitemap.xml
+https://mooon.site/robots.txt</code></pre>
+  </section>
+
+  <section class="card glass" id="notes">
+    <h2>ملاحظات</h2>
+    <ul>
+      <li>كل العناوين أعلاه تقبل الطلبات من أي موقع (CORS مفتوح)، ولا تحتاج إلى مفتاح.</li>
+      <li>تظهر في الواجهة النسخة المنشورة من كل سجل وحدها. التعديلات التي تنتظر المراجعة لا تظهر حتى يعتمدها المراجع.</li>
+      <li>يتبع وصف السجلات أنطولوجيا BIBFRAME من مكتبة الكونغرس، ويسير على أعرافها: النص العربي يوسم <code>@ar-Arab</code> وكتابته اللاتينية <code>@ar-Latn</code>، وفئات المحتوى مثل <code>bf:Text</code>.</li>
+      <li>رجاءً لا تُكثر الطلبات المتلاحقة. للحصول على الفهرس كله استعمل <a href="#dump">التنزيل الكامل</a> بدل البحث صفحةً صفحة.</li>
+    </ul>
+  </section>
+
+  <footer class="glass">
+    <span>مون — فهرس مترابط بصيغة BIBFRAME</span>
+    <span><a href="/opac.html">الفهرس</a> · <a href="/resource/">السجلات</a> · <a href="/resource/sparql">SPARQL</a></span>
+  </footer>
+</div>
+</body>
+</html>

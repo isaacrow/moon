@@ -754,7 +754,7 @@ h1{font-size:1.5rem;margin:0 0 4px}p{color:#9ca3af;margin:0 0 20px}ul{list-style
 li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:none}a:hover{text-decoration:underline}
 .t{font-weight:600;font-size:1.05rem;color:#f9fafb}.u{font-family:ui-monospace,monospace;font-size:.8rem;margin-top:4px;word-break:break-all}.f{font-size:.8rem;margin-top:4px;color:#9ca3af}
 </style></head><body><h1>Moon — published records</h1>
-<p>${records.length} BIBFRAME records. Each address opens the record's page in a browser, or its data for library systems (JSON-LD, Turtle, N-Triples). <a href="?format=json">This list as JSON</a> · <a href="/opac.html">Catalogue</a></p>
+<p>${records.length} BIBFRAME records. Each address opens the record's page in a browser, or its data for library systems (JSON-LD, Turtle, N-Triples). <a href="?format=json">This list as JSON</a> · <a href="/opac.html">Catalogue</a> · <a href="/api.html">API</a></p>
 <p>Every record in one file: <a href="/resource/dump.jsonld">JSON-LD</a> · <a href="/resource/dump.nt">N-Triples</a> · <a href="https://github.com/isaacrow/moon3/releases/tag/data-dump">nightly copy</a> · <a href="/resource/sparql">SPARQL</a></p>
 <ul>${rows}</ul></body></html>`;
     return c.html(html, 200, { 'Cache-Control': 'public, max-age=300' });
