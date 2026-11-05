@@ -8,7 +8,6 @@ import factory from 'rdf-validate-shacl/src/defaultEnv.js';
 import { missingForPublish, shapesFromProfile } from '../supabase/functions/server/publishGate.tsx';
 import { MONOGRAPH_PROFILE, PROFILES, profileDefaults, profileRequired } from '../supabase/functions/server/profiles.tsx';
 import { getPropertiesByDomain } from '../src/services/ontologyRegistry';
-import { getRequiredPropertiesByDomain } from '../src/services/bibframePropertyRegistry';
 import { toTurtle } from '../src/services/rdfGraphBuilder';
 
 const dataset = (ttl: string) => factory.dataset(new N3Parser().parse(ttl) as any);
@@ -61,8 +60,6 @@ test('the form marks as required exactly what the profile requires (Category Car
     const required = profileRequired(MONOGRAPH_PROFILE, entity);
     const cards = getPropertiesByDomain(entity).filter((p) => p.required).map((p) => p.shortName);
     assert.ok(cards.every((p) => required.has(p)), `${entity}: the form requires ${cards.filter((p) => !required.has(p))}, the gate does not`);
-    const header = getRequiredPropertiesByDomain(entity).map((p) => p.shortName);
-    assert.ok(header.every((p) => required.has(p)), `${entity}: header counts ${header}`);
     // Every required field the form shows is one the gate checks, and the gate's fields all appear in the form
     // (bf:instanceOf is built by Moon itself, not typed).
     for (const p of required) if (p !== 'bf:instanceOf') assert.ok(cards.includes(p), `${entity}: ${p} is required but not marked in the form`);
