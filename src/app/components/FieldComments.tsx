@@ -8,6 +8,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { MessageSquare, Check, RotateCcw, Send } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { moonFetch } from "../utils/moonApi";
+import { UserAvatar } from './UserAvatar';
 
 export interface FieldComment {
   id: number;
@@ -122,7 +123,7 @@ export function FieldComments({ field, label }: { field: string; label: string }
             {thread.map((c) => (
               <div key={c.id} className={`rounded-xl p-2 text-xs ${c.resolvedAt ? "opacity-60" : ""}`} style={{ background: "rgba(255,255,255,0.07)" }}>
                 <div className="mb-0.5 flex justify-between gap-2 text-[10px] text-white/60">
-                  <span className="font-bold text-white/80">{c.author}</span>
+                  <span className="flex items-center gap-1.5 font-bold text-white/80"><UserAvatar username={c.author} size={18} />{c.author}</span>
                   <span>{when(c.createdAt, ar)}</span>
                 </div>
                 <div className="whitespace-pre-wrap break-words" dir="auto">{c.body}</div>

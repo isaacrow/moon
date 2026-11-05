@@ -8,6 +8,7 @@ import {
   ShieldCheck, X, CheckCircle2, XCircle, Trash2, RefreshCw, Search, Mail, Building2, CalendarDays, Undo2, Loader2,
 } from 'lucide-react';
 import type { AuthUser } from '../contexts/AuthContext';
+import { UserAvatar } from './UserAvatar';
 
 type Filter = 'all' | 'pending' | 'approved' | 'rejected';
 
@@ -243,10 +244,7 @@ export function TesterApprovalCenter({
                         className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                         style={u.status === 'pending' ? PENDING_ROW : ROW}>
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-base font-black"
-                            style={{ ...PILL, background: 'linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0.18))', color: '#0f172a' }}>
-                            {(u.username || '?').slice(0, 1).toUpperCase()}
-                          </div>
+                          <UserAvatar username={u.username || '?'} size={44} />
                           <div className="min-w-0 space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-black text-base truncate">{u.username}</span>

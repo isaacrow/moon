@@ -5,7 +5,6 @@ import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { 
   History, 
-  User, 
   Filter, 
   Download,
   Eye,
@@ -33,6 +32,7 @@ import {
 } from '../utils/recordStorageBackend';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
+import { UserAvatar } from './UserAvatar';
 
 interface ActivityLogEntry {
   id: string;
@@ -470,7 +470,7 @@ export function ActivityLog({ onClose, onSelectRecord }: ActivityLogProps) {
                               {activity.action}
                             </span>
                             <span className="text-xs text-slate-600 flex items-center gap-1 font-medium">
-                              <User className="h-3 w-3 text-slate-400" />
+                              <UserAvatar username={activity.user} size={18} />
                               {activity.user}
                             </span>
                             <span className="text-xs text-slate-400 font-mono">
