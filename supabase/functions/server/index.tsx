@@ -875,8 +875,8 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
   const uri = `${linkedData.BASE_URI}/${kind}/${id}`;
   const format = fromExtension ?? linkedData.negotiate(c.req.header('Accept'));
   try {
-    // Moon's own authority entries: /resource/agent|place|topic/<id>. A merged entry forwards (301).
-    if (kind === 'agent' || kind === 'place' || kind === 'topic') {
+    // Moon's own authority entries: /resource/agent|place|topic|hub/<id>. A merged entry forwards (301).
+    if (kind === 'agent' || kind === 'place' || kind === 'topic' || kind === 'hub') {
       const entry = await recordStore.getAuthority(id);
       if (!entry || entry.kind !== kind) return c.json({ error: 'No authority entry has this URI', uri }, 404);
       const base = { Vary: 'Accept', 'Cache-Control': 'public, max-age=300', 'Access-Control-Allow-Origin': '*' };
@@ -889,7 +889,11 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
         page.searchParams.set('q', entry.label);
         return c.body(null, 303, { ...base, Location: page.toString() });
       }
-      const doc = linkedData.authorityDocument(entry);
+      // A hub lists the published works that are its expressions (bf:hasExpression).
+      const expressions = kind === 'hub'
+        ? linkedData.worksExpressing((await recordStore.listPublishedRecords()).map((r) => r.document), uri)
+        : [];
+      const doc = linkedData.authorityDocument(entry, expressions);
       if (format === 'jsonld') {
         return c.body(JSON.stringify(doc, null, 2), 200, { ...base, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
       }
@@ -928,14 +932,14 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
 // 🪪 Local authority file: Moon's own people, organizations, places and topics, each with a permanent
 // https://mooon.site/resource/<kind>/<id> address. Search is public (the entries are public data);
 // adding needs a signed-in account; merging two entries for one person needs an admin.
-const AUTHORITY_KINDS = ['agent', 'place', 'topic'];
+const AUTHORITY_KINDS = ['agent', 'place', 'topic', 'hub'];
 const withUri = (a: any) => ({ ...a, uri: `${linkedData.BASE_URI}/${a.kind}/${a.id}` });
 
 app.get("/make-server-49c0e13c/authorities", async (c) => {
   try {
     const q = (c.req.query('q') || '').trim().slice(0, 200);
     const kind = c.req.query('kind') || null;
-    if (kind && !AUTHORITY_KINDS.includes(kind)) return c.json({ error: 'kind must be agent, place or topic' }, 400);
+    if (kind && !AUTHORITY_KINDS.includes(kind)) return c.json({ error: 'kind must be agent, place, topic or hub' }, 400);
     const limit = Math.min(Math.max(Number(c.req.query('limit')) || 20, 1), 100);
     const found = await recordStore.searchAuthorities(q, kind as any, limit);
     return c.json({ authorities: found.map(withUri) }, 200, { 'Access-Control-Allow-Origin': '*' });
@@ -951,7 +955,7 @@ app.post("/make-server-49c0e13c/authorities", async (c) => {
     if (!session) return c.json({ error: 'Sign in to add authority entries' }, 401);
     const body = await c.req.json().catch(() => ({}));
     const label = typeof body.label === 'string' ? body.label.trim() : '';
-    if (!AUTHORITY_KINDS.includes(body.kind)) return c.json({ error: 'kind must be agent, place or topic' }, 400);
+    if (!AUTHORITY_KINDS.includes(body.kind)) return c.json({ error: 'kind must be agent, place, topic or hub' }, 400);
     if (!label || label.length > 300) return c.json({ error: 'A name (label) of up to 300 characters is required' }, 400);
     const strings = (v: unknown, max: number): string[] => (Array.isArray(v) ? v : [])
       .filter((s) => typeof s === 'string' && s.trim()).map((s: string) => s.trim().slice(0, 300)).slice(0, max);
