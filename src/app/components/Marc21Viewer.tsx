@@ -18,6 +18,8 @@ import {
   Maximize2, Minimize2, BarChart3, Zap, List, LayoutGrid, AlignLeft
 } from "lucide-react";
 import { generateMARC } from "../services/marcGenerator";
+import { bibframeToMarc } from "../../services/marc/bibframeToMarc";
+import { toIso2709, toMarcXml, toMrk } from "../../services/marc/marcRecord";
 
 // ===== MARC Field Category Definitions =====
 
@@ -122,9 +124,12 @@ interface Marc21ViewerProps {
   instanceData: any;
   theme: ViewerTheme;
   isLegacy: boolean;
+  /** The record's validated BIBFRAME graph (the editor's W3C build); the MARC record is made from it. */
+  w3cJsonLd?: { "@graph": any[] } | null;
+  recordId?: string;
 }
 
-export function Marc21Viewer({ workData, instanceData, theme: BM, isLegacy }: Marc21ViewerProps) {
+export function Marc21Viewer({ workData, instanceData, theme: BM, isLegacy, w3cJsonLd, recordId }: Marc21ViewerProps) {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === "ar";
 
@@ -135,8 +140,13 @@ export function Marc21Viewer({ workData, instanceData, theme: BM, isLegacy }: Ma
   const [highlightSubfields, setHighlightSubfields] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // ===== Parse MARC from generateMARC service =====
-  const marcText = useMemo(() => generateMARC(workData || {}, instanceData || {}), [workData, instanceData]);
+  // ===== The MARC record: from the validated BIBFRAME graph when the editor has built it =====
+  const marcRecord = useMemo(() => (w3cJsonLd?.["@graph"] ? bibframeToMarc(w3cJsonLd, { recordId }) : null), [w3cJsonLd, recordId]);
+  const marcText = useMemo(
+    () => (marcRecord ? toMrk(marcRecord) : generateMARC(workData || {}, instanceData || {})),
+    [marcRecord, workData, instanceData],
+  );
+  const fileBase = recordId || "record";
 
   const parsedFields = useMemo((): MARCField[] => {
     const lines = marcText.split("\n").filter(Boolean);
@@ -215,7 +225,7 @@ export function Marc21Viewer({ workData, instanceData, theme: BM, isLegacy }: Ma
     toast.success(isRtl ? "\u062a\u0645 \u0627\u0644\u0646\u0633\u062e!" : "Copied to clipboard!");
   }, [isRtl]);
 
-  const downloadFile = useCallback((content: string, filename: string, type: string) => {
+  const downloadFile = useCallback((content: string | Uint8Array, filename: string, type: string) => {
     const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
@@ -307,10 +317,25 @@ export function Marc21Viewer({ workData, instanceData, theme: BM, isLegacy }: Ma
               style={{ background: "rgba(59,130,246,0.12)", border: `1px solid ${BM.accentBorder}`, color: BM.accentDim }}>
               <Copy className="h-3.5 w-3.5" /> {isRtl ? "\u0646\u0633\u062e" : "Copy"}
             </button>
-            <button onClick={() => downloadFile(marcText, "record.mrc", "text/plain")}
+            {marcRecord && <>
+              {/* .mrc is real ISO 2709 (what Koha and MarcEdit import); .xml is MARCXML; .mrk is MarcEdit text. */}
+              <button onClick={() => downloadFile(toIso2709(marcRecord), `${fileBase}.mrc`, "application/marc")}
+                title={isRtl ? "ملف مارك ثنائي (ISO 2709) لكوها ومارك إدت" : "Binary MARC (ISO 2709) for Koha, MarcEdit and other systems"}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:shadow-md"
+                style={{ background: "rgba(59,130,246,0.12)", border: `1px solid ${BM.accentBorder}`, color: BM.accentDim }}>
+                <Download className="h-3.5 w-3.5" /> .mrc
+              </button>
+              <button onClick={() => downloadFile(toMarcXml([marcRecord]), `${fileBase}.xml`, "application/marcxml+xml")}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:shadow-md"
+                style={{ background: "rgba(59,130,246,0.12)", border: `1px solid ${BM.accentBorder}`, color: BM.accentDim }}>
+                <Download className="h-3.5 w-3.5" /> MARCXML
+              </button>
+            </>}
+            <button onClick={() => downloadFile(marcText, `${fileBase}.mrk`, "text/plain;charset=utf-8")}
+              title={isRtl ? "نص مارك إدت" : "MarcEdit text"}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:shadow-md"
               style={{ background: "rgba(59,130,246,0.12)", border: `1px solid ${BM.accentBorder}`, color: BM.accentDim }}>
-              <Download className="h-3.5 w-3.5" /> .mrc
+              <Download className="h-3.5 w-3.5" /> .mrk
             </button>
             <button onClick={() => setIsFullscreen(!isFullscreen)}
               className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:shadow-md"
