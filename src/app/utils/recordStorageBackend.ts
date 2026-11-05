@@ -178,6 +178,10 @@ function extraGraphNodes(record: BIBFRAMERecord): any[] {
   const base = record.instance?.['@id'] || `urn:moon:${Date.now()}`;
   const nodes: any[] = [];
   if (record.item) nodes.push(buildSafeNode(record.item, 'bf:Item', `${base}#item`));
+  const itemId = nodes[0]?.['@type'] === 'bf:Item' ? nodes[0]['@id'] : undefined;
+  for (const copy of record.copies || []) {
+    if (copy?.['@id'] && copy['@id'] !== itemId) nodes.push(copy);
+  }
   if (record.expression) nodes.push(buildSafeNode(record.expression, 'bf:Expression', `${base}#expression`));
   if (record.adminMetadata) nodes.push(buildSafeNode(record.adminMetadata, 'bf:AdminMetadata', `${base}#admin`));
   return nodes;
@@ -191,8 +195,11 @@ function extractExtraNodes(graph: any[], metadata: any, work: any, instance: any
   const adminMetadata = byId(uriSet.admin) || graph.find((n) => hasTypeEnding(n, 'AdminMetadata'));
   const expression =
     byId(uriSet.expression) || graph.find((n) => n !== work && n !== instance && hasTypeEnding(n, 'Expression'));
+  // Every other Item of the record is one of its copies.
+  const copies = graph.filter((n) => n !== item && hasTypeEnding(n, 'Item') && n?.['@id']);
   return {
     ...(item ? { item } : {}),
+    ...(copies.length ? { copies } : {}),
     ...(expression ? { expression } : {}),
     ...(adminMetadata ? { adminMetadata } : {}),
   };
