@@ -8,6 +8,7 @@ import { History, RotateCcw, Loader2 } from "lucide-react";
 import { fetchVersion, fetchVersions, revertToVersion, HistoryError, type RecordVersion, type RecordVersionSummary } from "../utils/recordHistory";
 import { diffRecords, type DiffEntry } from "../utils/recordDiff";
 import { RecordDiffTable } from "./RecordDiffTable";
+import { UserAvatar } from './UserAvatar';
 
 interface Theme {
   accent: string; success: string; warning: string; danger: string;
@@ -179,7 +180,7 @@ export function RecordHistoryPanel({ recordId, theme, language, hasUnsavedChange
               <div className="text-[11px] mt-0.5 flex items-center gap-1.5 flex-wrap" style={dim}>
                 <span style={{ color: statusColor(v.status) }}>●</span>
                 <span>{l.status[v.status] || v.status}</span>
-                {v.savedBy && <span>· {l.by} {v.savedBy}</span>}
+                {v.savedBy && <span className="inline-flex items-center gap-1">· <UserAvatar username={v.savedBy} size={16} /> {v.savedBy}</span>}
               </div>
               <div className="text-[11px]" style={dim}>{formatDate(v.savedAt, language)}</div>
             </button>

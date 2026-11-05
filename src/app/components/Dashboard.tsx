@@ -8,6 +8,7 @@ import { getThemeGradients } from '../utils/themeGradients';
 import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, returnRecord, assignRecord } from '../utils/recordStorageBackend';
 import type { BIBFRAMERecord } from '../types/bibframe';
 import { ActivityLog } from './ActivityLog';
+import { UserAvatar } from './UserAvatar';
 import { toast } from 'sonner';
 import { 
   Trash2,
@@ -701,6 +702,12 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                       </Badge>
                     </div>
                     <div className="flex items-center gap-4 text-sm font-medium" style={{ color: '#4a5568' }}>
+                      {record.cataloger && (
+                        <span className="flex items-center gap-1.5" title={record.cataloger}>
+                          <UserAvatar username={record.cataloger} size={20} />
+                          <span className="truncate max-w-[10rem]">{record.cataloger}</span>
+                        </span>
+                      )}
                       <span className="font-mono">{record.id}</span>
                       <span className="flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5" />
@@ -766,7 +773,8 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                       </select>
                     )}
                     {record.status === 'pending-review' && !isSuperAdmin && record.assignedTo && (
-                      <span className="px-2 py-1 rounded-full text-xs font-bold bg-white/60 text-slate-700 border border-slate-300">
+                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-bold bg-white/60 text-slate-700 border border-slate-300">
+                        <UserAvatar username={record.assignedTo} size={18} />
                         Reviewer: {record.assignedTo}
                       </span>
                     )}

@@ -8,6 +8,7 @@ import { Bell } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { moonFetch, getSessionToken } from "../utils/moonApi";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import { UserAvatar } from './UserAvatar';
 
 interface Notice {
   id: number;
@@ -123,6 +124,7 @@ export function NotificationBell({ isDark, onOpenRecord }: { isDark: boolean; on
                 className="w-full text-start px-4 py-3 border-b last:border-b-0 flex gap-2 enabled:cursor-pointer enabled:hover:bg-black/5"
               >
                 <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ background: n.read ? "transparent" : "#3b82f6" }} />
+                {n.actor && <UserAvatar username={n.actor} size={28} className="mt-0.5" />}
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold break-words" style={{ color: text }}>{m.title}</span>
                   {m.body && <span className="block text-xs mt-0.5 break-words" style={{ color: muted }}>{m.body}</span>}
