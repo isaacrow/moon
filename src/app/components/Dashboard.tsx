@@ -7,6 +7,7 @@ import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
 import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, returnRecord, assignRecord } from '../utils/recordStorageBackend';
 import type { BIBFRAMERecord } from '../types/bibframe';
+import { importSampleRecords, SAMPLE_BOOKS } from '../utils/sampleRecords';
 import { ActivityLog } from './ActivityLog';
 import { UserAvatar } from './UserAvatar';
 import { toast } from 'sonner';
@@ -107,6 +108,24 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
   const [showAllRecords, setShowAllRecords] = useState(false);
   const [show3d, setShow3d] = useState<boolean>(readThreeD);
   const isAr = (typeof document !== 'undefined' && document.documentElement.dir === 'rtl');
+
+  // The Super Admin adds the sample books (real Arabic and English titles with covers) to the catalogue.
+  const [sampleProgress, setSampleProgress] = useState<string | null>(null);
+  const addSampleBooks = async () => {
+    const ok = window.confirm(isAr
+      ? `إضافة ${SAMPLE_BOOKS.length} كتاباً حقيقياً (عربي وإنجليزي) مع أغلفتها إلى الفهرس؟ الكتب الموجودة من قبل لا تتغير.`
+      : `Add ${SAMPLE_BOOKS.length} real books (Arabic and English) with their covers to the catalogue? Books already there are left as they are.`);
+    if (!ok) return;
+    setSampleProgress(`0/${SAMPLE_BOOKS.length}`);
+    const r = await importSampleRecords(user?.username || 'isaac', (done, total) => setSampleProgress(`${done}/${total}`));
+    setSampleProgress(null);
+    await loadRecords();
+    const summary = isAr
+      ? `أُضيف ${r.saved}، وكان ${r.skipped} موجوداً، و${r.covers} غلافاً جديداً`
+      : `${r.saved} added, ${r.skipped} already there, ${r.covers} new covers`;
+    if (r.failed.length) toast.error(summary, { description: r.failed.join('\n'), duration: 12000 });
+    else toast.success(summary);
+  };
 
   const toggle3d = () => {
     setShow3d(prev => {
@@ -385,6 +404,21 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
               <Box className="h-4 w-4" />
               <span>{show3d ? (isAr ? '3D مفعّل' : '3D ON') : (isAr ? '3D معطّل' : '3D OFF')}</span>
             </button>
+            {isSuperAdmin && (
+              <button
+                type="button"
+                onClick={addSampleBooks}
+                disabled={!!sampleProgress}
+                className="hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-5 py-2.5 text-sm font-bold cursor-pointer disabled:opacity-60"
+                style={{ ...LIQUID_GLASS_PURPLE_REPLACEMENT, color: '#0369a1' }}
+                title={isAr ? 'كتب حقيقية بالعربية والإنجليزية مع أغلفتها' : 'Real Arabic and English books with covers'}
+              >
+                <Library className="h-4 w-4" />
+                <span>{sampleProgress
+                  ? (isAr ? `جارٍ الإضافة ${sampleProgress}` : `Adding ${sampleProgress}`)
+                  : (isAr ? 'إضافة كتب نموذجية' : 'Add sample books')}</span>
+              </button>
+            )}
           </div>
         </div>
 

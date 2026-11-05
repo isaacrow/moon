@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "npx tsx --test test/serializers.test.ts test/bibframe.test.ts test/arabic-isbn.test.ts test/conformance.test.ts test/recordDiff.test.ts test/remint.test.ts test/publishGate.test.ts test/profileShapes.test.ts test/marcExport.test.ts test/marcImport.test.ts test/rdfxmlImport.test.ts test/itemCopies.test.ts test/schemaOrg.test.ts test/facets.test.ts test/presence.test.ts test/romanize.test.ts",
+    "test": "npx tsx --test test/serializers.test.ts test/bibframe.test.ts test/arabic-isbn.test.ts test/conformance.test.ts test/recordDiff.test.ts test/remint.test.ts test/publishGate.test.ts test/profileShapes.test.ts test/marcExport.test.ts test/marcImport.test.ts test/rdfxmlImport.test.ts test/itemCopies.test.ts test/schemaOrg.test.ts test/facets.test.ts test/presence.test.ts test/romanize.test.ts test/sampleRecords.test.ts",
     "typecheck": "tsc --noEmit -p . --noUnusedLocals false --noUnusedParameters false",
     "lint:unused": "tsc --noEmit -p .",
     "build:terms": "node scripts/build-bibframe-terms.mjs",

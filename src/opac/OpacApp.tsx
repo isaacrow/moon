@@ -2,7 +2,7 @@
  * Moon OPAC — the public catalog, redesigned.
  *
  * One material (white glass) over a quiet grey page. Readers see books, authors and
- * subjects in plain Arabic; the linked-data formats live behind one disclosure on the
+ * subjects in plain Arabic or English (./i18n.ts); the linked-data formats live behind one disclosure on the
  * book page for the people who need them.
  *
  * Data comes from wolfMoonOpacService, the same service the previous OPAC used, so the
@@ -24,9 +24,10 @@ import {
 import { bookJsonLd, metaDescription, pageUrl, workUri } from './schemaOrg';
 import {
   FACETS, SORTS as SORT_OPTIONS, applyFacets, facetCounts, sortWorks, readState, writeState, toggle, valueLabel, valuesOf,
-  workYearOf, realCopies, libraryOf, languageName, type FacetKey, type FacetValue, type Selection, type SortKey,
+  workYearOf, realCopies, libraryOf, languageName, languageDisplay, type FacetKey, type FacetValue, type Selection, type SortKey,
 } from './facets';
 import { MOON_API, moonHeaders } from '../app/utils/moonApi';
+import { t, opacLang, setOpacLang, type OpacLang } from './i18n';
 import './opac.css';
 
 type View =
@@ -69,14 +70,14 @@ function urlFor(v: View): string {
   return u.toString();
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  available: 'متاح للإعارة',
-  checked_out: 'معار حالياً',
-  paged: 'قيد التجهيز',
-  reference_only: 'للاطلاع داخل المكتبة',
-  digital_access: 'نسخة رقمية',
-  not_connected: 'لا توجد نسخ بعد',
-};
+const STATUS_LABEL = (): Record<string, string> => ({
+  available: t('متاح للإعارة', 'Available to borrow'),
+  checked_out: t('معار حالياً', 'On loan'),
+  paged: t('قيد التجهيز', 'Being processed'),
+  reference_only: t('للاطلاع داخل المكتبة', 'Library use only'),
+  digital_access: t('نسخة رقمية', 'Digital copy'),
+  not_connected: t('لا توجد نسخ بعد', 'No copies yet'),
+});
 
 function personName(p?: OpacPersonEntity): string {
   if (!p) return '';
@@ -94,13 +95,19 @@ function isReadableLabel(label: string): boolean {
   return t.length > 1 && !/^[a-z]{0,4}\d{4,}$/i.test(t) && !/^https?:/i.test(t);
 }
 
-/** "Author (مؤلف)" → "مؤلف": readers get the Arabic role only. */
+/** "Author (مؤلف)" → "مؤلف" for Arabic readers, "Author" for English readers. */
 function roleLabel(role?: string): string {
   if (!role) return '';
+  if (opacLang() === 'en') {
+    const latin = role.replace(/\([^)]*\)/g, '').trim();
+    return /[A-Za-z]/.test(latin) ? latin.replace(/^./, (c) => c.toUpperCase()) : role.trim();
+  }
   const inParens = role.match(/\(([^)]*[؀-ۿ][^)]*)\)/);
   if (inParens) return inParens[1].trim();
   return /[؀-ۿ]/.test(role) ? role.trim() : '';
 }
+
+const AUTHOR_ROLE = () => t('مؤلف', 'Author');
 
 function initial(s: string) {
   const t = s.replace(/^(د\.|الدكتور|الشيخ|السيد)\s*/, '').trim();
@@ -140,6 +147,22 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
   const [savedOpen, setSavedOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(false);
+  const [lang, setLang] = useState<OpacLang>(opacLang);
+  const switchLang = useCallback(() => {
+    const next: OpacLang = lang === 'ar' ? 'en' : 'ar';
+    setOpacLang(next);
+    // A ?lang= in the address would win on reload; keep it in step with the choice.
+    const u = new URL(window.location.href);
+    if (u.searchParams.has('lang')) {
+      u.searchParams.set('lang', next);
+      window.history.replaceState(window.history.state, '', u.toString());
+    }
+    withTransition(() => setLang(next));
+  }, [lang]);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  }, [lang]);
 
   useEffect(() => {
     let alive = true;
@@ -168,34 +191,35 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
   const toggleSave = useCallback((id: string) => {
     const r = wolfMoonOpacService.toggleBookbag(id);
     setSaved(r.items);
-    say(r.added ? 'أُضيف إلى قائمتك' : 'أُزيل من قائمتك');
+    say(r.added ? t('أُضيف إلى قائمتك', 'Added to your list') : t('أُزيل من قائمتك', 'Removed from your list'));
   }, [say]);
 
   useEffect(() => {
+    const name = t('فهرس مون', 'Moon Catalogue');
     const titles: Record<View['mode'], string> = {
-      home: 'فهرس مون', search: 'نتائج البحث — فهرس مون', work: 'فهرس مون', person: 'فهرس مون',
-      subject: 'فهرس مون', hub: 'فهرس مون', authors: 'المؤلفون — فهرس مون', subjects: 'الموضوعات — فهرس مون',
+      home: name, search: `${t('نتائج البحث', 'Search results')} — ${name}`, work: name, person: name,
+      subject: name, hub: name, authors: `${t('المؤلفون', 'Authors')} — ${name}`, subjects: `${t('الموضوعات', 'Subjects')} — ${name}`,
     };
     // A record page sets its own title (the book's), with its schema.org data.
     if (view.mode !== 'work') document.title = titles[view.mode];
-  }, [view]);
+  }, [view, lang]);
 
   const ctx: Ctx = { go, saved, toggleSave, say, rev };
 
   return (
-    <div className="app" dir="rtl" lang="ar">
+    <div className="app" dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang} key={lang}>
       <div className="ambient" aria-hidden="true" />
       <header className="topbar wrap">
         <div className="topbar-inner glass">
-          <button className="brand" onClick={() => go({ mode: 'home' })} aria-label="فهرس مون، الصفحة الرئيسية">
-            <img className="brand-logo" src="/opac-logo.png" alt="مون" width={230} height={120} />
+          <button className="brand" onClick={() => go({ mode: 'home' })} aria-label={t('فهرس مون، الصفحة الرئيسية', 'Moon Catalogue, home')}>
+            <img className="brand-logo" src="/opac-logo.png" alt={t('مون', 'Moon')} width={230} height={120} />
           </button>
-          <nav className={`nav ${navOpen ? 'open glass' : ''}`} aria-label="الأقسام">
+          <nav className={`nav ${navOpen ? 'open glass' : ''}`} aria-label={t('الأقسام', 'Sections')}>
             {([
-              ['الرئيسية', { mode: 'home' }, view.mode === 'home'],
-              ['الكتب', { mode: 'search', query: '' }, view.mode === 'search' || view.mode === 'work'],
-              ['المؤلفون', { mode: 'authors' }, view.mode === 'authors' || view.mode === 'person'],
-              ['الموضوعات', { mode: 'subjects' }, view.mode === 'subjects' || view.mode === 'subject'],
+              [t('الرئيسية', 'Home'), { mode: 'home' }, view.mode === 'home'],
+              [t('الكتب', 'Books'), { mode: 'search', query: '' }, view.mode === 'search' || view.mode === 'work'],
+              [t('المؤلفون', 'Authors'), { mode: 'authors' }, view.mode === 'authors' || view.mode === 'person'],
+              [t('الموضوعات', 'Subjects'), { mode: 'subjects' }, view.mode === 'subjects' || view.mode === 'subject'],
             ] as [string, View, boolean][]).map(([label, target, current]) => (
               <button key={label} aria-current={current ? 'page' : undefined} onClick={() => go(target)}>
                 {current && <span className="nav-pill" aria-hidden="true" />}
@@ -204,12 +228,14 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
             ))}
           </nav>
           <div className="top-actions">
-            <button className="icon-btn" onClick={() => setSavedOpen(true)} aria-label={`قائمتي، ${saved.length} كتاب`}>
+            <button className="icon-btn" onClick={() => setSavedOpen(true)} aria-label={t(`قائمتي، ${saved.length} كتاب`, `My list, ${saved.length} books`)}>
               <Bookmark size={20} strokeWidth={1.8} />
               {saved.length > 0 && <span className="badge">{saved.length}</span>}
             </button>
-            <button className="btn-black" onClick={onOpenEditor}>دخول المفهرسين</button>
-            <button className="icon-btn menu-toggle" onClick={() => setNavOpen(o => !o)} aria-expanded={navOpen} aria-label="القائمة">
+            <button className="btn-ghost lang-switch" onClick={switchLang} lang={lang === 'ar' ? 'en' : 'ar'}
+              aria-label={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}>{lang === 'ar' ? 'English' : 'العربية'}</button>
+            <button className="btn-black" onClick={onOpenEditor}>{t('دخول المفهرسين', 'Cataloguer sign-in')}</button>
+            <button className="icon-btn menu-toggle" onClick={() => setNavOpen(o => !o)} aria-expanded={navOpen} aria-label={t('القائمة', 'Menu')}>
               {navOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
           </div>
@@ -233,8 +259,8 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
 
       <footer className="footer wrap">
         <div className="footer-inner glass">
-          <span className="footer-brand"><img src="/opac-logo.png" alt="مون" width={230} height={120} /> الفهرس العام للمكتبة</span>
-          <span>{ready ? `${wolfMoonOpacService.getAllWorks().length} كتاب منشور` : ''}</span>
+          <span className="footer-brand"><img src="/opac-logo.png" alt={t('مون', 'Moon')} width={230} height={120} /> {t('الفهرس العام للمكتبة', 'The library’s public catalogue')}</span>
+          <span>{ready ? t(`${wolfMoonOpacService.getAllWorks().length} كتاب منشور`, `${wolfMoonOpacService.getAllWorks().length} published books`) : ''}</span>
         </div>
       </footer>
 
@@ -316,7 +342,7 @@ function PersonCard({ p, ctx, i }: { p: OpacPersonEntity; ctx: Ctx; i?: number }
       <Avatar p={p} morph />
       <span>
         <span className="t" dir="auto" style={{ display: 'block' }}>{personName(p)}</span>
-        <span className="s">{p.lifespan ? `${p.lifespan} · ` : ''}{p.worksCount} {p.worksCount === 1 ? 'كتاب' : 'كتب'}</span>
+        <span className="s">{p.lifespan ? `${p.lifespan} · ` : ''}{p.worksCount} {p.worksCount === 1 ? t('كتاب', 'book') : t('كتب', 'books')}</span>
       </span>
     </button>
   );
@@ -344,9 +370,9 @@ function SearchBox({ ctx, initial = '', autoFocus, compact }: { ctx: Ctx; initia
   const items = useMemo(() => {
     if (!s) return [] as { kind: string; label: string; sub: string; view: View }[];
     return [
-      ...s.works.slice(0, 5).map(w => ({ kind: 'الكتب', label: w.title, sub: personName(w.primaryCreator), view: { mode: 'work', id: w.id } as View })),
-      ...s.persons.slice(0, 3).map(p => ({ kind: 'المؤلفون', label: personName(p), sub: `${p.worksCount} كتب`, view: { mode: 'person', key: p.id } as View })),
-      ...s.subjects.slice(0, 4).map(x => ({ kind: 'الموضوعات', label: x.label, sub: `${x.worksCount} كتب`, view: { mode: 'subject', key: x.id } as View })),
+      ...s.works.slice(0, 5).map(w => ({ kind: t('الكتب', 'Books'), label: w.title, sub: personName(w.primaryCreator), view: { mode: 'work', id: w.id } as View })),
+      ...s.persons.slice(0, 3).map(p => ({ kind: t('المؤلفون', 'Authors'), label: personName(p), sub: t(`${p.worksCount} كتب`, `${p.worksCount} books`), view: { mode: 'person', key: p.id } as View })),
+      ...s.subjects.slice(0, 4).map(x => ({ kind: t('الموضوعات', 'Subjects'), label: x.label, sub: t(`${x.worksCount} كتب`, `${x.worksCount} books`), view: { mode: 'subject', key: x.id } as View })),
     ];
   }, [s]);
 
@@ -357,10 +383,10 @@ function SearchBox({ ctx, initial = '', autoFocus, compact }: { ctx: Ctx; initia
     <div className="search" ref={ref} role="search">
       <form className={`search-field glass ${compact ? 'compact' : ''}`} onSubmit={e => { e.preventDefault(); active >= 0 && items[active] ? ctx.go(items[active].view) : submit(); }}>
         <Search size={22} strokeWidth={1.8} aria-hidden="true" />
-        <label className="sr-only" htmlFor="opac-q">ابحث في الفهرس</label>
+        <label className="sr-only" htmlFor="opac-q">{t('ابحث في الفهرس', 'Search the catalogue')}</label>
         <input
           id="opac-q" ref={inputRef} value={q} autoFocus={autoFocus} autoComplete="off"
-          placeholder="عنوان، مؤلف، موضوع، أو رقم ISBN"
+          placeholder={t('عنوان، مؤلف، موضوع، أو رقم ISBN', 'Title, author, subject or ISBN')}
           onChange={e => { setQ(e.target.value); setOpen(true); setActive(-1); }}
           onFocus={() => setOpen(true)}
           onKeyDown={e => {
@@ -371,11 +397,11 @@ function SearchBox({ ctx, initial = '', autoFocus, compact }: { ctx: Ctx; initia
           role="combobox" aria-expanded={open && items.length > 0} aria-controls="opac-suggest"
         />
         <span className="kbd" aria-hidden="true">/</span>
-        <button type="submit" className="btn-black">بحث</button>
+        <button type="submit" className="btn-black">{t('بحث', 'Search')}</button>
       </form>
       {open && s && (
         <div className="suggest glass" id="opac-suggest" role="listbox">
-          {items.length === 0 && <div className="suggest-head">لا نتائج لـ «{q}». جرّب كلمة أقصر أو اسم المؤلف.</div>}
+          {items.length === 0 && <div className="suggest-head">{t(`لا نتائج لـ «${q}». جرّب كلمة أقصر أو اسم المؤلف.`, `No results for “${q}”. Try a shorter word or the author's name.`)}</div>}
           {items.map((it, i) => {
             const head = it.kind !== lastKind ? it.kind : null;
             lastKind = it.kind;
@@ -389,7 +415,7 @@ function SearchBox({ ctx, initial = '', autoFocus, compact }: { ctx: Ctx; initia
               </React.Fragment>
             );
           })}
-          {items.length > 0 && <button type="button" className="suggest-all" onClick={submit}>كل النتائج لـ «{q.trim()}»</button>}
+          {items.length > 0 && <button type="button" className="suggest-all" onClick={submit}>{t(`كل النتائج لـ «${q.trim()}»`, `All results for “${q.trim()}”`)}</button>}
         </div>
       )}
     </div>
@@ -398,7 +424,7 @@ function SearchBox({ ctx, initial = '', autoFocus, compact }: { ctx: Ctx; initia
 
 function Loading() {
   return (
-    <div className="wrap" aria-busy="true" aria-label="جارٍ تحميل الفهرس">
+    <div className="wrap" aria-busy="true" aria-label={t('جارٍ تحميل الفهرس', 'Loading the catalogue')}>
       <div className="hero">
         <div className="skeleton" style={{ height: 64, maxWidth: 520, margin: '0 auto' }} />
         <div className="skeleton" style={{ height: 68, maxWidth: 720, margin: '40px auto 0' }} />
@@ -412,8 +438,8 @@ function Loading() {
 
 function Crumbs({ ctx, items }: { ctx: Ctx; items: { label: string; view?: View }[] }) {
   return (
-    <nav className="crumbs" aria-label="المسار">
-      <button onClick={() => ctx.go({ mode: 'home' })}>الرئيسية</button>
+    <nav className="crumbs" aria-label={t('المسار', 'Breadcrumbs')}>
+      <button onClick={() => ctx.go({ mode: 'home' })}>{t('الرئيسية', 'Home')}</button>
       {items.map((it, i) => (
         <React.Fragment key={i}>
           <span aria-hidden="true">/</span>
@@ -458,12 +484,12 @@ function Home({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <section className="hero wrap">
-        <h1>اعثر على كتابك التالي</h1>
-        <p className="hero-sub">ابحث في {works.length} كتاباً بالعنوان أو المؤلف أو الموضوع، واعرف أين تجده في المكتبة.</p>
+        <h1>{t('اعثر على كتابك التالي', 'Find your next book')}</h1>
+        <p className="hero-sub">{t(`ابحث في ${works.length} كتاباً بالعنوان أو المؤلف أو الموضوع، واعرف أين تجده في المكتبة.`, `Search ${works.length} books by title, author or subject, and find where they are in the library.`)}</p>
         <SearchBox ctx={ctx} />
         {categories.length > 0 && (
-          <div className="quick" aria-label="الفئات">
-            <span className="quick-lbl">الفئات</span>
+          <div className="quick" aria-label={t('الفئات', 'Categories')}>
+            <span className="quick-lbl">{t('الفئات', 'Categories')}</span>
             {categories.map(c => (
               <button key={c.value} className="chip" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_category=${encodeURIComponent(c.value)}` })}>
                 {c.label} <span className="n">{c.count}</span>
@@ -474,16 +500,16 @@ function Home({ ctx }: { ctx: Ctx }) {
       </section>
 
       <div className="wrap">
-        <Shelf title="أُضيف حديثاً" works={recent} ctx={ctx} more={{ label: 'كل الكتب', view: { mode: 'search', query: '', params: 'sort=date-desc' } }} />
+        <Shelf title={t('أُضيف حديثاً', 'Recently added')} works={recent} ctx={ctx} more={{ label: t('كل الكتب', 'All books'), view: { mode: 'search', query: '', params: 'sort=date-desc' } }} />
         {featured && featured.works.length > 1 && (
-          <Shelf title={`من أعمال ${personName(featured.person)}`} works={featured.works} ctx={ctx} more={{ label: 'صفحة المؤلف', view: { mode: 'person', key: featured.person.id } }} />
+          <Shelf title={t(`من أعمال ${personName(featured.person)}`, `By ${personName(featured.person)}`)} works={featured.works} ctx={ctx} more={{ label: t('صفحة المؤلف', 'Author page'), view: { mode: 'person', key: featured.person.id } }} />
         )}
-        <Shelf title="مخطوطات" works={manuscripts} ctx={ctx} />
-        <Shelf title="على رفوف المكتبة" works={withCopies} ctx={ctx} more={{ label: 'كل ما له نسخ', view: { mode: 'search', query: '', params: 'f_avail=physical' } }} />
+        <Shelf title={t('مخطوطات', 'Manuscripts')} works={manuscripts} ctx={ctx} />
+        <Shelf title={t('على رفوف المكتبة', 'On the library shelves')} works={withCopies} ctx={ctx} more={{ label: t('كل ما له نسخ', 'Everything with copies'), view: { mode: 'search', query: '', params: 'f_avail=physical' } }} />
 
         {languages.length > 1 && (
           <section className="section">
-            <div className="section-head"><h2>حسب اللغة</h2></div>
+            <div className="section-head"><h2>{t('حسب اللغة', 'By language')}</h2></div>
             <div className="subjects">
               {languages.map(l => (
                 <button key={l.value} className="chip" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_lang=${encodeURIComponent(l.value)}` })}>
@@ -497,8 +523,8 @@ function Home({ ctx }: { ctx: Ctx }) {
         {authors.length > 0 && (
           <section className="section">
             <div className="section-head">
-              <h2>مؤلفون في الفهرس</h2>
-              <button className="link-btn" onClick={() => ctx.go({ mode: 'authors' })}>كل المؤلفين</button>
+              <h2>{t('مؤلفون في الفهرس', 'Authors in the catalogue')}</h2>
+              <button className="link-btn" onClick={() => ctx.go({ mode: 'authors' })}>{t('كل المؤلفين', 'All authors')}</button>
             </div>
             <div className="people">{authors.map((p, i) => <PersonCard key={p.id} p={p} ctx={ctx} i={i} />)}</div>
           </section>
@@ -507,8 +533,8 @@ function Home({ ctx }: { ctx: Ctx }) {
         {subjects.length > 0 && (
           <section className="section">
             <div className="section-head">
-              <h2>تصفّح حسب الموضوع</h2>
-              <button className="link-btn" onClick={() => ctx.go({ mode: 'subjects' })}>كل الموضوعات</button>
+              <h2>{t('تصفّح حسب الموضوع', 'Browse by subject')}</h2>
+              <button className="link-btn" onClick={() => ctx.go({ mode: 'subjects' })}>{t('كل الموضوعات', 'All subjects')}</button>
             </div>
             <div className="subjects">
               {subjects.map(s => (
@@ -523,13 +549,13 @@ function Home({ ctx }: { ctx: Ctx }) {
         <section className="section">
           <div className="linked-strip glass">
             <div>
-              <h2>الفهرس كبيانات مترابطة</h2>
-              <p className="muted">كل كتاب وشخص وموضوع هنا له عنوان دائم على mooon.site بصيغة BIBFRAME، يمكن للمكتبات والباحثين ربطه وإعادة استخدامه.</p>
+              <h2>{t('الفهرس كبيانات مترابطة', 'The catalogue as linked data')}</h2>
+              <p className="muted">{t('كل كتاب وشخص وموضوع هنا له عنوان دائم على mooon.site بصيغة BIBFRAME، يمكن للمكتبات والباحثين ربطه وإعادة استخدامه.', 'Every book, person and subject here has a permanent address on mooon.site in BIBFRAME, for libraries and researchers to link to and reuse.')}</p>
             </div>
             <div className="dl-links">
-              <a href="/resource/">قائمة السجلات</a>
+              <a href="/resource/">{t('قائمة السجلات', 'Record list')}</a>
               <a href="/resource/sparql">SPARQL</a>
-              <a href="/resource/dump.jsonld">تنزيل الفهرس (JSON-LD)</a>
+              <a href="/resource/dump.jsonld">{t('تنزيل الفهرس (JSON-LD)', 'Download the catalogue (JSON-LD)')}</a>
               <a href="/resource/dump.nt">N-Triples</a>
               <a href="/api.html">واجهة البرمجة (API)</a>
             </div>
@@ -554,12 +580,12 @@ export function lastResults(): { ids: string[]; url: string; query: string } | n
 function holdingsSummary(w: OpacWorkEntity): { text: string; s: string } {
   const copies = realCopies(w);
   const libs = new Set(copies.map(c => libraryOf(c.heldBy)).filter(Boolean)).size;
-  if (valuesOf(w, 'avail').includes('online')) return { text: 'متاح على الإنترنت', s: 'digital_access' };
+  if (valuesOf(w, 'avail').includes('online')) return { text: t('متاح على الإنترنت', 'Available online'), s: 'digital_access' };
   if (copies.length) {
-    const c = copies.length === 1 ? 'نسخة واحدة' : copies.length === 2 ? 'نسختان' : `${copies.length} نسخ`;
-    return { text: libs > 1 ? `${c} · ${libs} مكتبات` : c, s: 'available' };
+    const c = copies.length === 1 ? t('نسخة واحدة', '1 copy') : copies.length === 2 ? t('نسختان', '2 copies') : t(`${copies.length} نسخ`, `${copies.length} copies`);
+    return { text: libs > 1 ? `${c} · ${t(`${libs} مكتبات`, `${libs} libraries`)}` : c, s: 'available' };
   }
-  return { text: 'لا نسخ مسجلة', s: 'not_connected' };
+  return { text: t('لا نسخ مسجلة', 'No copies recorded'), s: 'not_connected' };
 }
 
 function contributorsLine(w: OpacWorkEntity): React.ReactNode[] {
@@ -576,8 +602,8 @@ function contributorsLine(w: OpacWorkEntity): React.ReactNode[] {
 
 /** One result, as Libris shows it: category · language, the title, who made it (with roles), format · year, holdings. */
 function ResultCard({ w, ctx, i }: { w: OpacWorkEntity; ctx: Ctx; i: number }) {
-  const meta = [w.genreForm?.[0], languageName(w.languageLabel, w.language)].filter(Boolean).join(' · ');
-  const fmt = valuesOf(w, 'format')[0];
+  const meta = [w.genreForm?.[0], languageDisplay(languageName(w.languageLabel, w.language))].filter(Boolean).join(' · ');
+  const fmt = valueLabel('format', valuesOf(w, 'format')[0] || '');
   const year = workYearOf(w);
   const h = holdingsSummary(w);
   const who = contributorsLine(w);
@@ -587,8 +613,8 @@ function ResultCard({ w, ctx, i }: { w: OpacWorkEntity; ctx: Ctx; i: number }) {
       <div style={{ minWidth: 0 }}>
         {meta && <div className="kicker">{meta}</div>}
         <div className="t" dir="auto">{w.title}{w.subtitle ? <span className="sub"> : {w.subtitle}</span> : null}</div>
-        {w.expressionOfHub?.label && <div className="hub" dir="auto">من العمل: <span className="inline-link" role="link" tabIndex={0} onClick={(e) => { e.stopPropagation(); ctx.go({ mode: 'hub', key: w.expressionOfHub!.uri }); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); ctx.go({ mode: 'hub', key: w.expressionOfHub!.uri }); } }}>{w.expressionOfHub.label}</span></div>}
-        {who.length > 0 && <div className="s" dir="auto">{who.reduce<React.ReactNode[]>((a, n, k) => (k ? [...a, '، ', n] : [n]), [])}</div>}
+        {w.expressionOfHub?.label && <div className="hub" dir="auto">{t('من العمل:', 'From the work:')} <span className="inline-link" role="link" tabIndex={0} onClick={(e) => { e.stopPropagation(); ctx.go({ mode: 'hub', key: w.expressionOfHub!.uri }); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); ctx.go({ mode: 'hub', key: w.expressionOfHub!.uri }); } }}>{w.expressionOfHub.label}</span></div>}
+        {who.length > 0 && <div className="s" dir="auto">{who.reduce<React.ReactNode[]>((a, n, k) => (k ? [...a, t('، ', ', '), n] : [n]), [])}</div>}
         <div className="m">{[fmt, year].filter(Boolean).join(' · ')}</div>
       </div>
       <div className="side">
@@ -622,7 +648,7 @@ function FacetGroup({ title, k, values, sel, onToggle, needle, startOpen }: {
           );
         })}
         {!needle && shown.length > 6 && (
-          <button className="opt-more" onClick={() => setMore(m => !m)}>{more ? 'عرض أقل' : `عرض المزيد (+${shown.length - 6})`}</button>
+          <button className="opt-more" onClick={() => setMore(m => !m)}>{more ? t('عرض أقل', 'Show less') : t(`عرض المزيد (+${shown.length - 6})`, `Show more (+${shown.length - 6})`)}</button>
         )}
       </div>
     </details>
@@ -664,44 +690,44 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
   return (
     <div className="wrap">
       <div className="page-head">
-        <Crumbs ctx={ctx} items={[{ label: query ? 'نتائج البحث' : 'الكتب' }]} />
-        <h1 className="page-title">{query ? <>نتائج «{query}»</> : 'كل الكتب'}</h1>
+        <Crumbs ctx={ctx} items={[{ label: query ? t('نتائج البحث', 'Search results') : t('الكتب', 'Books') }]} />
+        <h1 className="page-title">{query ? t(`نتائج «${query}»`, `Results for “${query}”`) : t('كل الكتب', 'All books')}</h1>
       </div>
       <div style={{ maxWidth: 720 }}><SearchBox ctx={ctx} initial={query} compact /></div>
 
       <div className="results-layout">
-        <aside className={`filters glass ${showFilters ? 'open' : ''}`} aria-label="تضييق النتائج">
+        <aside className={`filters glass ${showFilters ? 'open' : ''}`} aria-label={t('تضييق النتائج', 'Narrow the results')}>
           <div className="filters-head">
-            <h2>الفلاتر</h2>
-            {activeCount > 0 && <button className="link-btn" onClick={clear}>مسح الكل</button>}
+            <h2>{t('الفلاتر', 'Filters')}</h2>
+            {activeCount > 0 && <button className="link-btn" onClick={clear}>{t('مسح الكل', 'Clear all')}</button>}
           </div>
           <label className="filter-search">
-            <span className="sr-only">ابحث في الفلاتر</span>
-            <input value={needle} onChange={e => setNeedle(e.target.value)} placeholder="ابحث في الفلاتر…" />
+            <span className="sr-only">{t('ابحث في الفلاتر', 'Search the filters')}</span>
+            <input value={needle} onChange={e => setNeedle(e.target.value)} placeholder={t('ابحث في الفلاتر…', 'Search the filters…')} />
           </label>
-          {FACETS.map(({ key, title }, idx) => (
-            <FacetGroup key={key} k={key} title={title} values={counts[key]} sel={sel} onToggle={onToggle} needle={n} startOpen={idx < 4} />
+          {FACETS.map(({ key, title, en }, idx) => (
+            <FacetGroup key={key} k={key} title={t(title, en)} values={counts[key]} sel={sel} onToggle={onToggle} needle={n} startOpen={idx < 4} />
           ))}
         </aside>
 
         <section aria-live="polite">
           <div className="results-bar glass">
-            <span className="count">عدد النتائج: {filtered.length}</span>
+            <span className="count">{t('عدد النتائج:', 'Results:')} {filtered.length}</span>
             <button className="btn-ghost filters-toggle" aria-expanded={showFilters} onClick={() => setShowFilters(s => !s)}>
-              الفلاتر{activeCount ? ` (${activeCount})` : ''}
+              {t('الفلاتر', 'Filters')}{activeCount ? ` (${activeCount})` : ''}
             </button>
             <label className="sort">
-              <span>الترتيب:</span>
+              <span>{t('الترتيب:', 'Sort:')}</span>
               <select className="select" value={sort} onChange={e => { setSort(e.target.value as SortKey); setPage(1); }}>
-                {SORT_OPTIONS.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}
+                {SORT_OPTIONS.map(s => <option key={s.v} value={s.v}>{t(s.l, s.en)}</option>)}
               </select>
             </label>
           </div>
 
           {chips.length > 0 && (
-            <div className="chips" aria-label="الفلاتر المختارة">
+            <div className="chips" aria-label={t('الفلاتر المختارة', 'Chosen filters')}>
               {chips.map(c => (
-                <button key={`${c.k}:${c.v}`} className="chip-x" onClick={() => onToggle(c.k, c.v)} aria-label={`إزالة ${c.label}`}>
+                <button key={`${c.k}:${c.v}`} className="chip-x" onClick={() => onToggle(c.k, c.v)} aria-label={t(`إزالة ${c.label}`, `Remove ${c.label}`)}>
                   <span dir="auto">{c.label}</span><span aria-hidden="true">×</span>
                 </button>
               ))}
@@ -710,9 +736,9 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
 
           {shown.length === 0 ? (
             <div className="empty glass">
-              <h3>لم نجد كتباً تطابق بحثك</h3>
-              <p>تأكد من الإملاء، أو ابحث باسم المؤلف وحده، أو أزل بعض الفلاتر.</p>
-              {activeCount ? <button className="btn-black" onClick={clear}>إزالة الفلاتر</button> : <button className="btn-black" onClick={() => ctx.go({ mode: 'search', query: '' })}>تصفّح كل الكتب</button>}
+              <h3>{t('لم نجد كتباً تطابق بحثك', 'No books match your search')}</h3>
+              <p>{t('تأكد من الإملاء، أو ابحث باسم المؤلف وحده، أو أزل بعض الفلاتر.', 'Check the spelling, search by the author’s name alone, or remove some filters.')}</p>
+              {activeCount ? <button className="btn-black" onClick={clear}>{t('إزالة الفلاتر', 'Remove filters')}</button> : <button className="btn-black" onClick={() => ctx.go({ mode: 'search', query: '' })}>{t('تصفّح كل الكتب', 'Browse all books')}</button>}
             </div>
           ) : (
             <div className="rows">
@@ -721,12 +747,12 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
           )}
 
           {pages > 1 && (
-            <nav className="pager" aria-label="الصفحات">
-              <button className="btn-ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>السابق</button>
+            <nav className="pager" aria-label={t('الصفحات', 'Pages')}>
+              <button className="btn-ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>{t('السابق', 'Previous')}</button>
               {Array.from({ length: pages }).slice(0, 9).map((_, i) => (
-                <button key={i} className="btn-ghost" aria-pressed={page === i + 1} aria-label={`الصفحة ${i + 1}`} onClick={() => setPage(i + 1)}>{i + 1}</button>
+                <button key={i} className="btn-ghost" aria-pressed={page === i + 1} aria-label={t(`الصفحة ${i + 1}`, `Page ${i + 1}`)} onClick={() => setPage(i + 1)}>{i + 1}</button>
               ))}
-              <button className="btn-ghost" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>التالي</button>
+              <button className="btn-ghost" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>{t('التالي', 'Next')}</button>
             </nav>
           )}
         </section>
@@ -758,7 +784,7 @@ function useRecordHead(work: OpacWorkEntity | undefined) {
     const meta = head.querySelector<HTMLMetaElement>('meta[name="description"]');
     const before = { title: document.title, description: meta?.content };
     const who = work.primaryCreator?.nameArabic || work.primaryCreator?.name;
-    document.title = [work.title, who].filter(Boolean).join(' — ') + ' | فهرس مون';
+    document.title = [work.title, who].filter(Boolean).join(' — ') + ` | ${t('فهرس مون', 'Moon Catalogue')}`;
     if (meta) meta.content = metaDescription(work);
     const canonical = document.createElement('link');
     canonical.rel = 'canonical';
@@ -786,12 +812,12 @@ function ResultNav({ ctx, id }: { ctx: Ctx; id: string }) {
   const back = () => ctx.go({ mode: 'search', query: last.query, params: params.toString() });
   const open = (k: number) => ctx.go({ mode: 'work', id: last.ids[k] });
   return (
-    <nav className="result-nav glass" aria-label="التنقل بين النتائج">
-      <button className="link-btn" onClick={back}>→ العودة إلى النتائج</button>
-      <span className="pos">النتيجة {idx + 1} من {last.ids.length}</span>
+    <nav className="result-nav glass" aria-label={t('التنقل بين النتائج', 'Move between results')}>
+      <button className="link-btn" onClick={back}>{t('→ العودة إلى النتائج', '← Back to results')}</button>
+      <span className="pos">{t(`النتيجة ${idx + 1} من ${last.ids.length}`, `Result ${idx + 1} of ${last.ids.length}`)}</span>
       <span className="pn">
-        <button className="btn-ghost" disabled={idx <= 0} onClick={() => open(idx - 1)}>السابق</button>
-        <button className="btn-ghost" disabled={idx >= last.ids.length - 1} onClick={() => open(idx + 1)}>التالي</button>
+        <button className="btn-ghost" disabled={idx <= 0} onClick={() => open(idx - 1)}>{t('السابق', 'Previous')}</button>
+        <button className="btn-ghost" disabled={idx >= last.ids.length - 1} onClick={() => open(idx + 1)}>{t('التالي', 'Next')}</button>
       </span>
     </nav>
   );
@@ -815,7 +841,7 @@ async function downloadMarc(work: OpacWorkEntity, kind: 'mrc' | 'xml' | 'mrk', s
       download(`${work.id}.mrk`, marc.toMrk(rec), 'text/plain');
     }
   } catch {
-    say('تعذّر إنشاء ملف MARC لهذا الكتاب');
+    say(t('تعذّر إنشاء ملف MARC لهذا الكتاب', 'Could not make a MARC file for this book'));
   }
 }
 
@@ -833,11 +859,11 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
   if (!work) {
     return (
       <div className="wrap">
-        <div className="page-head"><Crumbs ctx={ctx} items={[{ label: 'كتاب غير موجود' }]} /></div>
+        <div className="page-head"><Crumbs ctx={ctx} items={[{ label: t('كتاب غير موجود', 'Book not found') }]} /></div>
         <div className="empty glass">
-          <h3>هذا الكتاب غير موجود في الفهرس</h3>
-          <p>ربما حُذف أو لم يُنشر بعد. ابحث عنه بالعنوان.</p>
-          <button className="btn-black" onClick={() => ctx.go({ mode: 'search', query: '' })}>تصفّح كل الكتب</button>
+          <h3>{t('هذا الكتاب غير موجود في الفهرس', 'This book is not in the catalogue')}</h3>
+          <p>{t('ربما حُذف أو لم يُنشر بعد. ابحث عنه بالعنوان.', 'It may have been removed or not published yet. Search for it by title.')}</p>
+          <button className="btn-black" onClick={() => ctx.go({ mode: 'search', query: '' })}>{t('تصفّح كل الكتب', 'Browse all books')}</button>
         </div>
       </div>
     );
@@ -849,8 +875,8 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
   const copies = realCopies(work);
   const libraries = [...new Set(copies.map(c => libraryOf(c.heldBy)).filter(Boolean))];
   const online = valuesOf(work, 'avail').includes('online');
-  const kicker = [work.genreForm?.join('، '), languageName(work.languageLabel, work.language)].filter(Boolean).join(' · ');
-  const fmt = valuesOf(work, 'format')[0];
+  const kicker = [work.genreForm?.join(t('، ', ', ')), languageDisplay(languageName(work.languageLabel, work.language))].filter(Boolean).join(' · ');
+  const fmt = valueLabel('format', valuesOf(work, 'format')[0] || '');
   const year = workYearOf(work);
   const uri = workUri(work);
   const people = [work.primaryCreator, ...(work.contributors || [])]
@@ -859,38 +885,38 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
   const searchFor = (q: string) => ctx.go({ mode: 'search', query: q });
 
   const details: [string, React.ReactNode][] = ([
-    ['المساهمون والأدوار', people.length ? (
+    [t('المساهمون والأدوار', 'Contributors and roles'), people.length ? (
       <span className="people">{people.map((p, i) => (
         <React.Fragment key={p.id || i}>
-          {i > 0 && '، '}
+          {i > 0 && t('، ', ', ')}
           <button className="inline-link" onClick={() => ctx.go({ mode: 'person', key: p.id })}>{personName(p)}</button>
           {roleLabel(p.role) && <span className="role"> ({roleLabel(p.role)})</span>}
           {p.lifespan && <span className="role"> {p.lifespan}</span>}
         </React.Fragment>
       ))}</span>
     ) : null],
-    ['العنوان', [work.title, work.subtitle].filter(Boolean).join(' : ')],
-    ['النشر', [[inst?.publicationPlace, publisher].filter(Boolean).join(' : '), inst?.publicationYear || work.originDate].filter(Boolean).join('، ')],
-    ['الوصف المادي', [inst?.extent || work.extent, inst?.dimensions || work.dimensions].filter(Boolean).join(' ؛ ')],
-    ['السلسلة', work.series],
-    ['المعرّفات', [...new Set(work.instances.map(i => i.isbn).filter(Boolean))].map(x => `ISBN ${x}`).join('، ')],
-    ['التصنيف', [work.classificationLcc && `${work.classificationLcc} (LCC)`, work.classificationDdc && `${work.classificationDdc} (ديوي)`].filter(Boolean).join('، ')],
-    ['رقم الاستدعاء', inst?.callNumber],
-    ['ملاحظات', (work.notes || []).filter(Boolean).join(' — ')],
-    ['المحتويات', work.tableOfContents],
-    ['رقم التسجيلة', work.id],
+    [t('العنوان', 'Title'), [work.title, work.subtitle].filter(Boolean).join(' : ')],
+    [t('النشر', 'Publication'), [[inst?.publicationPlace, publisher].filter(Boolean).join(' : '), inst?.publicationYear || work.originDate].filter(Boolean).join(t('، ', ', '))],
+    [t('الوصف المادي', 'Physical description'), [inst?.extent || work.extent, inst?.dimensions || work.dimensions].filter(Boolean).join(t(' ؛ ', ' ; '))],
+    [t('السلسلة', 'Series'), work.series],
+    [t('المعرّفات', 'Identifiers'), [...new Set(work.instances.map(i => i.isbn).filter(Boolean))].map(x => `ISBN ${x}`).join(t('، ', ', '))],
+    [t('التصنيف', 'Classification'), [work.classificationLcc && `${work.classificationLcc} (LCC)`, work.classificationDdc && `${work.classificationDdc} (${t('ديوي', 'Dewey')})`].filter(Boolean).join(t('، ', ', '))],
+    [t('رقم الاستدعاء', 'Call number'), inst?.callNumber],
+    [t('ملاحظات', 'Notes'), (work.notes || []).filter(Boolean).join(' — ')],
+    [t('المحتويات', 'Contents'), work.tableOfContents],
+    [t('رقم التسجيلة', 'Record number'), work.id],
   ] as [string, any][]).filter(([, v]) => v && (typeof v !== 'string' || v.trim()));
   const shownDetails = showAll ? details : details.slice(0, 6);
 
   const copyLink = async () => {
     await navigator.clipboard?.writeText(pageUrl(work.id)).catch(() => {});
-    ctx.say('نُسخ رابط الكتاب');
+    ctx.say(t('نُسخ رابط الكتاب', 'Link copied'));
   };
 
   return (
     <div className="wrap">
       <div className="page-head" style={{ paddingBottom: 0 }}>
-        <Crumbs ctx={ctx} items={[{ label: 'الكتب', view: { mode: 'search', query: '' } }, { label: work.title }]} />
+        <Crumbs ctx={ctx} items={[{ label: t('الكتب', 'Books'), view: { mode: 'search', query: '' } }, { label: work.title }]} />
       </div>
       <ResultNav ctx={ctx} id={work.id} />
 
@@ -900,11 +926,11 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
           <div className="actions glass">
             <button className="btn-black" onClick={() => ctx.toggleSave(work.id)} aria-pressed={isSaved}>
               <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                {isSaved ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}{isSaved ? 'في قائمتك' : 'احفظ في قائمتك'}
+                {isSaved ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}{isSaved ? t('في قائمتك', 'In your list') : t('احفظ في قائمتك', 'Save to your list')}
               </span>
             </button>
-            <button className="btn-ghost" onClick={() => setCiteOpen(true)}><Quote size={16} />استشهد</button>
-            <button className="btn-ghost" onClick={copyLink}><Link2 size={16} />انسخ الرابط</button>
+            <button className="btn-ghost" onClick={() => setCiteOpen(true)}><Quote size={16} />{t('استشهد', 'Cite')}</button>
+            <button className="btn-ghost" onClick={copyLink}><Link2 size={16} />{t('انسخ الرابط', 'Copy link')}</button>
           </div>
         </aside>
 
@@ -919,7 +945,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
                 <div className="people">
                   {people.slice(0, 4).map((p, i) => (
                     <React.Fragment key={p.id || i}>
-                      {i > 0 && '، '}
+                      {i > 0 && t('، ', ', ')}
                       <button onClick={() => ctx.go({ mode: 'person', key: p.id })}>{personName(p)}</button>
                       {roleLabel(p.role) && <span className="role"> ({roleLabel(p.role)})</span>}
                     </React.Fragment>
@@ -931,9 +957,9 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
               {inst?.isbn && <div>ISBN {inst.isbn}{fmt ? ` · ${fmt}` : ''}</div>}
               {(publisher || year) && (
                 <div>
-                  النشر: {inst?.publicationPlace ? `${inst.publicationPlace} : ` : ''}
+                  {t('النشر:', 'Published:')} {inst?.publicationPlace ? `${inst.publicationPlace} : ` : ''}
                   {publisher ? <button className="inline-link" onClick={() => searchFor(publisher)}>{publisher}</button> : null}
-                  {year ? `، ${year}` : ''}
+                  {year ? `${t('، ', ', ')}${year}` : ''}
                 </div>
               )}
               {(inst?.extent || work.extent) && <div>{inst?.extent || work.extent}</div>}
@@ -942,18 +968,18 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
             <div className="holdings-cta">
               {online || copies.length ? (
                 <a className="btn-black" href="#h-where" onClick={(e) => { e.preventDefault(); document.getElementById('h-where')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
-                  {online ? 'متاح على الإنترنت' : `نسخة ورقية · ${libraries.length > 1 ? `${libraries.length} مكتبات` : (libraries[0] || 'المكتبة')}`}
+                  {online ? t('متاح على الإنترنت', 'Available online') : `${t('نسخة ورقية', 'Print copy')} · ${libraries.length > 1 ? t(`${libraries.length} مكتبات`, `${libraries.length} libraries`) : (libraries[0] || t('المكتبة', 'The library'))}`}
                 </a>
-              ) : <span className="status" data-s="not_connected">لا نسخ مسجلة بعد</span>}
-              {work.instances.length > 1 && <a className="btn-ghost" href="#h-eds" onClick={(e) => { e.preventDefault(); document.getElementById('h-eds')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{work.instances.length} طبعات</a>}
+              ) : <span className="status" data-s="not_connected">{t('لا نسخ مسجلة بعد', 'No copies recorded yet')}</span>}
+              {work.instances.length > 1 && <a className="btn-ghost" href="#h-eds" onClick={(e) => { e.preventDefault(); document.getElementById('h-eds')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{t(`${work.instances.length} طبعات`, `${work.instances.length} editions`)}</a>}
             </div>
             {(work.genreForm?.length || work.subjects.length) ? (
               <div className="terms">
                 {work.genreForm && work.genreForm.length > 0 && (
-                  <div><span className="lbl">الفئة</span>{work.genreForm.map(g => <button key={g} className="chip" onClick={() => searchFor(g)}>{g}</button>)}</div>
+                  <div><span className="lbl">{t('الفئة', 'Category')}</span>{work.genreForm.map(g => <button key={g} className="chip" onClick={() => searchFor(g)}>{g}</button>)}</div>
                 )}
                 {work.subjects.filter(s => isReadableLabel(s.label)).length > 0 && (
-                  <div><span className="lbl">الموضوع</span>{work.subjects.filter(s => isReadableLabel(s.label)).map(s => <button key={s.id} className="chip" onClick={() => ctx.go({ mode: 'subject', key: s.id })}>{s.label}</button>)}</div>
+                  <div><span className="lbl">{t('الموضوع', 'Subject')}</span>{work.subjects.filter(s => isReadableLabel(s.label)).map(s => <button key={s.id} className="chip" onClick={() => ctx.go({ mode: 'subject', key: s.id })}>{s.label}</button>)}</div>
                 )}
               </div>
             ) : null}
@@ -961,41 +987,41 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
 
           {summary && (
             <section className="panel glass rise" aria-labelledby="h-sum">
-              <h2 id="h-sum">نبذة</h2>
+              <h2 id="h-sum">{t('نبذة', 'Summary')}</h2>
               <p className="summary">{summary}</p>
             </section>
           )}
 
           {details.length > 0 && (
             <section className="panel glass rise" aria-labelledby="h-det">
-              <h2 id="h-det">التفاصيل</h2>
+              <h2 id="h-det">{t('التفاصيل', 'Details')}</h2>
               <dl className="dl">
                 {shownDetails.map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>)}
               </dl>
-              {details.length > 6 && <button className="link-btn" onClick={() => setShowAll(s => !s)} style={{ marginTop: 12 }}>{showAll ? 'تفاصيل أقل' : 'كل التفاصيل'}</button>}
+              {details.length > 6 && <button className="link-btn" onClick={() => setShowAll(s => !s)} style={{ marginTop: 12 }}>{showAll ? t('تفاصيل أقل', 'Fewer details') : t('كل التفاصيل', 'All details')}</button>}
             </section>
           )}
 
           <section className="panel glass rise" aria-labelledby="h-where-t" id="h-where">
-            <h2 id="h-where-t">أين تجده</h2>
+            <h2 id="h-where-t">{t('أين تجده', 'Where to find it')}</h2>
             {copies.length === 0 ? (
-              <p className="muted">لم تُسجَّل نسخ لهذا الكتاب بعد. اسأل المكتبة عنه برقم التسجيلة {work.id}.</p>
+              <p className="muted">{t(`لم تُسجَّل نسخ لهذا الكتاب بعد. اسأل المكتبة عنه برقم التسجيلة ${work.id}.`, `No copies of this book are recorded yet. Ask the library for it by record number ${work.id}.`)}</p>
             ) : (
               <div className="libraries">
                 {(libraries.length ? libraries : ['']).map(lib => {
                   const here = copies.filter(c => libraryOf(c.heldBy) === lib);
                   return (
                     <div key={lib || 'x'} className="library">
-                      <div className="lib-name">{lib || 'المكتبة'} <span className="n">{here.length === 1 ? 'نسخة واحدة' : here.length === 2 ? 'نسختان' : `${here.length} نسخ`}</span></div>
+                      <div className="lib-name">{lib || t('المكتبة', 'The library')} <span className="n">{here.length === 1 ? t('نسخة واحدة', '1 copy') : here.length === 2 ? t('نسختان', '2 copies') : t(`${here.length} نسخ`, `${here.length} copies`)}</span></div>
                       {here.map(c => {
                         const where = String(c.heldBy || '').split(' — ').slice(1).join(' — ');
                         const s = c.status && c.status !== 'not_connected' ? c.status : 'not_connected';
                         return (
                           <div key={c.id} className="copy">
-                            <span className="t">{[where, c.shelfMark && `الرف ${c.shelfMark}`].filter(Boolean).join(' · ') || 'نسخة'}</span>
-                            <span className="status" data-s={s}>{s === 'not_connected' ? 'اسأل المكتبة عن إتاحتها' : STATUS_LABEL[s] || s}</span>
-                            <span className="m">{[c.copyNumber && `نسخة رقم ${c.copyNumber}`, c.barcode && `الباركود ${c.barcode}`, ...(c.notes || [])].filter(Boolean).join('، ')}</span>
-                            {c.accessUrl && <a className="link-btn" href={c.accessUrl} target="_blank" rel="noreferrer">افتح النسخة الرقمية</a>}
+                            <span className="t">{[where, c.shelfMark && t(`الرف ${c.shelfMark}`, `Shelf ${c.shelfMark}`)].filter(Boolean).join(' · ') || t('نسخة', 'Copy')}</span>
+                            <span className="status" data-s={s}>{s === 'not_connected' ? t('اسأل المكتبة عن إتاحتها', 'Ask the library if it is available') : STATUS_LABEL()[s] || s}</span>
+                            <span className="m">{[c.copyNumber && t(`نسخة رقم ${c.copyNumber}`, `Copy ${c.copyNumber}`), c.barcode && t(`الباركود ${c.barcode}`, `Barcode ${c.barcode}`), ...(c.notes || [])].filter(Boolean).join(t('، ', ', '))}</span>
+                            {c.accessUrl && <a className="link-btn" href={c.accessUrl} target="_blank" rel="noreferrer">{t('افتح النسخة الرقمية', 'Open the digital copy')}</a>}
                           </div>
                         );
                       })}
@@ -1008,11 +1034,11 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
 
           {work.instances.length > 1 && (
             <section className="panel glass rise" aria-labelledby="h-eds-t" id="h-eds">
-              <h2 id="h-eds-t">طبعات هذا العمل</h2>
+              <h2 id="h-eds-t">{t('طبعات هذا العمل', 'Editions of this work')}</h2>
               <div className="copies">
                 {work.instances.map(i => (
                   <div key={i.id} className="copy">
-                    <span className="t">{[i.publicationPlace, i.publisher].filter(Boolean).join(' : ') || i.title}{i.publicationYear ? `، ${i.publicationYear}` : ''}</span>
+                    <span className="t">{[i.publicationPlace, i.publisher].filter(Boolean).join(' : ') || i.title}{i.publicationYear ? `${t('، ', ', ')}${i.publicationYear}` : ''}</span>
                     <span className="m">{[i.isbn && `ISBN ${i.isbn}`, i.extent].filter(Boolean).join(' · ')}</span>
                   </div>
                 ))}
@@ -1022,20 +1048,20 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
 
           {siblings.length > 0 && (
             <section className="panel glass rise" aria-labelledby="h-hub">
-              <h2 id="h-hub">من العمل نفسه{work.expressionOfHub?.label ? <>: <button className="inline-link" onClick={() => ctx.go({ mode: 'hub', key: work.expressionOfHub!.uri })}>{work.expressionOfHub.label}</button></> : ''}</h2>
-              <p className="muted">ترجمات وطبعات أخرى مرتبطة بالمحور نفسه (bf:Hub).</p>
+              <h2 id="h-hub">{t('من العمل نفسه', 'From the same work')}{work.expressionOfHub?.label ? <>: <button className="inline-link" onClick={() => ctx.go({ mode: 'hub', key: work.expressionOfHub!.uri })}>{work.expressionOfHub.label}</button></> : ''}</h2>
+              <p className="muted">{t('ترجمات وطبعات أخرى مرتبطة بالمحور نفسه (bf:Hub).', 'Other translations and editions linked to the same hub (bf:Hub).')}</p>
               <div className="rows">{siblings.map((w, i) => <ResultCard key={w.id} w={w} ctx={ctx} i={i} />)}</div>
             </section>
           )}
 
           <section className="panel glass rise linked" aria-labelledby="h-ld">
-            <h2 id="h-ld">البيانات المترابطة</h2>
+            <h2 id="h-ld">{t('البيانات المترابطة', 'Linked data')}</h2>
             <div className="perma">
-              <span className="lbl">المعرّف الدائم</span>
+              <span className="lbl">{t('المعرّف الدائم', 'Permanent identifier')}</span>
               <a href={uri} dir="ltr">{uri}</a>
             </div>
             <div className="dl-links">
-              <span className="lbl">نزّل البيانات الوصفية</span>
+              <span className="lbl">{t('نزّل البيانات الوصفية', 'Download the metadata')}</span>
               <a href={`${uri}.jsonld`} target="_blank" rel="noreferrer">JSON-LD</a>
               <a href={`${uri}.ttl`} target="_blank" rel="noreferrer">Turtle</a>
               <a href={`${uri}.nt`} target="_blank" rel="noreferrer">N-Triples</a>
@@ -1044,8 +1070,8 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
               <button className="inline-link" onClick={() => downloadMarc(work, 'mrk', ctx.say)}>MarcEdit (.mrk)</button>
             </div>
             <p className="muted">
-              كل ما في هذه الصفحة بيانات BIBFRAME مترابطة: لكل عمل وطبعة ونسخة وشخص وموضوع عنوان دائم على mooon.site،
-              ويمكن الاستعلام عنها عبر <a href="/resource/sparql">SPARQL</a> أو تنزيل الفهرس كاملاً من <a href="/resource/">قائمة السجلات</a>.
+              {t('كل ما في هذه الصفحة بيانات BIBFRAME مترابطة: لكل عمل وطبعة ونسخة وشخص وموضوع عنوان دائم على mooon.site، ويمكن الاستعلام عنها عبر', 'Everything on this page is linked BIBFRAME data: every work, edition, copy, person and subject has a permanent address on mooon.site, and can be queried with')}
+              {' '}<a href="/resource/sparql">SPARQL</a> {t('أو تنزيل الفهرس كاملاً من', 'or downloaded in full from the')} <a href="/resource/">{t('قائمة السجلات', 'record list')}</a>.
             </p>
           </section>
         </div>
@@ -1053,7 +1079,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
 
       {related.length > 0 && (
         <section className="section">
-          <div className="section-head"><h2>كتب قريبة منه</h2></div>
+          <div className="section-head"><h2>{t('كتب قريبة منه', 'Related books')}</h2></div>
           <div className="shelf">{related.map((w, i) => <BookCard key={w.id} work={w} ctx={ctx} i={i} />)}</div>
         </section>
       )}
@@ -1073,8 +1099,8 @@ function CiteDialog({ work, ctx, onClose }: { work: OpacWorkEntity; ctx: Ctx; on
       <div className="scrim" onClick={onClose} />
       <div className="dialog glass" role="dialog" aria-modal="true" aria-labelledby="cite-h">
         <div className="sheet-head">
-          <h2 id="cite-h">استشهد بهذا الكتاب</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="إغلاق"><X size={18} /></button>
+          <h2 id="cite-h">{t('استشهد بهذا الكتاب', 'Cite this book')}</h2>
+          <button className="icon-btn" onClick={onClose} aria-label={t('إغلاق', 'Close')}><X size={18} /></button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {rows.map(([k, v]) => (
@@ -1082,7 +1108,7 @@ function CiteDialog({ work, ctx, onClose }: { work: OpacWorkEntity; ctx: Ctx; on
               <div style={{ fontSize: 14, color: 'var(--ink-3)', marginBottom: 6 }}>{k}</div>
               <div className="cite-row">
                 <div className="cite" style={k === 'BibTeX' ? { direction: 'ltr', textAlign: 'left', fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 13, whiteSpace: 'pre-wrap' } : undefined}>{v}</div>
-                <button className="icon-btn" aria-label={`انسخ ${k}`} onClick={() => { navigator.clipboard?.writeText(v); setCopied(k); ctx.say(`نُسخ استشهاد ${k}`); }}>
+                <button className="icon-btn" aria-label={t(`انسخ ${k}`, `Copy ${k}`)} onClick={() => { navigator.clipboard?.writeText(v); setCopied(k); ctx.say(t(`نُسخ استشهاد ${k}`, `${k} citation copied`)); }}>
                   {copied === k ? <Check size={18} /> : <Copy size={18} />}
                 </button>
               </div>
@@ -1143,7 +1169,7 @@ function useMoonAuthority(kind: 'agent' | 'topic' | 'hub', name: string | undefi
 }
 
 const SAME_AS_LABEL = (u: string) =>
-  /viaf\.org/.test(u) ? 'VIAF' : /id\.loc\.gov/.test(u) ? 'مكتبة الكونغرس' : /wikidata\.org/.test(u) ? 'ويكي بيانات' : /isni/.test(u) ? 'ISNI' : new URL(u).hostname;
+  /viaf\.org/.test(u) ? 'VIAF' : /id\.loc\.gov/.test(u) ? t('مكتبة الكونغرس', 'Library of Congress') : /wikidata\.org/.test(u) ? t('ويكي بيانات', 'Wikidata') : /isni/.test(u) ? 'ISNI' : new URL(u).hostname;
 
 /** The entity's own address and data, and where it links out to (owl:sameAs). */
 function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; note?: string }) {
@@ -1152,12 +1178,12 @@ function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; no
   if (!own && !links.length) return null;
   return (
     <section className="panel glass rise linked" aria-labelledby="h-ld">
-      <h2 id="h-ld">البيانات المترابطة</h2>
+      <h2 id="h-ld">{t('البيانات المترابطة', 'Linked data')}</h2>
       {own && (
         <>
-          <div className="perma"><span className="lbl">المعرّف الدائم</span><a href={own} dir="ltr">{own}</a></div>
+          <div className="perma"><span className="lbl">{t('المعرّف الدائم', 'Permanent identifier')}</span><a href={own} dir="ltr">{own}</a></div>
           <div className="dl-links">
-            <span className="lbl">نزّل</span>
+            <span className="lbl">{t('نزّل', 'Download')}</span>
             <a href={`${own}.jsonld`} target="_blank" rel="noreferrer">JSON-LD</a>
             <a href={`${own}.ttl`} target="_blank" rel="noreferrer">Turtle</a>
             <a href={`${own}.nt`} target="_blank" rel="noreferrer">N-Triples</a>
@@ -1166,7 +1192,7 @@ function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; no
       )}
       {links.length > 0 && (
         <div className="dl-links">
-          <span className="lbl">الكيان نفسه في</span>
+          <span className="lbl">{t('الكيان نفسه في', 'Same entity in')}</span>
           {links.map(u => <a key={u} href={u} target="_blank" rel="noreferrer">{SAME_AS_LABEL(u)} <ArrowUpRight size={13} /></a>)}
         </div>
       )}
@@ -1178,19 +1204,19 @@ function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; no
 function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
   const r = useMemo(() => wolfMoonOpacService.getPersonByNameOrUri(k), [k, ctx.rev]);
   const moon = useMoonAuthority('agent', r ? personName(r.person) : undefined);
-  if (!r) return <NotFound ctx={ctx} what="المؤلف" back={{ mode: 'authors' }} backLabel="كل المؤلفين" />;
+  if (!r) return <NotFound ctx={ctx} what={t('المؤلف', 'author')} back={{ mode: 'authors' }} backLabel={t('كل المؤلفين', 'All authors')} />;
   const { person: p, works } = r;
   const name = personName(p);
   // Libris groups a person's works by what they did: wrote it, translated it, edited it …
   const roleIn = (w: OpacWorkEntity) => {
-    if (personName(w.primaryCreator) === name) return roleLabel(w.primaryCreator.role) || 'مؤلف';
+    if (personName(w.primaryCreator) === name) return roleLabel(w.primaryCreator.role) || AUTHOR_ROLE();
     const c = (w.contributors || []).find(x => personName(x) === name);
-    return roleLabel(c?.role) || 'مشارك';
+    return roleLabel(c?.role) || t('مشارك', 'Contributor');
   };
   const groups = new Map<string, OpacWorkEntity[]>();
   works.forEach(w => { const g = roleIn(w); groups.set(g, [...(groups.get(g) || []), w]); });
   const subjects = [...new Map(works.flatMap(w => w.subjects).filter(s => isReadableLabel(s.label)).map(s => [s.label, s])).values()].slice(0, 10);
-  const langs = [...new Set(works.map(w => languageName(w.languageLabel, w.language)).filter(Boolean))];
+  const langs = [...new Set(works.map(w => languageDisplay(languageName(w.languageLabel, w.language))).filter(Boolean))];
   const sameAs = [
     p.viafUri, p.locUri, p.isniUri,
     p.wikidataId ? (p.wikidataId.startsWith('http') ? p.wikidataId : `https://www.wikidata.org/wiki/${p.wikidataId}`) : undefined,
@@ -1202,20 +1228,20 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
   return (
     <div className="wrap">
       <div className="page-head" style={{ paddingBottom: 0 }}>
-        <Crumbs ctx={ctx} items={[{ label: 'المؤلفون', view: { mode: 'authors' } }, { label: name }]} />
+        <Crumbs ctx={ctx} items={[{ label: t('المؤلفون', 'Authors'), view: { mode: 'authors' } }, { label: name }]} />
       </div>
       <section className="person-hero glass rise">
         <Avatar p={p} cls="xl" morph />
         <div>
-          <div className="kicker">شخص</div>
+          <div className="kicker">{t('شخص', 'Person')}</div>
           <h1 className="page-title">{name}</h1>
-          <p className="lede">{[p.nameEnglish && p.nameEnglish !== name ? p.nameEnglish : '', p.lifespan, p.city].filter(Boolean).join('، ')}</p>
-          {variants.length > 0 && <p className="muted">أشكال أخرى للاسم: {variants.join(' · ')}</p>}
+          <p className="lede">{[p.nameEnglish && p.nameEnglish !== name ? p.nameEnglish : '', p.lifespan, p.city].filter(Boolean).join(t('، ', ', '))}</p>
+          {variants.length > 0 && <p className="muted">{t('أشكال أخرى للاسم:', 'Other forms of the name:')} {variants.join(' · ')}</p>}
           {(p.bioArabic || p.bioEnglish) && <p className="bio">{p.bioArabic || p.bioEnglish}</p>}
           <div className="entity-facts">
-            <span><b>{works.length}</b> {works.length === 1 ? 'عمل' : 'أعمال'} في الفهرس</span>
-            {span && <span>{span.includes('–') ? 'بين' : 'سنة'} <b>{span}</b></span>}
-            {langs.length > 0 && <span>بـ{langs.join(' و')}</span>}
+            <span><b>{works.length}</b> {works.length === 1 ? t('عمل', 'work') : t('أعمال', 'works')} {t('في الفهرس', 'in the catalogue')}</span>
+            {span && <span>{span.includes('–') ? t('بين', 'Between') : t('سنة', 'In')} <b>{span}</b></span>}
+            {langs.length > 0 && <span>{t(`بـ${langs.join(' و')}`, `In ${langs.join(' and ')}`)}</span>}
           </div>
         </div>
       </section>
@@ -1224,18 +1250,18 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
         <div className="entity-main">
           {[...groups].map(([role, ws]) => (
             <section key={role} className="section" style={{ marginTop: 24 }}>
-              <div className="section-head"><h2>{role === 'مؤلف' ? 'من تأليفه' : `بصفته ${role}`} <span className="count-n">{ws.length}</span></h2>
-                <button className="link-btn" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_author=${encodeURIComponent(name)}` })}>في البحث مع الفلاتر</button>
+              <div className="section-head"><h2>{role === AUTHOR_ROLE() ? t('من تأليفه', 'Written by') : t(`بصفته ${role}`, `As ${role.toLowerCase()}`)} <span className="count-n">{ws.length}</span></h2>
+                <button className="link-btn" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_author=${encodeURIComponent(name)}` })}>{t('في البحث مع الفلاتر', 'In search with filters')}</button>
               </div>
               <WorkRows works={ws} ctx={ctx} />
             </section>
           ))}
         </div>
         <aside className="entity-side">
-          <LinkedPanel uri={moon?.uri} sameAs={sameAs} note={moon ? undefined : 'لهذا الشخص سجل في ملفات الاستناد العالمية؛ يمكن إضافته إلى ملف مون الاستنادي من محرر مون.'} />
+          <LinkedPanel uri={moon?.uri} sameAs={sameAs} note={moon ? undefined : t('لهذا الشخص سجل في ملفات الاستناد العالمية؛ يمكن إضافته إلى ملف مون الاستنادي من محرر مون.', 'This person has a record in international authority files; it can be added to Moon’s authority file from the Moon editor.')} />
           {subjects.length > 0 && (
             <section className="panel glass rise">
-              <h2>يكتب في</h2>
+              <h2>{t('يكتب في', 'Writes about')}</h2>
               <div className="subjects">{subjects.map(s => <button key={s.id} className="chip" onClick={() => ctx.go({ mode: 'subject', key: s.id })}>{s.label}</button>)}</div>
             </section>
           )}
@@ -1248,7 +1274,7 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
 function SubjectPage({ ctx, k }: { ctx: Ctx; k: string }) {
   const r = useMemo(() => wolfMoonOpacService.getSubjectByLabelOrUri(k), [k, ctx.rev]);
   const moon = useMoonAuthority('topic', r?.subject.label);
-  if (!r) return <NotFound ctx={ctx} what="الموضوع" back={{ mode: 'subjects' }} backLabel="كل الموضوعات" />;
+  if (!r) return <NotFound ctx={ctx} what={t('الموضوع', 'subject')} back={{ mode: 'subjects' }} backLabel={t('كل الموضوعات', 'All subjects')} />;
   const { subject: s, works } = r;
   const near = [s.broader, ...(s.narrower || []), ...(s.related || [])].filter(Boolean) as string[];
   const authors = [...new Map(works.map(w => w.primaryCreator).filter(p => p && personName(p)).map(p => [personName(p), p])).values()].slice(0, 8);
@@ -1257,21 +1283,21 @@ function SubjectPage({ ctx, k }: { ctx: Ctx; k: string }) {
   return (
     <div className="wrap">
       <div className="page-head">
-        <Crumbs ctx={ctx} items={[{ label: 'الموضوعات', view: { mode: 'subjects' } }, { label: s.label }]} />
-        <div className="kicker">موضوع</div>
+        <Crumbs ctx={ctx} items={[{ label: t('الموضوعات', 'Subjects'), view: { mode: 'subjects' } }, { label: s.label }]} />
+        <div className="kicker">{t('موضوع', 'Subject')}</div>
         <h1 className="page-title">{s.label}</h1>
-        <p className="lede">{[s.labelEnglish, `${works.length} ${works.length === 1 ? 'عمل' : 'أعمال'}`, span].filter(Boolean).join('، ')}</p>
+        <p className="lede">{[s.labelEnglish, `${works.length} ${works.length === 1 ? t('عمل', 'work') : t('أعمال', 'works')}`, span].filter(Boolean).join(t('، ', ', '))}</p>
         {near.length > 0 && (
           <div className="terms" style={{ borderTop: 0, paddingTop: 0 }}>
-            <div><span className="lbl">موضوعات قريبة</span>{near.map(n => <button key={n} className="chip" onClick={() => ctx.go({ mode: 'subject', key: n })}>{n}</button>)}</div>
+            <div><span className="lbl">{t('موضوعات قريبة', 'Related subjects')}</span>{near.map(n => <button key={n} className="chip" onClick={() => ctx.go({ mode: 'subject', key: n })}>{n}</button>)}</div>
           </div>
         )}
       </div>
       <div className="entity-layout">
         <div className="entity-main">
           <div className="section-head">
-            <h2>الأعمال <span className="count-n">{works.length}</span></h2>
-            <button className="link-btn" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_subject=${encodeURIComponent(s.label)}` })}>في البحث مع الفلاتر</button>
+            <h2>{t('الأعمال', 'Works')} <span className="count-n">{works.length}</span></h2>
+            <button className="link-btn" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_subject=${encodeURIComponent(s.label)}` })}>{t('في البحث مع الفلاتر', 'In search with filters')}</button>
           </div>
           <WorkRows works={works} ctx={ctx} />
         </div>
@@ -1279,7 +1305,7 @@ function SubjectPage({ ctx, k }: { ctx: Ctx; k: string }) {
           <LinkedPanel uri={moon?.uri} sameAs={sameAs} />
           {authors.length > 0 && (
             <section className="panel glass rise">
-              <h2>كتب فيه</h2>
+              <h2>{t('كتب فيه', 'Books about it')}</h2>
               <div className="subjects">{authors.map(p => <button key={p.id} className="chip" onClick={() => ctx.go({ mode: 'person', key: p.id })}>{personName(p)}</button>)}</div>
             </section>
           )}
@@ -1294,25 +1320,25 @@ function HubPage({ ctx, k }: { ctx: Ctx; k: string }) {
   const works = useMemo(() => wolfMoonOpacService.getAllWorks().filter(w => w.expressionOfHub?.uri === k), [k, ctx.rev]);
   const label = works[0]?.expressionOfHub?.label || '';
   const moon = useMoonAuthority('hub', label);
-  if (!works.length) return <NotFound ctx={ctx} what="العمل" back={{ mode: 'search', query: '' }} backLabel="كل الكتب" />;
-  const langs = [...new Set(works.map(w => languageName(w.languageLabel, w.language)).filter(Boolean))];
+  if (!works.length) return <NotFound ctx={ctx} what={t('العمل', 'work')} back={{ mode: 'search', query: '' }} backLabel={t('كل الكتب', 'All books')} />;
+  const langs = [...new Set(works.map(w => languageDisplay(languageName(w.languageLabel, w.language))).filter(Boolean))];
   const own = k.startsWith('https://mooon.site/resource/hub/') ? k : moon?.uri;
   const sameAs = [k, ...(moon?.sameAs || [])].filter(u => !u.startsWith('https://mooon.site/'));
   return (
     <div className="wrap">
       <div className="page-head">
-        <Crumbs ctx={ctx} items={[{ label: 'الكتب', view: { mode: 'search', query: '' } }, { label }]} />
-        <div className="kicker">عمل (محور bf:Hub)</div>
+        <Crumbs ctx={ctx} items={[{ label: t('الكتب', 'Books'), view: { mode: 'search', query: '' } }, { label }]} />
+        <div className="kicker">{t('عمل (محور bf:Hub)', 'Work (bf:Hub)')}</div>
         <h1 className="page-title" dir="auto">{label}</h1>
-        <p className="lede">{works.length} {works.length === 1 ? 'تعبير' : 'تعبيرات'} في الفهرس{langs.length ? ` · ${langs.join('، ')}` : ''}{yearSpan(works) ? ` · ${yearSpan(works)}` : ''}</p>
+        <p className="lede">{works.length} {works.length === 1 ? t('تعبير', 'expression') : t('تعبيرات', 'expressions')} {t('في الفهرس', 'in the catalogue')}{langs.length ? ` · ${langs.join(t('، ', ', '))}` : ''}{yearSpan(works) ? ` · ${yearSpan(works)}` : ''}</p>
       </div>
       <div className="entity-layout">
         <div className="entity-main">
-          <div className="section-head"><h2>الترجمات والطبعات</h2></div>
+          <div className="section-head"><h2>{t('الترجمات والطبعات', 'Translations and editions')}</h2></div>
           <WorkRows works={works} ctx={ctx} />
         </div>
         <aside className="entity-side">
-          <LinkedPanel uri={own} sameAs={sameAs} note="المحور يجمع كل ترجمات العمل الواحد وطبعاته ومختاراته، كما تفعل مكتبة الكونغرس ولِبريس." />
+          <LinkedPanel uri={own} sameAs={sameAs} note={t('المحور يجمع كل ترجمات العمل الواحد وطبعاته ومختاراته، كما تفعل مكتبة الكونغرس ولِبريس.', 'A hub gathers all the translations, editions and selections of one work, as the Library of Congress and Libris do.')} />
         </aside>
       </div>
     </div>
@@ -1343,14 +1369,14 @@ function AuthorsPage({ ctx }: { ctx: Ctx }) {
   return (
     <div className="wrap">
       <div className="page-head">
-        <Crumbs ctx={ctx} items={[{ label: 'المؤلفون' }]} />
-        <h1 className="page-title">المؤلفون</h1>
-        <p className="lede">{all.length} مؤلفاً ومساهماً في الفهرس</p>
-        <div className="dir-tools"><FilterField value={q} onChange={setQ} label="ابحث عن مؤلف" /></div>
+        <Crumbs ctx={ctx} items={[{ label: t('المؤلفون', 'Authors') }]} />
+        <h1 className="page-title">{t('المؤلفون', 'Authors')}</h1>
+        <p className="lede">{t(`${all.length} مؤلفاً ومساهماً في الفهرس`, `${all.length} authors and contributors in the catalogue`)}</p>
+        <div className="dir-tools"><FilterField value={q} onChange={setQ} label={t('ابحث عن مؤلف', 'Find an author')} /></div>
       </div>
       <section className="section" style={{ marginTop: 28 }}>
         {out.length ? <div className="people">{out.map((p, i) => <PersonCard key={p.id} p={p} ctx={ctx} i={i} />)}</div>
-          : <div className="empty glass"><h3>لا يوجد مؤلف بهذا الاسم</h3><p>جرّب جزءاً من الاسم فقط.</p></div>}
+          : <div className="empty glass"><h3>{t('لا يوجد مؤلف بهذا الاسم', 'No author by that name')}</h3><p>{t('جرّب جزءاً من الاسم فقط.', 'Try just part of the name.')}</p></div>}
       </section>
     </div>
   );
@@ -1362,10 +1388,10 @@ function SubjectsPage({ ctx }: { ctx: Ctx }) {
   return (
     <div className="wrap">
       <div className="page-head">
-        <Crumbs ctx={ctx} items={[{ label: 'الموضوعات' }]} />
-        <h1 className="page-title">الموضوعات</h1>
-        <p className="lede">{all.length} موضوعاً</p>
-        <div className="dir-tools"><FilterField value={q} onChange={setQ} label="ابحث عن موضوع" /></div>
+        <Crumbs ctx={ctx} items={[{ label: t('الموضوعات', 'Subjects') }]} />
+        <h1 className="page-title">{t('الموضوعات', 'Subjects')}</h1>
+        <p className="lede">{t(`${all.length} موضوعاً`, `${all.length} subjects`)}</p>
+        <div className="dir-tools"><FilterField value={q} onChange={setQ} label={t('ابحث عن موضوع', 'Find a subject')} /></div>
       </div>
       <section className="section" style={{ marginTop: 28 }}>
         {out.length ? (
@@ -1373,11 +1399,11 @@ function SubjectsPage({ ctx }: { ctx: Ctx }) {
             {out.map((s, i) => (
               <button key={s.id} className="subject-row glass rise" style={stagger(i)} onClick={() => ctx.go({ mode: 'subject', key: s.id })}>
                 <span className="t">{s.label}</span>
-                <span className="n">{s.worksCount} {s.worksCount === 1 ? 'كتاب' : 'كتب'}</span>
+                <span className="n">{s.worksCount} {s.worksCount === 1 ? t('كتاب', 'book') : t('كتب', 'books')}</span>
               </button>
             ))}
           </div>
-        ) : <div className="empty glass"><h3>لا يوجد موضوع بهذا الاسم</h3><p>جرّب كلمة أعم.</p></div>}
+        ) : <div className="empty glass"><h3>{t('لا يوجد موضوع بهذا الاسم', 'No subject by that name')}</h3><p>{t('جرّب كلمة أعم.', 'Try a broader word.')}</p></div>}
       </section>
     </div>
   );
@@ -1388,8 +1414,8 @@ function NotFound({ ctx, what, back, backLabel }: { ctx: Ctx; what: string; back
     <div className="wrap">
       <div className="page-head"><Crumbs ctx={ctx} items={[{ label: backLabel, view: back }]} /></div>
       <div className="empty glass">
-        <h3>لم نجد هذا {what} في الفهرس</h3>
-        <p>ربما تغيّر الرابط. اختره من القائمة.</p>
+        <h3>{t(`لم نجد هذا ${what} في الفهرس`, `We could not find this ${what} in the catalogue`)}</h3>
+        <p>{t('ربما تغيّر الرابط. اختره من القائمة.', 'The link may have changed. Choose it from the list.')}</p>
         <button className="btn-black" onClick={() => ctx.go(back)}>{backLabel}</button>
       </div>
     </div>
@@ -1408,12 +1434,12 @@ function SavedSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
       <div className="scrim" onClick={onClose} />
       <aside className="sheet glass" role="dialog" aria-modal="true" aria-labelledby="saved-h">
         <div className="sheet-head">
-          <h2 id="saved-h">قائمتي</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="إغلاق"><X size={18} /></button>
+          <h2 id="saved-h">{t('قائمتي', 'My list')}</h2>
+          <button className="icon-btn" onClick={onClose} aria-label={t('إغلاق', 'Close')}><X size={18} /></button>
         </div>
         <div className="sheet-body">
           {works.length === 0 ? (
-            <p style={{ color: 'var(--ink-2)' }}>احفظ الكتب التي تهمّك من صفحة كل كتاب، وستجدها هنا.</p>
+            <p style={{ color: 'var(--ink-2)' }}>{t('احفظ الكتب التي تهمّك من صفحة كل كتاب، وستجدها هنا.', 'Save the books you care about from each book’s page, and you will find them here.')}</p>
           ) : works.map(w => (
             <div key={w.id} className="mini">
               <Cover work={w} jacket={false} morph={false} />
@@ -1421,7 +1447,7 @@ function SavedSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
                 <div className="t">{w.title}</div>
                 <div className="s">{personName(w.primaryCreator)}</div>
               </button>
-              <button className="icon-btn" aria-label={`أزل ${w.title}`} onClick={() => ctx.toggleSave(w.id)}><X size={16} /></button>
+              <button className="icon-btn" aria-label={t(`أزل ${w.title}`, `Remove ${w.title}`)} onClick={() => ctx.toggleSave(w.id)}><X size={16} /></button>
             </div>
           ))}
         </div>

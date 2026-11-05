@@ -1,9 +1,9 @@
 /**
  * The record's cover in Moon Studio: shows it, and lets the cataloger upload a picture, take the
- * cover from Open Library / Google Books by the record's ISBN, or remove it. A record must be saved
- * once first, since the cover belongs to the stored record.
+ * cover from Open Library / Google Books by the record's ISBN, or remove it. On a new record that is
+ * not saved yet, the picture is kept here and uploaded right after the first save (`pendingCover`).
  */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ImagePlus, BookOpen, Trash2, Loader2 } from 'lucide-react';
 import { uploadCover, coverFromIsbn, deleteCover } from '../utils/recordCovers';
 
@@ -13,9 +13,19 @@ interface Props {
   isbn?: string;
   language: 'en' | 'ar' | string;
   onChange: (coverUrl: string | undefined) => void;
+  /** A picture chosen before the record's first save; the editor uploads it once the record is saved. */
+  pendingCover?: File | null;
+  onPendingCoverChange?: (file: File | null) => void;
 }
 
-export function RecordCoverPanel({ recordId, coverUrl, isbn, language, onChange }: Props) {
+export function RecordCoverPanel({ recordId, coverUrl, isbn, language, onChange, pendingCover, onPendingCoverChange }: Props) {
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pendingCover) { setPendingPreview(null); return; }
+    const url = URL.createObjectURL(pendingCover);
+    setPendingPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [pendingCover]);
   const ar = language === 'ar';
   const file = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<null | 'upload' | 'isbn' | 'remove'>(null);
@@ -41,14 +51,38 @@ export function RecordCoverPanel({ recordId, coverUrl, isbn, language, onChange 
   return (
     <div className="flex items-center gap-3 p-3" style={box} dir={ar ? 'rtl' : 'ltr'}>
       <div className="h-24 w-16 shrink-0 overflow-hidden rounded-md flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.12)' }}>
-        {coverUrl
-          ? <img src={coverUrl} alt={ar ? 'الغلاف' : 'Cover'} className="h-full w-full object-cover" />
+        {coverUrl || pendingPreview
+          ? <img src={coverUrl || pendingPreview || ''} alt={ar ? 'الغلاف' : 'Cover'} className="h-full w-full object-cover" />
           : <BookOpen className="h-6 w-6 text-white/50" />}
       </div>
       <div className="min-w-0 space-y-2">
         <div className="text-sm font-bold text-white">{ar ? 'غلاف التسجيلة' : 'Cover'}</div>
         {!recordId ? (
-          <p className="text-xs text-white/70">{ar ? 'احفظ التسجيلة أولاً، ثم أضف غلافها.' : 'Save the record first, then add its cover.'}</p>
+          onPendingCoverChange ? (
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap gap-1.5">
+                <input ref={file} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onPendingCoverChange(f); }} />
+                <button type="button" className={button} style={box} onClick={() => file.current?.click()}>
+                  <ImagePlus className="h-3.5 w-3.5" />
+                  {pendingCover ? (ar ? 'تغيير الصورة' : 'Change picture') : (ar ? 'اختيار صورة الغلاف' : 'Choose cover picture')}
+                </button>
+                {pendingCover && (
+                  <button type="button" className={button} style={box} onClick={() => onPendingCoverChange(null)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {ar ? 'إزالة' : 'Remove'}
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-white/70">
+                {pendingCover
+                  ? (ar ? 'سيُرفع الغلاف عند حفظ التسجيلة.' : 'The cover is uploaded when you save the record.')
+                  : (ar ? 'يمكنك إضافة الغلاف الآن؛ يُرفع عند أول حفظ.' : 'Add the cover now; it is uploaded on the first save.')}
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-white/70">{ar ? 'احفظ التسجيلة أولاً، ثم أضف غلافها.' : 'Save the record first, then add its cover.'}</p>
+          )
         ) : (
           <div className="flex flex-wrap gap-1.5">
             <input ref={file} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
