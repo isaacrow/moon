@@ -26,6 +26,7 @@ import {
   FACETS, SORTS as SORT_OPTIONS, applyFacets, facetCounts, sortWorks, readState, writeState, toggle, valueLabel, valuesOf,
   workYearOf, realCopies, libraryOf, languageName, type FacetKey, type FacetValue, type Selection, type SortKey,
 } from './facets';
+import { MOON_API, moonHeaders } from '../app/utils/moonApi';
 import './opac.css';
 
 type View =
@@ -34,6 +35,7 @@ type View =
   | { mode: 'work'; id: string }
   | { mode: 'person'; key: string }
   | { mode: 'subject'; key: string }
+  | { mode: 'hub'; key: string }
   | { mode: 'authors' }
   | { mode: 'subjects' };
 
@@ -42,6 +44,7 @@ function viewFromUrl(): View {
   if (p.get('work')) return { mode: 'work', id: p.get('work')! };
   if (p.get('person')) return { mode: 'person', key: p.get('person')! };
   if (p.get('subject')) return { mode: 'subject', key: p.get('subject')! };
+  if (p.get('hub')) return { mode: 'hub', key: p.get('hub')! };
   if (p.get('dir') === 'persons') return { mode: 'authors' };
   if (p.get('dir') === 'subjects') return { mode: 'subjects' };
   if (p.has('q')) return { mode: 'search', query: p.get('q') || '' };
@@ -50,11 +53,12 @@ function viewFromUrl(): View {
 
 function urlFor(v: View): string {
   const u = new URL(window.location.href);
-  ['work', 'person', 'subject', 'dir', 'q', 'view', 'sort', 'page'].forEach(k => u.searchParams.delete(k));
+  ['work', 'person', 'subject', 'hub', 'dir', 'q', 'view', 'sort', 'page'].forEach(k => u.searchParams.delete(k));
   [...u.searchParams.keys()].filter(k => k.startsWith('f_')).forEach(k => u.searchParams.delete(k));
   if (v.mode === 'work') u.searchParams.set('work', v.id);
   if (v.mode === 'person') u.searchParams.set('person', v.key);
   if (v.mode === 'subject') u.searchParams.set('subject', v.key);
+  if (v.mode === 'hub') u.searchParams.set('hub', v.key);
   if (v.mode === 'authors') u.searchParams.set('dir', 'persons');
   if (v.mode === 'subjects') u.searchParams.set('dir', 'subjects');
   if (v.mode === 'search') {
@@ -170,7 +174,7 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
   useEffect(() => {
     const titles: Record<View['mode'], string> = {
       home: 'فهرس مون', search: 'نتائج البحث — فهرس مون', work: 'فهرس مون', person: 'فهرس مون',
-      subject: 'فهرس مون', authors: 'المؤلفون — فهرس مون', subjects: 'الموضوعات — فهرس مون',
+      subject: 'فهرس مون', hub: 'فهرس مون', authors: 'المؤلفون — فهرس مون', subjects: 'الموضوعات — فهرس مون',
     };
     // A record page sets its own title (the book's), with its schema.org data.
     if (view.mode !== 'work') document.title = titles[view.mode];
@@ -220,6 +224,7 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
             {view.mode === 'work' && <WorkPage key={view.id} ctx={ctx} id={view.id} />}
             {view.mode === 'person' && <PersonPage key={view.key} ctx={ctx} k={view.key} />}
             {view.mode === 'subject' && <SubjectPage key={view.key} ctx={ctx} k={view.key} />}
+            {view.mode === 'hub' && <HubPage key={view.key} ctx={ctx} k={view.key} />}
             {view.mode === 'authors' && <AuthorsPage ctx={ctx} />}
             {view.mode === 'subjects' && <SubjectsPage ctx={ctx} />}
           </div>
@@ -422,11 +427,33 @@ function Crumbs({ ctx, items }: { ctx: Ctx; items: { label: string; view?: View 
 // ---------------------------------------------------------------------------
 // Home
 
+function Shelf({ title, works, ctx, more }: { title: string; works: OpacWorkEntity[]; ctx: Ctx; more?: { label: string; view: View } }) {
+  if (!works.length) return null;
+  return (
+    <section className="section">
+      <div className="section-head">
+        <h2>{title}</h2>
+        {more && <button className="link-btn" onClick={() => ctx.go(more.view)}>{more.label}</button>}
+      </div>
+      <div className="shelf">{works.map((w, i) => <BookCard key={w.id} work={w} ctx={ctx} i={i} />)}</div>
+    </section>
+  );
+}
+
 function Home({ ctx }: { ctx: Ctx }) {
   const works = useMemo(() => wolfMoonOpacService.getAllWorks(), [ctx.rev]);
   const recent = useMemo(() => [...works].sort((a, b) => (b.modifiedAt || '').localeCompare(a.modifiedAt || '')).slice(0, 12), [works]);
   const authors = useMemo(() => wolfMoonOpacService.getAllPersons().filter(p => p.worksCount > 0).slice(0, 8), [ctx.rev]);
   const subjects = useMemo(() => wolfMoonOpacService.getAllSubjects().filter(s => s.worksCount > 0 && isReadableLabel(s.label)).slice(0, 14), [ctx.rev]);
+  // Libris's home: categories to start from, then shelves.
+  const categories = useMemo(() => facetCounts(works, {}).category.slice(0, 8), [works]);
+  const manuscripts = useMemo(() => works.filter(w => /مخطوط|manuscript/i.test([...(w.genreForm || []), ...valuesOf(w, 'format')].join(' '))).slice(0, 12), [works]);
+  const withCopies = useMemo(() => works.filter(w => realCopies(w).length > 0).slice(0, 12), [works]);
+  const featured = useMemo(() => {
+    const top = [...wolfMoonOpacService.getAllPersons()].filter(p => p.worksCount > 1).sort((a, b) => b.worksCount - a.worksCount)[0];
+    return top ? { person: top, works: wolfMoonOpacService.getPersonByNameOrUri(top.id)?.works.slice(0, 12) || [] } : null;
+  }, [ctx.rev]);
+  const languages = useMemo(() => facetCounts(works, {}).lang.slice(0, 6), [works]);
 
   return (
     <>
@@ -434,23 +461,36 @@ function Home({ ctx }: { ctx: Ctx }) {
         <h1>اعثر على كتابك التالي</h1>
         <p className="hero-sub">ابحث في {works.length} كتاباً بالعنوان أو المؤلف أو الموضوع، واعرف أين تجده في المكتبة.</p>
         <SearchBox ctx={ctx} />
-        {subjects.length > 0 && (
-          <div className="quick" aria-label="موضوعات شائعة">
-            {subjects.slice(0, 6).map(s => (
-              <button key={s.id} className="chip" onClick={() => ctx.go({ mode: 'subject', key: s.id })}>{s.label}</button>
+        {categories.length > 0 && (
+          <div className="quick" aria-label="الفئات">
+            <span className="quick-lbl">الفئات</span>
+            {categories.map(c => (
+              <button key={c.value} className="chip" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_category=${encodeURIComponent(c.value)}` })}>
+                {c.label} <span className="n">{c.count}</span>
+              </button>
             ))}
           </div>
         )}
       </section>
 
       <div className="wrap">
-        {recent.length > 0 && (
+        <Shelf title="أُضيف حديثاً" works={recent} ctx={ctx} more={{ label: 'كل الكتب', view: { mode: 'search', query: '', params: 'sort=date-desc' } }} />
+        {featured && featured.works.length > 1 && (
+          <Shelf title={`من أعمال ${personName(featured.person)}`} works={featured.works} ctx={ctx} more={{ label: 'صفحة المؤلف', view: { mode: 'person', key: featured.person.id } }} />
+        )}
+        <Shelf title="مخطوطات" works={manuscripts} ctx={ctx} />
+        <Shelf title="على رفوف المكتبة" works={withCopies} ctx={ctx} more={{ label: 'كل ما له نسخ', view: { mode: 'search', query: '', params: 'f_avail=physical' } }} />
+
+        {languages.length > 1 && (
           <section className="section">
-            <div className="section-head">
-              <h2>أُضيف حديثاً</h2>
-              <button className="link-btn" onClick={() => ctx.go({ mode: 'search', query: '' })}>كل الكتب</button>
+            <div className="section-head"><h2>حسب اللغة</h2></div>
+            <div className="subjects">
+              {languages.map(l => (
+                <button key={l.value} className="chip" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_lang=${encodeURIComponent(l.value)}` })}>
+                  {l.label} <span className="n">{l.count}</span>
+                </button>
+              ))}
             </div>
-            <div className="shelf">{recent.map((w, i) => <BookCard key={w.id} work={w} ctx={ctx} i={i} />)}</div>
           </section>
         )}
 
@@ -479,6 +519,21 @@ function Home({ ctx }: { ctx: Ctx }) {
             </div>
           </section>
         )}
+
+        <section className="section">
+          <div className="linked-strip glass">
+            <div>
+              <h2>الفهرس كبيانات مترابطة</h2>
+              <p className="muted">كل كتاب وشخص وموضوع هنا له عنوان دائم على mooon.site بصيغة BIBFRAME، يمكن للمكتبات والباحثين ربطه وإعادة استخدامه.</p>
+            </div>
+            <div className="dl-links">
+              <a href="/resource/">قائمة السجلات</a>
+              <a href="/resource/sparql">SPARQL</a>
+              <a href="/resource/dump.jsonld">تنزيل الفهرس (JSON-LD)</a>
+              <a href="/resource/dump.nt">N-Triples</a>
+            </div>
+          </div>
+        </section>
       </div>
     </>
   );
@@ -531,7 +586,7 @@ function ResultCard({ w, ctx, i }: { w: OpacWorkEntity; ctx: Ctx; i: number }) {
       <div style={{ minWidth: 0 }}>
         {meta && <div className="kicker">{meta}</div>}
         <div className="t" dir="auto">{w.title}{w.subtitle ? <span className="sub"> : {w.subtitle}</span> : null}</div>
-        {w.expressionOfHub?.label && <div className="hub" dir="auto">من العمل: {w.expressionOfHub.label}</div>}
+        {w.expressionOfHub?.label && <div className="hub" dir="auto">من العمل: <span className="inline-link" role="link" tabIndex={0} onClick={(e) => { e.stopPropagation(); ctx.go({ mode: 'hub', key: w.expressionOfHub!.uri }); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); ctx.go({ mode: 'hub', key: w.expressionOfHub!.uri }); } }}>{w.expressionOfHub.label}</span></div>}
         {who.length > 0 && <div className="s" dir="auto">{who.reduce<React.ReactNode[]>((a, n, k) => (k ? [...a, '، ', n] : [n]), [])}</div>}
         <div className="m">{[fmt, year].filter(Boolean).join(' · ')}</div>
       </div>
@@ -966,7 +1021,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
 
           {siblings.length > 0 && (
             <section className="panel glass rise" aria-labelledby="h-hub">
-              <h2 id="h-hub">من العمل نفسه{work.expressionOfHub?.label ? `: ${work.expressionOfHub.label}` : ''}</h2>
+              <h2 id="h-hub">من العمل نفسه{work.expressionOfHub?.label ? <>: <button className="inline-link" onClick={() => ctx.go({ mode: 'hub', key: work.expressionOfHub!.uri })}>{work.expressionOfHub.label}</button></> : ''}</h2>
               <p className="muted">ترجمات وطبعات أخرى مرتبطة بالمحور نفسه (bf:Hub).</p>
               <div className="rows">{siblings.map((w, i) => <ResultCard key={w.id} w={w} ctx={ctx} i={i} />)}</div>
             </section>
@@ -1049,64 +1104,216 @@ function useEscape(fn: () => void) {
 // ---------------------------------------------------------------------------
 // Person, subject, directories
 
+/** Works as a list, newest first (Libris lists an entity's works this way). */
+function WorkRows({ works, ctx }: { works: OpacWorkEntity[]; ctx: Ctx }) {
+  const sorted = useMemo(() => sortWorks(works, 'date-desc'), [works]);
+  return <div className="rows">{sorted.map((w, i) => <ResultCard key={w.id} w={w} ctx={ctx} i={i} />)}</div>;
+}
+
+/** The years a set of works spans, e.g. "1650–2026". */
+function yearSpan(works: OpacWorkEntity[]): string {
+  const ys = works.map(workYearOf).filter((y): y is number => !!y).sort((a, b) => a - b);
+  if (!ys.length) return '';
+  return ys[0] === ys[ys.length - 1] ? String(ys[0]) : `${ys[0]}–${ys[ys.length - 1]}`;
+}
+
+/** A Moon authority entry (mooon.site/resource/agent|topic|hub/…) whose name or variant is exactly this one. */
+interface MoonEntry { id: string; uri: string; label: string; variants: string[]; sameAs: string[]; note?: string | null }
+function useMoonAuthority(kind: 'agent' | 'topic' | 'hub', name: string | undefined): MoonEntry | null {
+  const [entry, setEntry] = useState<MoonEntry | null>(null);
+  useEffect(() => {
+    setEntry(null);
+    const n = normalizeArabic(String(name || '').trim());
+    if (!n) return;
+    let live = true;
+    const params = new URLSearchParams({ q: String(name), kind, limit: '5' });
+    fetch(`${MOON_API}/authorities?${params}`, { headers: moonHeaders() })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!live) return;
+        const found = (d?.authorities || []).find((a: MoonEntry) =>
+          [a.label, ...(a.variants || [])].some(x => normalizeArabic(x) === n));
+        setEntry(found || null);
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [kind, name]);
+  return entry;
+}
+
+const SAME_AS_LABEL = (u: string) =>
+  /viaf\.org/.test(u) ? 'VIAF' : /id\.loc\.gov/.test(u) ? 'مكتبة الكونغرس' : /wikidata\.org/.test(u) ? 'ويكي بيانات' : /isni/.test(u) ? 'ISNI' : new URL(u).hostname;
+
+/** The entity's own address and data, and where it links out to (owl:sameAs). */
+function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; note?: string }) {
+  const own = uri && uri.startsWith('https://mooon.site/resource/') ? uri : undefined;
+  const links = [...new Set(sameAs.filter(u => /^https?:\/\//.test(u)))];
+  if (!own && !links.length) return null;
+  return (
+    <section className="panel glass rise linked" aria-labelledby="h-ld">
+      <h2 id="h-ld">البيانات المترابطة</h2>
+      {own && (
+        <>
+          <div className="perma"><span className="lbl">المعرّف الدائم</span><a href={own} dir="ltr">{own}</a></div>
+          <div className="dl-links">
+            <span className="lbl">نزّل</span>
+            <a href={`${own}.jsonld`} target="_blank" rel="noreferrer">JSON-LD</a>
+            <a href={`${own}.ttl`} target="_blank" rel="noreferrer">Turtle</a>
+            <a href={`${own}.nt`} target="_blank" rel="noreferrer">N-Triples</a>
+          </div>
+        </>
+      )}
+      {links.length > 0 && (
+        <div className="dl-links">
+          <span className="lbl">الكيان نفسه في</span>
+          {links.map(u => <a key={u} href={u} target="_blank" rel="noreferrer">{SAME_AS_LABEL(u)} <ArrowUpRight size={13} /></a>)}
+        </div>
+      )}
+      {note && <p className="muted">{note}</p>}
+    </section>
+  );
+}
+
 function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
   const r = useMemo(() => wolfMoonOpacService.getPersonByNameOrUri(k), [k, ctx.rev]);
+  const moon = useMoonAuthority('agent', r ? personName(r.person) : undefined);
   if (!r) return <NotFound ctx={ctx} what="المؤلف" back={{ mode: 'authors' }} backLabel="كل المؤلفين" />;
   const { person: p, works } = r;
-  const links: [string, string | undefined][] = [
-    ['VIAF', p.viafUri],
-    ['مكتبة الكونغرس', p.locUri],
-    ['ويكي بيانات', p.wikidataId ? (p.wikidataId.startsWith('http') ? p.wikidataId : `https://www.wikidata.org/wiki/${p.wikidataId}`) : undefined],
-    ['ISNI', p.isniUri],
-  ];
+  const name = personName(p);
+  // Libris groups a person's works by what they did: wrote it, translated it, edited it …
+  const roleIn = (w: OpacWorkEntity) => {
+    if (personName(w.primaryCreator) === name) return roleLabel(w.primaryCreator.role) || 'مؤلف';
+    const c = (w.contributors || []).find(x => personName(x) === name);
+    return roleLabel(c?.role) || 'مشارك';
+  };
+  const groups = new Map<string, OpacWorkEntity[]>();
+  works.forEach(w => { const g = roleIn(w); groups.set(g, [...(groups.get(g) || []), w]); });
+  const subjects = [...new Map(works.flatMap(w => w.subjects).filter(s => isReadableLabel(s.label)).map(s => [s.label, s])).values()].slice(0, 10);
+  const langs = [...new Set(works.map(w => languageName(w.languageLabel, w.language)).filter(Boolean))];
+  const sameAs = [
+    p.viafUri, p.locUri, p.isniUri,
+    p.wikidataId ? (p.wikidataId.startsWith('http') ? p.wikidataId : `https://www.wikidata.org/wiki/${p.wikidataId}`) : undefined,
+    ...(moon?.sameAs || []),
+  ].filter((u): u is string => !!u);
+  const variants = (moon?.variants || []).filter(v => v !== name);
+  const span = yearSpan(works);
+
   return (
     <div className="wrap">
       <div className="page-head" style={{ paddingBottom: 0 }}>
-        <Crumbs ctx={ctx} items={[{ label: 'المؤلفون', view: { mode: 'authors' } }, { label: personName(p) }]} />
+        <Crumbs ctx={ctx} items={[{ label: 'المؤلفون', view: { mode: 'authors' } }, { label: name }]} />
       </div>
       <section className="person-hero glass rise">
         <Avatar p={p} cls="xl" morph />
         <div>
-          <h1 className="page-title">{personName(p)}</h1>
-          <p className="lede">{[p.nameEnglish && p.nameEnglish !== personName(p) ? p.nameEnglish : '', p.lifespan, p.city].filter(Boolean).join('، ')}</p>
+          <div className="kicker">شخص</div>
+          <h1 className="page-title">{name}</h1>
+          <p className="lede">{[p.nameEnglish && p.nameEnglish !== name ? p.nameEnglish : '', p.lifespan, p.city].filter(Boolean).join('، ')}</p>
+          {variants.length > 0 && <p className="muted">أشكال أخرى للاسم: {variants.join(' · ')}</p>}
           {(p.bioArabic || p.bioEnglish) && <p className="bio">{p.bioArabic || p.bioEnglish}</p>}
-          {links.some(([, u]) => u) && (
-            <div className="ext">
-              {links.filter(([, u]) => u).map(([l, u]) => (
-                <a key={l} className="chip" href={u} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>{l} <ArrowUpRight size={14} /></a>
-              ))}
-            </div>
-          )}
+          <div className="entity-facts">
+            <span><b>{works.length}</b> {works.length === 1 ? 'عمل' : 'أعمال'} في الفهرس</span>
+            {span && <span>{span.includes('–') ? 'بين' : 'سنة'} <b>{span}</b></span>}
+            {langs.length > 0 && <span>بـ{langs.join(' و')}</span>}
+          </div>
         </div>
       </section>
-      <section className="section">
-        <div className="section-head"><h2>{works.length} {works.length === 1 ? 'كتاب' : 'كتب'} في الفهرس</h2></div>
-        <div className="shelf">{works.map((w, i) => <BookCard key={w.id} work={w} ctx={ctx} i={i} />)}</div>
-      </section>
+
+      <div className="entity-layout">
+        <div className="entity-main">
+          {[...groups].map(([role, ws]) => (
+            <section key={role} className="section" style={{ marginTop: 24 }}>
+              <div className="section-head"><h2>{role === 'مؤلف' ? 'من تأليفه' : `بصفته ${role}`} <span className="count-n">{ws.length}</span></h2>
+                <button className="link-btn" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_author=${encodeURIComponent(name)}` })}>في البحث مع الفلاتر</button>
+              </div>
+              <WorkRows works={ws} ctx={ctx} />
+            </section>
+          ))}
+        </div>
+        <aside className="entity-side">
+          <LinkedPanel uri={moon?.uri} sameAs={sameAs} note={moon ? undefined : 'لهذا الشخص سجل في ملفات الاستناد العالمية؛ يمكن إضافته إلى ملف مون الاستنادي من محرر مون.'} />
+          {subjects.length > 0 && (
+            <section className="panel glass rise">
+              <h2>يكتب في</h2>
+              <div className="subjects">{subjects.map(s => <button key={s.id} className="chip" onClick={() => ctx.go({ mode: 'subject', key: s.id })}>{s.label}</button>)}</div>
+            </section>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
 
 function SubjectPage({ ctx, k }: { ctx: Ctx; k: string }) {
   const r = useMemo(() => wolfMoonOpacService.getSubjectByLabelOrUri(k), [k, ctx.rev]);
+  const moon = useMoonAuthority('topic', r?.subject.label);
   if (!r) return <NotFound ctx={ctx} what="الموضوع" back={{ mode: 'subjects' }} backLabel="كل الموضوعات" />;
   const { subject: s, works } = r;
   const near = [s.broader, ...(s.narrower || []), ...(s.related || [])].filter(Boolean) as string[];
+  const authors = [...new Map(works.map(w => w.primaryCreator).filter(p => p && personName(p)).map(p => [personName(p), p])).values()].slice(0, 8);
+  const span = yearSpan(works);
+  const sameAs = [s.uri, ...(moon?.sameAs || [])].filter((u): u is string => !!u && /^https?:\/\//.test(u) && !u.startsWith('https://mooon.site/'));
   return (
     <div className="wrap">
       <div className="page-head">
         <Crumbs ctx={ctx} items={[{ label: 'الموضوعات', view: { mode: 'subjects' } }, { label: s.label }]} />
+        <div className="kicker">موضوع</div>
         <h1 className="page-title">{s.label}</h1>
-        <p className="lede">{works.length} {works.length === 1 ? 'كتاب' : 'كتب'}{s.labelEnglish ? `، ${s.labelEnglish}` : ''}</p>
+        <p className="lede">{[s.labelEnglish, `${works.length} ${works.length === 1 ? 'عمل' : 'أعمال'}`, span].filter(Boolean).join('، ')}</p>
         {near.length > 0 && (
-          <div className="subjects" style={{ marginTop: 18 }}>
-            {near.map(n => <button key={n} className="chip" onClick={() => ctx.go({ mode: 'subject', key: n })}>{n}</button>)}
+          <div className="terms" style={{ borderTop: 0, paddingTop: 0 }}>
+            <div><span className="lbl">موضوعات قريبة</span>{near.map(n => <button key={n} className="chip" onClick={() => ctx.go({ mode: 'subject', key: n })}>{n}</button>)}</div>
           </div>
         )}
       </div>
-      <section className="section" style={{ marginTop: 32 }}>
-        <div className="shelf">{works.map((w, i) => <BookCard key={w.id} work={w} ctx={ctx} i={i} />)}</div>
-      </section>
+      <div className="entity-layout">
+        <div className="entity-main">
+          <div className="section-head">
+            <h2>الأعمال <span className="count-n">{works.length}</span></h2>
+            <button className="link-btn" onClick={() => ctx.go({ mode: 'search', query: '', params: `f_subject=${encodeURIComponent(s.label)}` })}>في البحث مع الفلاتر</button>
+          </div>
+          <WorkRows works={works} ctx={ctx} />
+        </div>
+        <aside className="entity-side">
+          <LinkedPanel uri={moon?.uri} sameAs={sameAs} />
+          {authors.length > 0 && (
+            <section className="panel glass rise">
+              <h2>كتب فيه</h2>
+              <div className="subjects">{authors.map(p => <button key={p.id} className="chip" onClick={() => ctx.go({ mode: 'person', key: p.id })}>{personName(p)}</button>)}</div>
+            </section>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+/** A hub (bf:Hub): one creative work across its translations, editions and selections. */
+function HubPage({ ctx, k }: { ctx: Ctx; k: string }) {
+  const works = useMemo(() => wolfMoonOpacService.getAllWorks().filter(w => w.expressionOfHub?.uri === k), [k, ctx.rev]);
+  const label = works[0]?.expressionOfHub?.label || '';
+  const moon = useMoonAuthority('hub', label);
+  if (!works.length) return <NotFound ctx={ctx} what="العمل" back={{ mode: 'search', query: '' }} backLabel="كل الكتب" />;
+  const langs = [...new Set(works.map(w => languageName(w.languageLabel, w.language)).filter(Boolean))];
+  const own = k.startsWith('https://mooon.site/resource/hub/') ? k : moon?.uri;
+  const sameAs = [k, ...(moon?.sameAs || [])].filter(u => !u.startsWith('https://mooon.site/'));
+  return (
+    <div className="wrap">
+      <div className="page-head">
+        <Crumbs ctx={ctx} items={[{ label: 'الكتب', view: { mode: 'search', query: '' } }, { label }]} />
+        <div className="kicker">عمل (محور bf:Hub)</div>
+        <h1 className="page-title" dir="auto">{label}</h1>
+        <p className="lede">{works.length} {works.length === 1 ? 'تعبير' : 'تعبيرات'} في الفهرس{langs.length ? ` · ${langs.join('، ')}` : ''}{yearSpan(works) ? ` · ${yearSpan(works)}` : ''}</p>
+      </div>
+      <div className="entity-layout">
+        <div className="entity-main">
+          <div className="section-head"><h2>الترجمات والطبعات</h2></div>
+          <WorkRows works={works} ctx={ctx} />
+        </div>
+        <aside className="entity-side">
+          <LinkedPanel uri={own} sameAs={sameAs} note="المحور يجمع كل ترجمات العمل الواحد وطبعاته ومختاراته، كما تفعل مكتبة الكونغرس ولِبريس." />
+        </aside>
+      </div>
     </div>
   );
 }

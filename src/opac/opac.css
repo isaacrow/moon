@@ -519,3 +519,22 @@ details.panel[open] > :not(summary) { animation: rise 0.35s var(--ease-out) both
 .linked .muted a { color: var(--ink); }
 .byline .people { display: block; }
 .byline .people > button, .byline .people > span { display: inline; }
+
+/* Entity pages (person, subject, hub) and home shelves, in the manner of Libris. */
+.kicker { font-size: 13px; color: var(--ink-3); margin-bottom: 4px; }
+.entity-facts { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 14px; color: var(--ink-2); font-size: 15px; }
+.entity-facts b { color: var(--ink); }
+.entity-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; margin-top: 8px; }
+.entity-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 100px; margin-top: 24px; }
+.entity-side .panel h2 { font-size: 16px; }
+.count-n { font-weight: 400; color: var(--ink-3); font-size: .8em; margin-inline-start: 6px; }
+.quick-lbl { color: var(--ink-3); font-size: 13px; align-self: center; }
+.linked-strip { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px 32px; padding: 24px 28px; }
+.linked-strip h2 { margin: 0 0 6px; font-size: 20px; }
+.linked-strip .dl-links { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.linked-strip .dl-links a { color: var(--ink); font-size: 14px; }
+.result .hub .inline-link { font-size: inherit; }
+@media (max-width: 980px) {
+  .entity-layout { grid-template-columns: minmax(0, 1fr); }
+  .entity-side { position: static; }
+}
