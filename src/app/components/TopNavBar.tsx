@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
+import { UserAvatar } from './UserAvatar';
+import { uploadAvatar, removeAvatar } from '../utils/avatars';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { LayoutDashboard, FilePlus, LogOut, Languages, ChevronLeft, Building2, Mail, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, FilePlus, LogOut, Languages, ChevronLeft, Building2, Mail, ShieldCheck, Camera, ImageOff } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -95,6 +98,31 @@ export function TopNavBar({
     i18n.changeLanguage(newLang);
     document.documentElement.dir = newLang === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.lang = newLang;
+  };
+
+  // Profile photo: chosen from the account menu, shrunk in the browser, saved on the server.
+  const photoInput = useRef<HTMLInputElement>(null);
+  const handlePhotoChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const name = user?.username || username;
+    if (!file || !name) return;
+    try {
+      await uploadAvatar(name, file);
+      toast.success(i18n.language === 'ar' ? 'تم حفظ صورتك الشخصية' : 'Profile photo saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'The photo could not be saved.');
+    }
+  };
+  const handleRemovePhoto = async () => {
+    const name = user?.username || username;
+    if (!name) return;
+    try {
+      await removeAvatar(name);
+      toast.success(i18n.language === 'ar' ? 'تمت إزالة الصورة' : 'Profile photo removed');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'The photo could not be removed.');
+    }
   };
 
   const getUserInitials = () => {
@@ -260,15 +288,7 @@ export function TopNavBar({
                     border: isDark ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(0,0,0,0.08)',
                   }}
                 >
-                  <Avatar className="h-7 w-7 shadow-md" style={{ border: `2px solid ${getUserColor()}40` }}>
-                    <AvatarImage src="" alt={user?.username || username || 'User'} />
-                    <AvatarFallback
-                      className="text-white font-bold text-xs"
-                      style={{ backgroundColor: getUserColor() }}
-                    >
-                      {getUserInitials()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar username={user?.username || username || 'User'} />
                   <div className="hidden md:flex flex-col items-start">
                     <span
                       className="text-sm font-semibold"
@@ -334,6 +354,23 @@ export function TopNavBar({
 
                 <DropdownMenuSeparator style={{ background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
                 <DropdownMenuItem
+                  onClick={() => photoInput.current?.click()}
+                  className="cursor-pointer"
+                  style={{ color: isDark ? '#ffffff' : '#111827' }}
+                >
+                  <Camera className="mr-2 h-4 w-4" />
+                  <span>{i18n.language === 'ar' ? 'تغيير الصورة الشخصية' : 'Change profile photo'}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleRemovePhoto}
+                  className="cursor-pointer"
+                  style={{ color: isDark ? 'rgba(255,255,255,0.6)' : '#6b7280' }}
+                >
+                  <ImageOff className="mr-2 h-4 w-4" />
+                  <span>{i18n.language === 'ar' ? 'إزالة الصورة' : 'Remove photo'}</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator style={{ background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }} />
+                <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer"
                   style={{ color: '#f87171' }}
@@ -343,6 +380,7 @@ export function TopNavBar({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <input ref={photoInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handlePhotoChosen} />
           </div>
         </div>
       </div>

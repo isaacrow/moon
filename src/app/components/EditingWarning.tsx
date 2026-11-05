@@ -2,31 +2,7 @@
 import React from "react";
 import { AlertTriangle } from "lucide-react";
 import type { ActiveEditor } from "../utils/recordEditing";
-
-// Same colours and initials as the top bar's avatar, until profile pictures exist.
-const COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f59e0b", "#10b981", "#06b6d4", "#3b82f6"];
-export function userColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return COLORS[Math.abs(hash) % COLORS.length];
-}
-export function userInitials(name: string): string {
-  // "ali.hassan" → AH, "MagdaGad" → MG
-  const parts = name.trim().split(/[\s._-]+|(?=[A-Z])/).filter(Boolean);
-  return ((parts[0]?.[0] || "?") + (parts[1]?.[0] || "")).toUpperCase();
-}
-
-function Avatar({ name }: { name: string }) {
-  return (
-    <span
-      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-md ring-2 ring-white/40"
-      style={{ backgroundColor: userColor(name) }}
-      title={name}
-    >
-      {userInitials(name)}
-    </span>
-  );
-}
+import { UserAvatar } from "./UserAvatar";
 
 function since(iso: string, language: "en" | "ar"): string {
   const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
@@ -52,7 +28,7 @@ export function EditingWarning({ editors, language }: { editors: ActiveEditor[];
     >
       <AlertTriangle className="h-4 w-4 shrink-0" style={{ color: "#fbbf24" }} />
       <div className="flex -space-x-2 rtl:space-x-reverse">
-        {editors.slice(0, 3).map((e) => <Avatar key={e.username} name={e.username} />)}
+        {editors.slice(0, 3).map((e) => <UserAvatar key={e.username} username={e.username} />)}
       </div>
       <div className="min-w-0">
         <div className="text-sm font-bold text-white">{text}</div>
