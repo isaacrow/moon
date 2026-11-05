@@ -34,6 +34,8 @@ export interface StoredRecord {
   version?: number;
   /** The version the public catalogue shows; may be older than `version` while an edit waits for review. */
   publishedVersion?: number;
+  /** The reviewer this record is assigned to, if any. */
+  assignedTo?: string;
 }
 
 function fromRow(row: any): StoredRecord {
@@ -52,6 +54,7 @@ function fromRow(row: any): StoredRecord {
     reviewedAt: row.reviewed_at ?? undefined,
     version: row.current_version,
     publishedVersion: row.published_version ?? undefined,
+    assignedTo: row.assigned_to ?? undefined,
   };
 }
 
@@ -173,7 +176,7 @@ export async function saveRecord(
   const conflict = error?.message?.match(/version_conflict:(\d+)/);
   if (conflict) throw new VersionConflictError(Number(conflict[1]));
   if (error) throw new Error(`[records] save ${record.id} failed: ${error.message}`);
-  const { version: _version, publishedVersion: _published, ...kvRecord } = record;
+  const { version: _version, publishedVersion: _published, assignedTo: _assigned, ...kvRecord } = record;
   await kv.set(kvKey(record.id), JSON.stringify(kvRecord));
   return data as number;
 }
@@ -209,7 +212,7 @@ export async function reviewRecord(
     ...(status === "complete" ? { approvedBy: by, approvedAt: now } : {}),
     version: data as number,
   };
-  const { version: _version, publishedVersion: _published, ...kvRecord } = updated;
+  const { version: _version, publishedVersion: _published, assignedTo: _assigned, ...kvRecord } = updated;
   await kv.set(kvKey(id), JSON.stringify(kvRecord));
   return updated;
 }
@@ -355,7 +358,14 @@ export async function findPublishedByUri(uri: string): Promise<{ id: string; tit
   return data ?? null;
 }
 
-export type NotificationKind = "welcome" | "review" | "approved" | "returned" | "comment";
+export type NotificationKind = "welcome" | "review" | "approved" | "returned" | "comment" | "assigned";
+
+/** Assigns a record to a reviewer (or clears it with null); false when the record does not exist. */
+export async function assignRecord(id: string, username: string | null): Promise<boolean> {
+  const { data, error } = await sb().rpc("moon_assign_record", { p_id: id, p_user: username });
+  if (error) throw new Error(`[records] assign ${id} failed: ${error.message}`);
+  return data === true;
+}
 
 /**
  * Adds a notification. Never throws: a notification that fails to send must not undo the save or

@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Badge } from './ui/badge';
 import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
-import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, returnRecord } from '../utils/recordStorageBackend';
+import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, returnRecord, assignRecord } from '../utils/recordStorageBackend';
 import type { BIBFRAMERecord } from '../types/bibframe';
 import { ActivityLog } from './ActivityLog';
 import { toast } from 'sonner';
@@ -84,11 +84,15 @@ interface RecentRecord {
   timestamp: Date;
   status: 'complete' | 'draft' | 'needs-review' | 'pending-review';
   record?: BIBFRAMERecord;
+  cataloger?: string;
+  assignedTo?: string;
 }
 
 export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
   const { t } = useTranslation();
-  const { isAuthenticated, isSuperAdmin, user } = useAuth();
+  const { isAuthenticated, isSuperAdmin, canReview, user, users: accounts } = useAuth();
+  // Who a waiting record can be assigned to: the Super Admin and approved reviewers.
+  const reviewers = ['isaac', ...accounts.filter((a) => a.role === 'reviewer' && a.status === 'approved').map((a) => a.username)];
   const [showActivityLog, setShowActivityLog] = useState(false);
   const { themeStyle } = useTheme();
   const { moonEngineTheme } = useThemeSafe();
@@ -147,6 +151,16 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
       setSavedRecords(prev => prev.map(r => r.id === recordId ? { ...r, status: 'needs-review' } : r));
     } catch (err) {
       toast.error('Failed to return record', { description: err instanceof Error ? err.message : undefined });
+    }
+  };
+
+  const handleAssignRecord = async (recordId: string, username: string) => {
+    try {
+      await assignRecord(recordId, username || null);
+      setSavedRecords(prev => prev.map(r => r.id === recordId ? { ...r, assignedTo: username || undefined } : r));
+      toast.success(username ? `Assigned to ${username}` : 'Assignment cleared');
+    } catch (err) {
+      toast.error('Failed to assign the record', { description: err instanceof Error ? err.message : undefined });
     }
   };
 
@@ -249,7 +263,9 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
     type: record.record?.metadata?.catalogingInterface || record.resourceType || 'Moon Engine',
     timestamp: new Date(record.modifiedAt || record.createdAt || Date.now()),
     status: (record.status || record.record?.metadata?.status || 'complete') as any,
-    record: record.record
+    record: record.record,
+    cataloger: record.cataloger,
+    assignedTo: record.assignedTo,
   }));
 
   const mainActions = [
@@ -703,8 +719,29 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                       </span>
                     )}
 
-                    {/* Approve button for Super Admin (isaac) */}
-                    {isIsaac && record.status === 'pending-review' && (
+                    {/* Assignment: who reviews this record. The Super Admin picks; everyone sees it. */}
+                    {record.status === 'pending-review' && isSuperAdmin && (
+                      <select
+                        value={record.assignedTo || ''}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleAssignRecord(record.id, e.target.value)}
+                        className="px-2 py-1 rounded-full text-xs font-bold bg-white/70 text-slate-700 border border-slate-300 cursor-pointer"
+                        title="Assign to a reviewer"
+                      >
+                        <option value="">Unassigned</option>
+                        {[...new Set([...reviewers, ...(record.assignedTo ? [record.assignedTo] : [])])].map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    )}
+                    {record.status === 'pending-review' && !isSuperAdmin && record.assignedTo && (
+                      <span className="px-2 py-1 rounded-full text-xs font-bold bg-white/60 text-slate-700 border border-slate-300">
+                        Reviewer: {record.assignedTo}
+                      </span>
+                    )}
+
+                    {/* Approve / Return: the Super Admin and reviewers, never on their own record */}
+                    {canReview && record.status === 'pending-review' && (isSuperAdmin || record.cataloger !== user?.username) && (
                       <button
                         type="button"
                         onClick={(e) => handleApproveRecord(e, record.id, record.title)}
@@ -715,7 +752,7 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                         <span>Approve</span>
                       </button>
                     )}
-                    {isIsaac && record.status === 'pending-review' && (
+                    {canReview && record.status === 'pending-review' && (isSuperAdmin || record.cataloger !== user?.username) && (
                       <button
                         type="button"
                         onClick={(e) => handleReturnRecord(e, record.id, record.title)}

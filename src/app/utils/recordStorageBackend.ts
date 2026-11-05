@@ -31,6 +31,8 @@ export interface SavedRecord {
   /** Latest version on the server, and the version the public catalogue shows (older while an edit waits). */
   version?: number;
   publishedVersion?: number;
+  /** The reviewer this record is assigned to, if any. */
+  assignedTo?: string;
   /** Set when a Super Admin save could not be published: the required fields the record still lacks. */
   publishBlocked?: Array<{ en: string; ar: string }>;
   jcricket?: {
@@ -619,6 +621,7 @@ function fromServerRecord(serverRecord: any): SavedRecord {
     approvedAt: serverRecord.approvedAt,
     version: serverRecord.version,
     publishedVersion: serverRecord.publishedVersion,
+    assignedTo: serverRecord.assignedTo,
   };
 }
 
@@ -1118,6 +1121,12 @@ export function getActivityLogs(): ActivityLogItem[] {
 /**
  * Approve a pending record (Super Admin action)
  */
+/** The Super Admin assigns a waiting record to a reviewer (or clears it with null); the reviewer is notified. */
+export async function assignRecord(id: string, username: string | null): Promise<void> {
+  const { ok, status, data } = await moonFetch(`/records/${encodeURIComponent(id)}/assign`, { body: { username } });
+  if (!ok) throw new Error(data?.error || `Server returned ${status}`);
+}
+
 /** The Super Admin returns a record for changes; the cataloger is notified with the reason. */
 export async function returnRecord(id: string, reason: string): Promise<void> {
   const { ok, status, data } = await moonFetch(`/records/${encodeURIComponent(id)}/reject`, { body: { reason } });
