@@ -207,6 +207,29 @@ export function toServerDocument(record: BIBFRAMERecord) {
   };
 }
 
+export interface PossibleDuplicate {
+  id: string;
+  title: string;
+  status: string;
+  cataloger?: string;
+  reasons: Array<'isbn' | 'lccn' | 'title'>;
+}
+
+/**
+ * Other records that look like the same book (same ISBN, LCCN or title, Arabic spellings folded).
+ * Never throws: when the check cannot run, the save just goes ahead.
+ */
+export async function checkDuplicates(record: BIBFRAMERecord): Promise<PossibleDuplicate[]> {
+  try {
+    const { ok, data } = await moonFetch('/records/check-duplicates', {
+      body: { id: record.metadata?.storageId ?? null, document: toServerDocument(record) },
+    });
+    return ok && Array.isArray(data?.duplicates) ? data.duplicates : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Someone else saved the record after the version this save started from. */
 export class RecordConflictError extends Error {
   constructor(readonly currentVersion: number, readonly savedBy?: string, readonly savedAt?: string) {

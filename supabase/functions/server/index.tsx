@@ -790,6 +790,21 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
   }
 });
 
+// 👯 Before a save: other records that look like the same book (same ISBN, LCCN or normalized title), so
+// the editor can ask before a duplicate goes in. { id, document } → { duplicates: [{ id, title, reasons }] }.
+app.post("/make-server-49c0e13c/records/check-duplicates", async (c) => {
+  try {
+    if (!(await getSession(c))) return c.json({ error: 'Sign in to check records' }, 401);
+    const { id, document } = await c.req.json().catch(() => ({}));
+    if (!document || !Array.isArray(document['@graph'])) return c.json({ error: 'A JSON-LD document with @graph is required' }, 400);
+    if (JSON.stringify(document).length > 2_000_000) return c.json({ error: 'Record is too large' }, 413);
+    return c.json({ duplicates: await recordStore.findDuplicates(typeof id === 'string' ? id : null, document) });
+  } catch (error) {
+    console.error('Duplicate check error:', error);
+    return c.json({ error: 'Duplicate check failed' }, 500);
+  }
+});
+
 // 🔎 Search records on the server: ?q=words&status=&cataloger=&language=&template=&limit=&offset=
 // Every word must match, however it is spelled (Arabic letter variants and diacritics are folded).
 // Same visibility rule as the list: the public and ?view=published search published versions only.
