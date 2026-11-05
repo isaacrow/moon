@@ -8,8 +8,9 @@
 
 import { Parser as N3Parser } from 'n3';
 import jsonld from 'jsonld';
+import { parseRdfXml } from './rdfXmlParser';
 
-export type ImportFormat = 'jsonld' | 'turtle' | 'ntriples';
+export type ImportFormat = 'jsonld' | 'turtle' | 'ntriples' | 'rdfxml';
 
 export interface ImportedRecord {
   work: any;
@@ -44,6 +45,7 @@ export async function parseBibframeQuads(text: string, format: ImportFormat): Pr
     const nquads = await jsonld.toRDF(JSON.parse(text), { format: 'application/n-quads' }) as unknown as string;
     return new N3Parser({ format: 'N-Quads' }).parse(nquads);
   }
+  if (format === 'rdfxml') return parseRdfXml(text);
   return new N3Parser({ format: format === 'turtle' ? 'Turtle' : 'N-Triples' }).parse(text);
 }
 
