@@ -445,7 +445,7 @@ export async function findDuplicates(id: string | null, document: any): Promise<
 
 // ── Local authority file: Moon's own people, organizations, places and topics ─────────────────────
 
-export type AuthorityKind = "agent" | "place" | "topic";
+export type AuthorityKind = "agent" | "place" | "topic" | "hub";
 
 export interface Authority {
   id: string;

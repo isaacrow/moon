@@ -87,10 +87,10 @@ const AUTHORITY_CONTEXT: Record<string, string> = {
  */
 export function authorityDocument(a: {
   id: string; kind: string; label: string; variants: string[]; sameAs: string[]; note?: string | null; data?: any;
-}): any {
+}, expressions: string[] = []): any {
   const uri = `${BASE_URI}/${a.kind}/${a.id}`;
   const agentType = String(a.data?.agentType || "").toLowerCase();
-  const type = a.kind === "place" ? "bf:Place" : a.kind === "topic" ? "bf:Topic"
+  const type = a.kind === "hub" ? "bf:Hub" : a.kind === "place" ? "bf:Place" : a.kind === "topic" ? "bf:Topic"
     : agentType === "organization" ? "bf:Organization" : agentType === "family" ? "bf:Family" : "bf:Person";
   const node: any = { "@id": uri, "@type": [type], "rdfs:label": a.label, "skos:prefLabel": a.label };
   if (a.variants.length) node["skos:altLabel"] = a.variants;
@@ -98,6 +98,21 @@ export function authorityDocument(a: {
   if (a.note) node["skos:note"] = a.note;
   if (a.data?.birthDate) node["madsrdf:birthDate"] = String(a.data.birthDate);
   if (a.data?.deathDate) node["madsrdf:deathDate"] = String(a.data.deathDate);
+  if (a.kind === "hub") {
+    // A hub's name is its authorized access point; its title and creator as LC's hubs give them.
+    node["bflc:aap"] = a.label;
+    const title = String(a.data?.title || "").trim();
+    if (title) node["bf:title"] = { "@type": "bf:Title", "bf:mainTitle": title };
+    const creator = String(a.data?.creator || "").trim();
+    const creatorUri = String(a.data?.creatorUri || "").trim();
+    if (creator || /^https?:\/\//.test(creatorUri)) {
+      const agent: any = /^https?:\/\//.test(creatorUri) ? { "@id": creatorUri } : { "@type": "bf:Agent" };
+      if (creator) agent["rdfs:label"] = creator;
+      node["bf:contribution"] = { "@type": "bf:PrimaryContribution", "bf:agent": agent };
+    }
+    if (a.data?.language) node["bf:language"] = String(a.data.language);
+    if (expressions.length) node["bf:hasExpression"] = expressions.map((id) => ({ "@id": id }));
+  }
   return { "@context": AUTHORITY_CONTEXT, "@graph": [node] };
 }
 
@@ -111,6 +126,21 @@ export async function authorityTurtle(doc: any): Promise<string> {
   writer.addQuads(quads);
   return await new Promise<string>((resolve, reject) =>
     writer.end((err: Error | null, out: string) => (err ? reject(err) : resolve(out))));
+}
+
+/** The Works in these records that are expressions of `hubUri` (bf:expressionOf pointing at it). */
+export function worksExpressing(documents: any[], hubUri: string): string[] {
+  const refs = (v: any): string[] => (Array.isArray(v) ? v : v == null ? [] : [v])
+    .map((x) => (typeof x === "string" ? x : x?.["@id"])).filter((x): x is string => typeof x === "string");
+  const out = new Set<string>();
+  for (const doc of documents) {
+    for (const n of Array.isArray(doc?.["@graph"]) ? doc["@graph"] : []) {
+      const id = n?.["@id"];
+      if (typeof id !== "string" || id.startsWith("_:")) continue;
+      if (refs(n["bf:expressionOf"] ?? n["expressionOf"]).includes(hubUri)) out.add(id);
+    }
+  }
+  return [...out].sort();
 }
 
 /**

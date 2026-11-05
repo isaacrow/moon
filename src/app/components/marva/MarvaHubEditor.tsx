@@ -1,10 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Layers, Plus, Search, Link2, Check, 
   Copy} from "lucide-react";
 import {
-  BibframeHub, createQuickHubStub, SAMPLE_LC_HUBS
+  BibframeHub, searchHubs, saveMoonHub
 } from "../../../services/hubService";
 
 interface MarvaHubEditorProps {
@@ -20,11 +20,25 @@ export function MarvaHubEditor({
   onSaveHub,
   isDark = true
 }: MarvaHubEditorProps) {
-  const [hubList, setHubList] = useState<BibframeHub[]>(SAMPLE_LC_HUBS);
-  const [activeHub, setActiveHub] = useState<BibframeHub>(
-    currentHub || SAMPLE_LC_HUBS[0]
-  );
+  const [hubList, setHubList] = useState<BibframeHub[]>([]);
+  const [activeHub, setActiveHub] = useState<BibframeHub | null>(currentHub || null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  // Moon's own hubs and LC's hubs, searched as the cataloger types.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) { setHubList([]); return; }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      const found = await searchHubs(q);
+      if (!cancelled) { setHubList(found); setSearching(false); }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [searchQuery]);
   const [copiedAAP, setCopiedAAP] = useState(false);
 
   // New Hub Stub state
@@ -34,33 +48,28 @@ export function MarvaHubEditor({
   const [newMedium, setNewMedium] = useState("");
   const [newLang, setNewLang] = useState("");
 
-  const filteredHubs = hubList.filter(
-    (h) =>
-      h.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      h.aap.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (h.creator && h.creator.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredHubs = hubList;
 
-  const handleCreateHub = () => {
-    if (!newTitle.trim()) return;
-    const stub = createQuickHubStub({
-      title: newTitle,
-      creator: newCreator,
-      keyOrOpus: newKey,
-      language: newLang
-    });
-    const updated = [stub, ...hubList];
-    setHubList(updated);
-    setActiveHub(stub);
-    if (onSelectHub) onSelectHub(stub);
-    if (onSaveHub) onSaveHub(stub);
-
-    // Reset inputs
+  // Saves the hub in Moon's authority file (permanent https://mooon.site/resource/hub/<id> address).
+  const handleCreateHub = async () => {
+    if (!newTitle.trim() || saving) return;
+    setSaving(true);
+    setMessage(null);
+    const res = await saveMoonHub({ title: newTitle, creator: newCreator, keyOrOpus: newKey, language: newLang });
+    setSaving(false);
+    if (!res.ok) {
+      setMessage(res.status === 401 ? "Sign in to create hubs." : `Could not save the hub: ${res.error}`);
+      return;
+    }
+    setHubList((list) => [res.hub, ...list.filter((h) => h.uri !== res.hub.uri)]);
+    setActiveHub(res.hub);
+    if (onSelectHub) onSelectHub(res.hub);
+    if (onSaveHub) onSaveHub(res.hub);
     setNewTitle("");
     setNewCreator("");
     setNewKey("");
     setNewLang("");
-    alert(`Created Hub: ${stub.aap}`);
+    setMessage(res.existing ? `This hub already exists: ${res.hub.aap}` : `Hub saved: ${res.hub.uri}`);
   };
 
   const handleCopyAAP = (aap: string) => {
@@ -95,13 +104,13 @@ export function MarvaHubEditor({
           <div className="p-4 rounded-3xl bg-white/[0.02] border border-white/10 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-gray-300">Browse & Search Hubs</span>
-              <span className="text-[10px] text-purple-400 font-mono">{filteredHubs.length} Hubs</span>
+              <span className="text-[10px] text-purple-400 font-mono">{searching ? "Searching…" : `${filteredHubs.length} Hubs`}</span>
             </div>
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by title, creator, AAP..."
+                placeholder="Search Moon and LC hubs (creator or title)…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full text-xs pl-9 pr-3 py-2 rounded-xl bg-black/40 border border-white/10 text-white outline-none focus:border-purple-500"
@@ -109,6 +118,9 @@ export function MarvaHubEditor({
             </div>
 
             <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+              {!searching && searchQuery.trim().length >= 2 && filteredHubs.length === 0 && (
+                <p className="text-[11px] text-gray-400 px-1">No hubs found. Create one below.</p>
+              )}
               {filteredHubs.map((h) => {
                 const isSelected = activeHub?.id === h.id;
                 return (
@@ -127,7 +139,10 @@ export function MarvaHubEditor({
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold truncate">{h.title}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+                      <span className="flex items-center gap-1 shrink-0">
+                        <span className={`text-[9px] font-bold px-1.5 rounded-full ${h.source === "Moon" ? "bg-indigo-500/30 text-indigo-200" : "bg-blue-500/30 text-blue-200"}`}>{h.source || "LC"}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-purple-400" />}
+                      </span>
                     </div>
                     {h.creator && <span className="text-[11px] text-gray-400 block truncate mt-0.5">{h.creator}</span>}
                     <span className="text-[10px] font-mono text-purple-300/80 block mt-1 truncate">
@@ -179,11 +194,12 @@ export function MarvaHubEditor({
               <button
                 type="button"
                 onClick={handleCreateHub}
-                disabled={!newTitle.trim()}
+                disabled={!newTitle.trim() || saving}
                 className="w-full py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white transition-colors"
               >
-                Mint Hub Resource
+                {saving ? "Saving…" : "Save Hub in Moon"}
               </button>
+              {message && <p className="text-[11px] text-purple-200 break-all">{message}</p>}
             </div>
           </div>
         </div>
@@ -290,7 +306,7 @@ export function MarvaHubEditor({
                   type="button"
                   onClick={() => {
                     if (onSelectHub) onSelectHub(activeHub);
-                    alert(`Linked Work to Hub: "${activeHub.title}" via bf:expressionOf!`);
+                    setMessage(`This Work is now an expression of: ${activeHub.aap}`);
                   }}
                   className="w-full py-3 rounded-2xl text-xs font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-xl flex items-center justify-center gap-2 transition-all"
                 >

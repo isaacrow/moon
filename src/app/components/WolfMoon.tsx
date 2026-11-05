@@ -129,7 +129,7 @@ import {
   MarvaPreferencesModal, DEFAULT_MARVA_PREFERENCES, MarvaPreferences
 } from "./marva/MarvaPreferencesModal";
 import {
-  BibframeHub, SAMPLE_LC_HUBS
+  BibframeHub
 } from "../../services/hubService";
 import {
   MARVA_DIACRITICS, MarvaHistoryLog, MarvaHistoryEntry} from "../../services/marvaService";
@@ -509,7 +509,7 @@ export default function WolfMoon({
   });
   const [showPreferencesModal, setShowPreferencesModal] = useState(false);
   const [showToolsModal, setShowToolsModal] = useState(false);
-  const [activeHub, setActiveHub] = useState<BibframeHub | null>(SAMPLE_LC_HUBS[0]);
+  const [activeHub, setActiveHub] = useState<BibframeHub | null>(null);
   const [dirtyFields, setDirtyFields] = useState<Set<string>>(new Set());
   const historyLogManager = useRef(new MarvaHistoryLog());
   const [historyEntries, setHistoryEntries] = useState<MarvaHistoryEntry[]>([]);

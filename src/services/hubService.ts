@@ -6,7 +6,7 @@
  * - Hub Stub creation directly from Work
  * - Hub Expression linking
  */
-import { BASE_URI } from './uriMintingService';
+import { moonFetch } from '../app/utils/moonApi';
 
 export interface BibframeHub {
   id: string;
@@ -23,6 +23,8 @@ export interface BibframeHub {
   originDate?: string;
   historyNote?: string;
   createdDate: string;
+  /** Where the hub lives: Moon's authority file or LC's id.loc.gov. */
+  source?: 'Moon' | 'LC';
 }
 
 /**
@@ -70,80 +72,98 @@ export function normalizeAAP(aap: string): string {
     .trim();
 }
 
-/**
- * Create a Quick Hub "Stub" directly from cataloging (Marva Feb 2025 workflow)
- */
-export function createQuickHubStub(options: {
-  title: string;
-  creator?: string;
-  creatorUri?: string;
-  keyOrOpus?: string;
-  language?: string;
-}): BibframeHub {
-  const hubId = `hub_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const uri = `${BASE_URI}/hub/${hubId}`; // local stub until matched to an LC Hub
-  const aap = generateHubAAP(options);
-  const aapNormalized = normalizeAAP(aap);
+// ── Real hubs: Moon's own (server authority file, kind "hub") and LC's (id.loc.gov/resources/hubs) ──
 
+interface MoonHubEntry {
+  id: string;
+  uri: string;
+  label: string;
+  sameAs: string[];
+  data: Record<string, any>;
+  createdAt?: string;
+}
+
+function fromMoonEntry(a: MoonHubEntry): BibframeHub {
   return {
-    id: hubId,
-    uri,
-    title: options.title,
-    creator: options.creator,
-    creatorUri: options.creatorUri,
-    keyOrOpus: options.keyOrOpus,
-    language: options.language,
-    aap,
-    aapNormalized,
-    createdDate: new Date().toISOString()
+    id: a.id,
+    uri: a.uri,
+    title: a.data?.title || a.label,
+    creator: a.data?.creator || undefined,
+    creatorUri: a.data?.creatorUri || undefined,
+    keyOrOpus: a.data?.keyOrOpus || undefined,
+    language: a.data?.language || undefined,
+    aap: a.label,
+    aapNormalized: normalizeAAP(a.label),
+    expressionOf: a.sameAs?.find((s) => s.includes('id.loc.gov/resources/hubs/')),
+    createdDate: a.createdAt || '',
+    source: 'Moon',
   };
 }
 
-/**
- * Preset sample LC Hubs for quick testing and collocation
- */
-export const SAMPLE_LC_HUBS: BibframeHub[] = [
-  {
-    id: '4978c720-ca4f-ca86-2d7e-a15f8245ade9',
-    uri: 'http://id.loc.gov/resources/hubs/4978c720-ca4f-ca86-2d7e-a15f8245ade9',
-    title: 'Hamlet',
-    creator: 'Shakespeare, William, 1564-1616',
-    creatorUri: 'http://id.loc.gov/rwo/agents/n78095332',
-    aap: 'Shakespeare, William, 1564-1616. Hamlet',
-    aapNormalized: 'shakespeare william 1564 1616 hamlet',
-    createdDate: '2025-01-10T10:00:00Z'
-  },
-  {
-    id: 'ca6d97b4-923a-b178-6723-d55a4eb236a7',
-    uri: 'http://id.loc.gov/resources/hubs/ca6d97b4-923a-b178-6723-d55a4eb236a7',
-    title: 'Symphonies, no. 9, op. 95, E minor',
-    creator: 'Dvořák, Antonín, 1841-1904',
-    creatorUri: 'http://id.loc.gov/rwo/agents/n80070338',
-    keyOrOpus: 'op. 95, E minor',
-    mediumOfPerformance: 'orchestra',
-    aap: 'Dvořák, Antonín, 1841-1904. Symphonies, no. 9, op. 95, E minor',
-    aapNormalized: 'dvorak antonin 1841 1904 symphonies no 9 op 95 e minor',
-    createdDate: '2025-01-12T14:30:00Z'
-  },
-  {
-    id: 'e28014a9-835b-432a-bc91-23395982e411',
-    uri: 'http://id.loc.gov/resources/hubs/e28014a9-835b-432a-bc91-23395982e411',
-    title: 'Alf laylah wa-laylah',
-    creator: '',
-    language: 'Arabic',
-    aap: 'Arabian nights. Arabic',
-    aapNormalized: 'arabian nights arabic',
-    createdDate: '2025-02-01T09:15:00Z'
-  },
-  {
-    id: 'f91b72a0-410a-428a-8291-766184910243',
-    uri: 'http://id.loc.gov/resources/hubs/f91b72a0-410a-428a-8291-766184910243',
-    title: 'Iliad',
-    creator: 'Homer',
-    creatorUri: 'http://id.loc.gov/rwo/agents/n78095639',
-    language: 'Greek',
-    aap: 'Homer. Iliad. Greek',
-    aapNormalized: 'homer iliad greek',
-    createdDate: '2025-02-14T11:20:00Z'
+/** Moon's own hubs whose access point matches every word (Arabic spellings folded). Never throws. */
+export async function searchMoonHubs(query: string): Promise<BibframeHub[]> {
+  try {
+    const params = new URLSearchParams({ q: query, kind: 'hub', limit: '20' });
+    const { ok, data } = await moonFetch<{ authorities: MoonHubEntry[] }>(`/authorities?${params}`);
+    return ok && Array.isArray(data?.authorities) ? data.authorities.map(fromMoonEntry) : [];
+  } catch {
+    return [];
   }
-];
+}
+
+/** LC's hubs (id.loc.gov), searched from the start of the access point. Never throws. */
+export async function searchLcHubs(query: string): Promise<BibframeHub[]> {
+  if (query.trim().length < 2) return [];
+  try {
+    const url = `https://id.loc.gov/resources/hubs/suggest2/?q=${encodeURIComponent(query.trim())}&count=15`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (Array.isArray(json?.hits) ? json.hits : []).map((h: any): BibframeHub => {
+      const aap: string = h.aLabel || h.suggestLabel || '';
+      const creator: string | undefined = h.more?.contributors?.[0];
+      const title = creator && aap.startsWith(creator) ? aap.slice(creator.length).replace(/^[.\s]+/, '') : aap;
+      return {
+        id: h.token || h.uri,
+        uri: h.uri,
+        title: title || aap,
+        creator,
+        aap,
+        aapNormalized: normalizeAAP(aap),
+        createdDate: h.more?.lastmods?.[0] || '',
+        source: 'LC',
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Moon's hubs first, then LC's. */
+export async function searchHubs(query: string): Promise<BibframeHub[]> {
+  const [moon, lc] = await Promise.all([searchMoonHubs(query), searchLcHubs(query)]);
+  return [...moon, ...lc];
+}
+
+/**
+ * Saves a new hub in Moon's authority file, which gives it a permanent https://mooon.site/resource/hub/<id>
+ * address. A hub with the same access point (any Arabic spelling) is returned instead of a duplicate.
+ */
+export async function saveMoonHub(input: {
+  title: string; creator?: string; creatorUri?: string; keyOrOpus?: string; language?: string; lcHubUri?: string;
+}): Promise<{ ok: true; existing: boolean; hub: BibframeHub } | { ok: false; status: number; error: string }> {
+  const aap = generateHubAAP(input);
+  const data: Record<string, string> = { title: input.title.trim() };
+  for (const k of ['creator', 'creatorUri', 'keyOrOpus', 'language'] as const) {
+    if (input[k]?.trim()) data[k] = input[k]!.trim();
+  }
+  try {
+    const { ok, status, data: res } = await moonFetch('/authorities', {
+      body: { kind: 'hub', label: aap, sameAs: input.lcHubUri ? [input.lcHubUri] : [], data },
+    });
+    if (!ok) return { ok: false, status, error: res?.error || `HTTP ${status}` };
+    return { ok: true, existing: !!res.existing, hub: fromMoonEntry(res.authority) };
+  } catch (e) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
+  }
+}
