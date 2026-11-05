@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Badge } from './ui/badge';
 import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
-import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord } from '../utils/recordStorageBackend';
+import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, returnRecord } from '../utils/recordStorageBackend';
 import type { BIBFRAMERecord } from '../types/bibframe';
 import { ActivityLog } from './ActivityLog';
 import { toast } from 'sonner';
@@ -25,7 +25,7 @@ import {
   Zap,
   Search,
   Library,
-  Moon} from 'lucide-react';
+  Moon, Undo2} from 'lucide-react';
 import moonLogoWhite from '../../assets/white.png';
 import '../../styles/glassmorphism.css';
 
@@ -134,6 +134,19 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
       toast.error('Failed to approve record', {
         description: err instanceof Error ? err.message : undefined,
       });
+    }
+  };
+
+  const handleReturnRecord = async (e: React.MouseEvent, recordId: string, recordTitle: string) => {
+    e.stopPropagation();
+    const reason = window.prompt(`What should be fixed in "${recordTitle}"? The cataloger sees this.`);
+    if (reason === null) return;
+    try {
+      await returnRecord(recordId, reason);
+      toast.success(`"${recordTitle}" returned to the cataloger`);
+      setSavedRecords(prev => prev.map(r => r.id === recordId ? { ...r, status: 'needs-review' } : r));
+    } catch (err) {
+      toast.error('Failed to return record', { description: err instanceof Error ? err.message : undefined });
     }
   };
 
@@ -700,6 +713,17 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         <span>Approve</span>
+                      </button>
+                    )}
+                    {isIsaac && record.status === 'pending-review' && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleReturnRecord(e, record.id, record.title)}
+                        className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-full text-xs font-bold flex items-center gap-1 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                        title="Return to the cataloger with a reason"
+                      >
+                        <Undo2 className="h-3.5 w-3.5" />
+                        <span>Return</span>
                       </button>
                     )}
                     

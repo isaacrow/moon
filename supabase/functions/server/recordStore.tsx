@@ -354,3 +354,36 @@ export async function findPublishedByUri(uri: string): Promise<{ id: string; tit
   if (error) throw new Error(`[records] resolve ${uri} failed: ${error.message}`);
   return data ?? null;
 }
+
+export type NotificationKind = "welcome" | "review" | "approved" | "returned";
+
+/**
+ * Adds a notification. Never throws: a notification that fails to send must not undo the save or
+ * review that caused it.
+ */
+export async function notify(
+  username: string | undefined,
+  kind: NotificationKind,
+  record: { id?: string; title?: string },
+  actor?: string,
+  reason?: string,
+): Promise<void> {
+  if (!username) return;
+  const { error } = await sb().rpc("moon_notify", {
+    p_user: username, p_kind: kind, p_record_id: record.id ?? null, p_record_title: record.title ?? null,
+    p_actor: actor ?? null, p_reason: reason ?? null,
+  });
+  if (error) console.error(`[notifications] ${kind} for ${username} failed: ${error.message}`);
+}
+
+export async function listNotifications(username: string): Promise<{ unread: number; items: any[] }> {
+  const { data, error } = await sb().rpc("moon_notifications", { p_user: username, p_limit: 30 });
+  if (error) throw new Error(`[notifications] list failed: ${error.message}`);
+  return data;
+}
+
+export async function markNotificationsRead(username: string, ids?: number[]): Promise<number> {
+  const { data, error } = await sb().rpc("moon_notifications_read", { p_user: username, p_ids: ids?.length ? ids : null });
+  if (error) throw new Error(`[notifications] mark read failed: ${error.message}`);
+  return data as number;
+}

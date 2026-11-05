@@ -15,6 +15,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import moonLogo from '../../assets/white.png';
 import { TesterApprovalCenter } from './TesterApprovalCenter';
+import { NotificationBell } from './NotificationBell';
 import '../../styles/moon-space-theme.css';
 
 interface TopNavBarProps {
@@ -25,6 +26,8 @@ interface TopNavBarProps {
   /** Show a back button instead of dashboard button */
   showBack?: boolean;
   onBack?: () => void;
+  /** Opens a saved record in the editor (from a notification). */
+  onOpenRecord?: (recordId: string) => void;
 }
 
 export function TopNavBar({ 
@@ -34,6 +37,7 @@ export function TopNavBar({
   onToggleDarkMode: _externalToggle,
   showBack,
   onBack,
+  onOpenRecord,
 }: TopNavBarProps) {
   const { t, i18n } = useTranslation();
   const {
@@ -239,6 +243,9 @@ export function TopNavBar({
                 {i18n.language === 'en' ? 'ع' : 'EN'}
               </span>
             </motion.button>
+
+            {/* Notifications */}
+            {user && <NotificationBell isDark={isDark} onOpenRecord={onOpenRecord} />}
 
             {/* User Menu */}
             <DropdownMenu>

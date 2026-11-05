@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { BASE_URI } from '../services/uriMintingService';
+import { getRecordById } from './utils/recordStorageBackend';
 import './i18n/config';
 
 // Every screen loads on demand, so the login page doesn't download the editor.
@@ -125,6 +126,13 @@ function CatalogApp() {
     }
   };
 
+  // A record named in a notification.
+  const openRecordById = async (recordId: string) => {
+    const saved = await getRecordById(recordId);
+    if (saved) handleLoadRecordFromGallery(saved);
+    else toast.error('This record no longer exists');
+  };
+
   // A record from the dashboard or search: a BIBFRAMERecord, a SavedRecord, JSON text or a bare @graph.
   const handleLoadRecord = (importedData: any) => {
     let raw = importedData;
@@ -169,6 +177,7 @@ function CatalogApp() {
         onNewRecord={handleNewRecord}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
+        onOpenRecord={openRecordById}
       />
       {content}
     </div>

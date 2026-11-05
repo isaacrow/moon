@@ -27,7 +27,7 @@ import * as jwtAuth from "./jwtAuth.tsx";
 import * as observability from "./observability.tsx";
 import * as loadTesting from "./loadTesting.tsx";
 import recordRoutes from "./recordRoutes.tsx";
-import accountRoutes, { getSession, isAdminSession } from "./accountRoutes.tsx";
+import accountRoutes, { getSession, isAdminSession, SUPER_ADMIN_USERNAME } from "./accountRoutes.tsx";
 import * as recordStore from "./recordStore.tsx";
 import * as linkedData from "./linkedData.tsx";
 import * as aiEngine from "./aiEngine.tsx";
@@ -680,6 +680,10 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     }
 
     console.log(`[RECORDS] Saved record ${id} v${version} "${title || 'Untitled'}" (${status}) by ${cataloger} with ${document['@graph'].length} nodes`);
+    // The Super Admin hears about every save that now waits for their review.
+    if (status === 'pending-review') {
+      await recordStore.notify(SUPER_ADMIN_USERNAME, 'review', { id, title: title || existing?.title || 'Untitled' }, session.username);
+    }
 
     return c.json({
       success: true,
@@ -835,11 +839,17 @@ async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
       return c.json({ success: false, error: 'Super Admin session required' }, 403);
     }
     const id = c.req.param('id');
+    // A return can say what to fix: { "reason": "..." }, shown to the cataloger in their notification.
+    const { reason } = await c.req.json().catch(() => ({}));
     const record = await recordStore.reviewRecord(id, decision, admin.username);
     if (!record) {
       return c.json({ success: false, error: 'Record not found' }, 404);
     }
     console.log(`[RECORDS] ${admin.username} set record ${id} -> ${decision} (v${record.version})`);
+    if (record.cataloger && record.cataloger !== admin.username) {
+      await recordStore.notify(record.cataloger, decision === 'complete' ? 'approved' : 'returned', record, admin.username,
+        typeof reason === 'string' ? reason.slice(0, 1000) : undefined);
+    }
     return c.json({
       success: true,
       id,
@@ -856,6 +866,32 @@ async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
 
 app.post("/make-server-49c0e13c/records/:id/approve", (c) => reviewRecord(c, 'complete'));
 app.post("/make-server-49c0e13c/records/:id/reject", (c) => reviewRecord(c, 'needs-review'));
+
+// 🔔 Notifications for the signed-in user: newest 30 and the unread count (a new user's welcome is
+// created on their first look). POST .../read marks { ids } read, or all of them without ids.
+app.get("/make-server-49c0e13c/notifications", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to see notifications' }, 401);
+    return c.json(await recordStore.listNotifications(session.username));
+  } catch (error) {
+    console.error('Notifications error:', error);
+    return c.json({ error: 'Failed to load notifications' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/notifications/read", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to see notifications' }, 401);
+    const { ids } = await c.req.json().catch(() => ({}));
+    const valid = Array.isArray(ids) ? ids.filter((i: unknown) => Number.isInteger(i)).slice(0, 200) : undefined;
+    return c.json({ marked: await recordStore.markNotificationsRead(session.username, valid) });
+  } catch (error) {
+    console.error('Mark notifications read error:', error);
+    return c.json({ error: 'Failed to update notifications' }, 500);
+  }
+});
 
 // ✏️ Who is editing: the editor calls this every half minute while a record is open, and gets back the
 // other catalogers active on it, so it can warn "<username> is working on this record".
@@ -955,6 +991,9 @@ app.post("/make-server-49c0e13c/records/:id/revert", async (c) => {
     const status = isAdmin ? 'complete' : 'pending-review';
     const newVersion = await recordStore.revertRecord(current, target, session.username, status);
     console.log(`[RECORDS] ${session.username} reverted record ${id} to v${version} as v${newVersion}`);
+    if (status === 'pending-review') {
+      await recordStore.notify(SUPER_ADMIN_USERNAME, 'review', { id, title: target.title }, session.username);
+    }
     return c.json({ success: true, id, version: newVersion, revertedTo: version, status });
   } catch (error) {
     console.error('Revert record error:', error);
