@@ -707,6 +707,40 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
 // Worker in workers/resource-router. The published record describing that URI is answered as
 // JSON-LD, Turtle or N-Triples (by extension, e.g. .ttl, or by the Accept header); a browser is sent
 // (303 See Other) to the record's page in the OPAC. Only published versions are ever served.
+// 📚 https://mooon.site/resource/ itself: a page listing every published record with its Work and Instance
+// addresses and data formats (JSON with ?format=json or Accept: application/json).
+async function resourceIndex(c: any) {
+  try {
+    const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+    const nodeId = (doc: any, cls: string) => (Array.isArray(doc?.['@graph']) ? doc['@graph'] : [])
+      .find((n: any) => [].concat(n?.['@type'] ?? []).some((t: any) => String(t).endsWith(cls)) && String(n?.['@id'] || '').startsWith(linkedData.BASE_URI))?.['@id'];
+    const records = (await recordStore.listPublishedRecords())
+      .map((r) => ({ id: r.id, title: r.title, work: nodeId(r.document, 'Work'), instance: nodeId(r.document, 'Instance'), saved: r.saved }))
+      .filter((r) => r.work)
+      .sort((a, b) => String(a.title).localeCompare(String(b.title)));
+    const wantsJson = c.req.query('format') === 'json' || /application\/json/.test(c.req.header('Accept') || '');
+    if (wantsJson) return c.json({ count: records.length, records }, 200, { 'Access-Control-Allow-Origin': '*' });
+    const rows = records.map((r) => `<li><a class="t" href="${esc(r.work)}" dir="auto">${esc(r.title)}</a>
+      <div class="u"><a href="${esc(r.work)}">${esc(r.work)}</a>${r.instance ? `<br><a href="${esc(r.instance)}">${esc(r.instance)}</a>` : ''}</div>
+      <div class="f"><a href="${esc(r.work)}.jsonld">JSON-LD</a> · <a href="${esc(r.work)}.ttl">Turtle</a> · <a href="${esc(r.work)}.nt">N-Triples</a></div></li>`).join('\n');
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moon — published records</title><style>
+body{font-family:system-ui,"Segoe UI",Tahoma,sans-serif;max-width:860px;margin:0 auto;padding:24px 16px;background:#0b1020;color:#e5e7eb}
+h1{font-size:1.5rem;margin:0 0 4px}p{color:#9ca3af;margin:0 0 20px}ul{list-style:none;padding:0;margin:0}
+li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:none}a:hover{text-decoration:underline}
+.t{font-weight:600;font-size:1.05rem;color:#f9fafb}.u{font-family:ui-monospace,monospace;font-size:.8rem;margin-top:4px;word-break:break-all}.f{font-size:.8rem;margin-top:4px;color:#9ca3af}
+</style></head><body><h1>Moon — published records</h1>
+<p>${records.length} BIBFRAME records. Each address opens the record's page in a browser, or its data for library systems (JSON-LD, Turtle, N-Triples). <a href="?format=json">This list as JSON</a> · <a href="/opac.html">Catalogue</a></p>
+<ul>${rows}</ul></body></html>`;
+    return c.html(html, 200, { 'Cache-Control': 'public, max-age=300' });
+  } catch (error) {
+    console.error('Resource index error:', error);
+    return c.json({ error: 'Failed to list records' }, 500);
+  }
+}
+app.get("/make-server-49c0e13c/resource", resourceIndex);
+app.get("/make-server-49c0e13c/resource/", resourceIndex);
+
 app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
   const kind = c.req.param('kind');
   const { id, format: fromExtension } = linkedData.splitExtension(c.req.param('id'));
