@@ -31,6 +31,8 @@ export interface SavedRecord {
   /** Latest version on the server, and the version the public catalogue shows (older while an edit waits). */
   version?: number;
   publishedVersion?: number;
+  /** Set when a Super Admin save could not be published: the required fields the record still lacks. */
+  publishBlocked?: Array<{ en: string; ar: string }>;
   jcricket?: {
     provenanceId?: string;
     institutionCode?: string;
@@ -385,6 +387,7 @@ export async function saveRecord(record: BIBFRAMERecord, cataloger?: string, opt
     console.log('✅ Record saved to Supabase:', data);
     savedRecord.version = data?.version;
     savedRecord.publishedVersion = data?.publishedVersion;
+    savedRecord.publishBlocked = data?.publishBlocked;
     if (data?.status) {
       savedRecord.status = normalizeStatus(data.status);
       savedRecord.record = {
@@ -1132,7 +1135,9 @@ export async function approveRecord(id: string, approverName: string = 'Super Ad
       throw new Error(
         status === 403
           ? 'Only the Super Admin can approve records. If you are isaac, sign out and sign in again.'
-          : data?.error || `Server returned ${status}`
+          : status === 422 && Array.isArray(data?.missing)
+            ? `It can't be published yet. Missing: ${data.missing.map((m: any) => m.en).join(', ')}`
+            : data?.error || `Server returned ${status}`
       );
     }
     approvedAt = data.approvedAt || approvedAt;

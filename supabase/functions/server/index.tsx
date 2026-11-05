@@ -30,6 +30,7 @@ import recordRoutes from "./recordRoutes.tsx";
 import accountRoutes, { getSession, isAdminSession, SUPER_ADMIN_USERNAME } from "./accountRoutes.tsx";
 import * as recordStore from "./recordStore.tsx";
 import * as linkedData from "./linkedData.tsx";
+import { missingForPublish } from "./publishGate.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
@@ -638,9 +639,12 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     // Review workflow: only the Super Admin can publish straight to the catalog.
     // Everyone else's saves (new records and edits) wait for approval.
     const isAdmin = session.role === 'admin';
-    const status = isAdmin
-      ? (requestedStatus === 'pending-review' ? 'pending-review' : 'complete')
+    // A record missing a required field is still saved, but not published: it waits until it is complete.
+    const missing = missingForPublish(document);
+    const status = isAdmin && requestedStatus !== 'pending-review' && missing.length === 0
+      ? 'complete'
       : 'pending-review';
+    const publishBlocked = isAdmin && requestedStatus !== 'pending-review' && missing.length > 0 ? missing : undefined;
 
     const existing = await recordStore.getRecord(id);
     // A cataloger edits their own records; anyone else's are the Super Admin's to change.
@@ -681,7 +685,7 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
 
     console.log(`[RECORDS] Saved record ${id} v${version} "${title || 'Untitled'}" (${status}) by ${cataloger} with ${document['@graph'].length} nodes`);
     // The Super Admin hears about every save that now waits for their review.
-    if (status === 'pending-review') {
+    if (status === 'pending-review' && !isAdmin) {
       await recordStore.notify(SUPER_ADMIN_USERNAME, 'review', { id, title: title || existing?.title || 'Untitled' }, session.username);
     }
 
@@ -694,6 +698,8 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
       version,
       // A cataloger's edit of a published record leaves the published version live until approval.
       publishedVersion: status === 'complete' ? version : existing?.publishedVersion,
+      // The Super Admin's save that could not be published, and why.
+      ...(publishBlocked ? { publishBlocked } : {}),
       nodeCount: document['@graph'].length,
       saved: now,
     });
@@ -875,6 +881,13 @@ async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
     const id = c.req.param('id');
     // A return can say what to fix: { "reason": "..." }, shown to the cataloger in their notification.
     const { reason } = await c.req.json().catch(() => ({}));
+    if (decision === 'complete') {
+      const current = await recordStore.getRecord(id);
+      const missing = current ? missingForPublish(current.document) : [];
+      if (missing.length) {
+        return c.json({ success: false, error: 'This record is missing required fields and cannot be published yet', missing }, 422);
+      }
+    }
     const record = await recordStore.reviewRecord(id, decision, admin.username);
     if (!record) {
       return c.json({ success: false, error: 'Record not found' }, 404);
@@ -1022,10 +1035,11 @@ app.post("/make-server-49c0e13c/records/:id/revert", async (c) => {
     if (!target) {
       return c.json({ error: 'Version not found' }, 404);
     }
-    const status = isAdmin ? 'complete' : 'pending-review';
+    // Reverting to a version that lacks required fields saves it, but leaves it unpublished.
+    const status = isAdmin && missingForPublish(target.document).length === 0 ? 'complete' : 'pending-review';
     const newVersion = await recordStore.revertRecord(current, target, session.username, status);
     console.log(`[RECORDS] ${session.username} reverted record ${id} to v${version} as v${newVersion}`);
-    if (status === 'pending-review') {
+    if (status === 'pending-review' && !isAdmin) {
       await recordStore.notify(SUPER_ADMIN_USERNAME, 'review', { id, title: target.title }, session.username);
     }
     return c.json({ success: true, id, version: newVersion, revertedTo: version, status });

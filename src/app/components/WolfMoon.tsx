@@ -1413,7 +1413,14 @@ export default function WolfMoon({
       clearDraft();
       const initialStatus = saved.status || "complete";
       setSaveStatus("saved");
-      if (initialStatus === "pending-review" && saved.publishedVersion) {
+      if (saved.publishBlocked?.length) {
+        // The Super Admin's save went through but the record is not published until it is complete.
+        const list = saved.publishBlocked.map((m) => (language === "ar" ? m.ar : m.en)).join(language === "ar" ? "، " : ", ");
+        toast.warning(
+          language === "ar" ? "حُفظت التسجيلة لكنها لم تُنشر بعد" : "Saved, but not published yet",
+          { description: language === "ar" ? `حقول مطلوبة ناقصة: ${list}` : `Required fields still missing: ${list}`, duration: 10000 },
+        );
+      } else if (initialStatus === "pending-review" && saved.publishedVersion) {
         // An edit to a published record: the catalogue keeps showing the published version meanwhile.
         toast.info(
           language === "ar" ? "تم حفظ التعديل وهو قيد المراجعة بانتظار اعتماد المشرف العام (isaac)" : "Edit saved and waiting for review by the Super Admin (isaac)",
