@@ -17,6 +17,7 @@
 
 import { AISuggestionProfile, saveAuthorityProfileToMoonSystem } from './authorFinderService';
 import { getAllRecords, getDeletedRecordIds } from '../app/utils/recordStorageBackend';
+import { nodeToCopy, hasCopyData } from './itemCopies';
 import { realLocExamples } from '../app/utils/realLocExamples';
 import { FOLIO_ENABLED, VUFIND_ENABLED } from '../app/utils/integrations';
 import { buildW3CJsonLd, BIBFRAME_JSONLD_CONTEXT } from './w3cJsonLdBuilder';
@@ -1750,16 +1751,21 @@ class WolfMoonOpacService {
           if (seenItemIds.has(itemId)) return;
           seenItemIds.add(itemId);
 
-          const itHeldBy = itNode['bf:heldBy']?.['rdfs:label'] || itNode['heldBy'] || shelfLocVal;
-          const itShelfMark = itNode['bf:shelfMark'] || itNode['shelfMark'] || shelfMarkVal;
-          const itBarcode = itNode['bf:barcode'] || itNode['barcode'];
-          const itAccessUrl = itNode['accessUrl'] || itNode['bf:electronicLocator'];
+          // The copy as the editor's Copies panel writes it (bf:heldBy, bf:shelfMark, bf:Barcode …).
+          const copy = nodeToCopy(itNode);
+          const itAccessUrlRaw = itNode['accessUrl'] || itNode['bf:electronicLocator'];
+          const itAccessUrl = typeof itAccessUrlRaw === 'string' ? itAccessUrlRaw : itAccessUrlRaw?.['@id'];
+          // An empty Item (the form's placeholder) is not a copy a reader can ask for.
+          if (!hasCopyData(copy) && !itAccessUrl && !shelfMarkVal && !shelfLocVal) return;
+          const itHeldBy = [copy.library, copy.location].filter(Boolean).join(' — ') || shelfLocVal;
+          const itShelfMark = copy.shelfMark || shelfMarkVal;
+          const itBarcode = copy.barcode || undefined;
 
           // Honest status determination: only 'digital_access' if URL exists, or reference_only if marked
           let itStatus: 'available' | 'reference_only' | 'digital_access' | 'not_connected' = 'not_connected';
           if (itAccessUrl) {
             itStatus = 'digital_access';
-          } else if (itNode['status'] === 'reference_only' || instN['holdingStatus'] === 'reference_only') {
+          } else if (copy.referenceOnly || instN['holdingStatus'] === 'reference_only') {
             itStatus = 'reference_only';
           } else if (itNode['status'] === 'available') {
             itStatus = 'available';
@@ -1772,12 +1778,13 @@ class WolfMoonOpacService {
             heldBy: itHeldBy,
             shelfMark: itShelfMark,
             barcode: itBarcode,
+            copyNumber: copy.copyNumber || undefined,
             immediateAcquisition: itNode['immediateAcquisition'] || itNode['bf:immediateAcquisition'],
             acquisitionSource: itNode['acquisitionSource'] || itNode['bf:acquisitionSource'],
             extent: itNode['extent'] || extentVal,
             dimensions: itNode['dimensions'] || dimVal,
             notation: itNode['notation'] || instN['notation'],
-            notes: Array.isArray(itNode['notes']) ? itNode['notes'] : (itNode['note'] ? [itNode['note']] : []),
+            notes: Array.isArray(itNode['notes']) ? itNode['notes'] : (copy.note ? [copy.note] : []),
             status: itStatus,
             accessUrl: itAccessUrl
           };

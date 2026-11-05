@@ -138,6 +138,8 @@ export interface BIBFRAMERecord {
   instance: BIBFRAMEInstance;
   // The rest of the WEMI graph an editor keeps alongside Work and Instance.
   item?: Record<string, any>;
+  /** The record's copies: further bf:Item nodes of the Instance (see services/itemCopies). */
+  copies?: Record<string, any>[];
   expression?: Record<string, any>;
   adminMetadata?: Record<string, any>;
   metadata?: {

@@ -79,6 +79,8 @@ import { saveRecord, getAllRecordsLocal, getRecordById, RecordConflictError, toS
 import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils/recordEditing";
 import { EditingWarning } from "./EditingWarning";
 import { RecordCoverPanel } from "./RecordCoverPanel";
+import { CopiesPanel } from "./CopiesPanel";
+import { ItemCopy, nodeToCopy, copyToNode } from "../../services/itemCopies";
 import { findIsbn } from "../utils/recordCovers";
 import { RecordCommentsContext, useRecordComments } from "./FieldComments";
 import type { SaveConflict } from "./SaveConflictDialog";
@@ -271,6 +273,8 @@ export default function WolfMoon({
   // ===== ACTIVE TAB =====
   const [activeTab, setActiveTab] = useState<OutputTab>("editor");
   const [coverUrl, setCoverUrl] = useState<string | undefined>((initialRecord?.metadata as any)?.coverUrl);
+  // The record's copies (holdings), saved as bf:Item nodes of the Instance.
+  const [copies, setCopies] = useState<ItemCopy[]>(() => (initialRecord?.copies || []).map(nodeToCopy));
 
   // ===== URI MINTING =====
   // A record that already has a Moon URI keeps its id, and every entity URI derives from it. Any other
@@ -372,6 +376,7 @@ export default function WolfMoon({
             work: workData,
             instance: instanceData,
             item: graphStore.getNode(uriSet.item) || undefined,
+            copies: copies.map((c) => copyToNode(c, uriSet.instance)),
             expression: enableExpression ? graphStore.getNode(uriSet.expression) || undefined : undefined,
             adminMetadata: graphStore.getNode(uriSet.admin) || undefined,
             metadata: { storageId: storageIdRef.current, recordId, uriSet, createdAt: initialRecord?.metadata?.createdAt },
@@ -388,7 +393,7 @@ export default function WolfMoon({
     writeDraft();
     const timer = window.setInterval(writeDraft, 3000);
     return () => { window.clearInterval(timer); writeDraft(); };
-  }, [saveStatus, workData, instanceData, recordTitle, enableExpression]);
+  }, [saveStatus, workData, instanceData, recordTitle, enableExpression, copies]);
 
   // On open, offer the unsaved draft: any draft for a new record, or this record's own draft.
   useEffect(() => {
@@ -1240,6 +1245,7 @@ export default function WolfMoon({
         instance: instanceData,
         // Item, Expression and AdminMetadata live only in the graph store; without these the save dropped them.
         item: graphStore.getNode(uriSet.item) || undefined,
+        copies: copies.map((c) => copyToNode(c, uriSet.instance)),
         expression: enableExpression ? graphStore.getNode(uriSet.expression) || undefined : undefined,
         adminMetadata: graphStore.getNode(uriSet.admin) || undefined,
         metadata: {
@@ -1781,6 +1787,10 @@ export default function WolfMoon({
         {activeTab === "editor" && (
           <div className="mb-4">
             <RecordCoverPanel recordId={storageId} coverUrl={coverUrl} isbn={findIsbn(instanceData)} language={language} onChange={setCoverUrl} />
+            <div className="mt-3">
+              <CopiesPanel copies={copies} instanceId={uriSet.instance} language={language}
+                onChange={(next) => { setCopies(next); setSaveStatus("unsaved"); }} />
+            </div>
           </div>
         )}
 
