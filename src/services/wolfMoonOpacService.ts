@@ -2015,6 +2015,8 @@ class WolfMoonOpacService {
 
       return {
         id: workId,
+        // The cover stored for the record (uploaded, or from Open Library / Google Books), if any.
+        ...(typeof recordObj.coverUrl === 'string' && recordObj.coverUrl ? { coverUrl: recordObj.coverUrl } : {}),
         uri: getEntityIri('work', workId),
         canonicalMoonUri: `moon:work:${workId}`,
         title: titleStr,
