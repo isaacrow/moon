@@ -1115,6 +1115,14 @@ export function getActivityLogs(): ActivityLogItem[] {
 /**
  * Approve a pending record (Super Admin action)
  */
+/** The Super Admin returns a record for changes; the cataloger is notified with the reason. */
+export async function returnRecord(id: string, reason: string): Promise<void> {
+  const { ok, status, data } = await moonFetch(`/records/${encodeURIComponent(id)}/reject`, { body: { reason } });
+  if (!ok || !data?.success) {
+    throw new Error(status === 403 ? 'Only the Super Admin can return records.' : data?.error || `Server returned ${status}`);
+  }
+}
+
 export async function approveRecord(id: string, approverName: string = 'Super Admin'): Promise<SavedRecord | null> {
   // The server is the source of truth; it checks the Super Admin session.
   let approvedAt = new Date().toISOString();

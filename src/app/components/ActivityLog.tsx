@@ -17,7 +17,8 @@ import {
   X,
   Shield,
   CheckCircle2,
-  Lock
+  Lock,
+  Undo2,
 } from 'lucide-react';
 import { ScrollArea } from './ui/scroll-area';
 import { 
@@ -27,6 +28,7 @@ import {
   deleteRecord,
   logActivity,
   approveRecord,
+  returnRecord,
   getDeletedRecordIds
 } from '../utils/recordStorageBackend';
 import { useAuth } from '../contexts/AuthContext';
@@ -200,6 +202,18 @@ export function ActivityLog({ onClose, onSelectRecord }: ActivityLogProps) {
       toast.error('Failed to approve record', {
         description: err instanceof Error ? err.message : undefined,
       });
+    }
+  };
+
+  const handleReturnRecord = async (recordId: string, recordTitle: string) => {
+    const reason = window.prompt(`What should be fixed in "${recordTitle}"? The cataloger sees this.`);
+    if (reason === null) return;
+    try {
+      await returnRecord(recordId, reason);
+      toast.success(`"${recordTitle}" returned to the cataloger`);
+      loadActivities();
+    } catch (err) {
+      toast.error('Failed to return record', { description: err instanceof Error ? err.message : undefined });
     }
   };
 
@@ -488,6 +502,17 @@ export function ActivityLog({ onClose, onSelectRecord }: ActivityLogProps) {
                           >
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             <span>Approve</span>
+                          </button>
+                        )}
+                        {isPending && (
+                          <button
+                            type="button"
+                            onClick={() => handleReturnRecord(activity.recordId, activity.recordTitle)}
+                            className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-full text-xs font-bold flex items-center gap-1 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                            title="Return to the cataloger with a reason"
+                          >
+                            <Undo2 className="h-3.5 w-3.5" />
+                            <span>Return</span>
                           </button>
                         )}
 
