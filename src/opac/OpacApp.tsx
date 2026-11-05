@@ -9,6 +9,7 @@
  * published records, authors and subjects are the live ones.
  */
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Search, Bookmark, BookmarkCheck, Quote, Link2, ChevronDown, X, Menu, Download, Copy, Check, ArrowUpRight,
 } from 'lucide-react';
@@ -102,6 +103,29 @@ function initial(s: string) {
   return t.charAt(0) || '؟';
 }
 
+/**
+ * Moves between views with the browser's View Transitions: the old page fades and blurs out,
+ * the new one rises in, and anything sharing a view-transition-name (a book's cover, an
+ * author's photo, the header, the current-section pill) glides from its old place to its new one.
+ * Browsers without the API, and people who ask for reduced motion, get the plain update
+ * (plus a short CSS fade-in where the API is missing).
+ */
+function withTransition(update: () => void) {
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const run = () => {
+    flushSync(update);
+    window.scrollTo({ top: 0 });
+  };
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  if (reduce || !doc.startViewTransition) { run(); return; }
+  doc.startViewTransition(run);
+}
+
+/** Pages render as one keyed block so the fallback fade and the card stagger replay on each visit. */
+function viewKey(v: View): string {
+  return v.mode + ':' + ('id' in v ? v.id : 'key' in v ? v.key : 'query' in v ? v.query : '');
+}
+
 // ---------------------------------------------------------------------------
 
 export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
@@ -117,16 +141,18 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
     let alive = true;
     wolfMoonOpacService.initDatabase().then(() => { if (alive) { setReady(true); setRev(r => r + 1); } });
     const off = wolfMoonOpacService.subscribe(() => { setReady(true); setRev(r => r + 1); });
-    const onPop = () => setView(viewFromUrl());
+    const onPop = () => withTransition(() => setView(viewFromUrl()));
     window.addEventListener('popstate', onPop);
+    if (!(document as any).startViewTransition) document.documentElement.classList.add('no-vt');
     return () => { alive = false; off(); window.removeEventListener('popstate', onPop); };
   }, []);
 
   const go = useCallback((v: View) => {
-    setView(v);
-    setNavOpen(false);
     window.history.pushState({}, '', urlFor(v));
-    window.scrollTo({ top: 0 });
+    withTransition(() => {
+      setView(v);
+      setNavOpen(false);
+    });
   }, []);
 
   const say = useCallback((msg: string) => {
@@ -161,10 +187,17 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
             <span className="brand-name">مون</span>
           </button>
           <nav className={`nav ${navOpen ? 'open glass' : ''}`} aria-label="الأقسام">
-            <button aria-current={view.mode === 'home' ? 'page' : undefined} onClick={() => go({ mode: 'home' })}>الرئيسية</button>
-            <button aria-current={view.mode === 'search' ? 'page' : undefined} onClick={() => go({ mode: 'search', query: '' })}>الكتب</button>
-            <button aria-current={view.mode === 'authors' || view.mode === 'person' ? 'page' : undefined} onClick={() => go({ mode: 'authors' })}>المؤلفون</button>
-            <button aria-current={view.mode === 'subjects' || view.mode === 'subject' ? 'page' : undefined} onClick={() => go({ mode: 'subjects' })}>الموضوعات</button>
+            {([
+              ['الرئيسية', { mode: 'home' }, view.mode === 'home'],
+              ['الكتب', { mode: 'search', query: '' }, view.mode === 'search' || view.mode === 'work'],
+              ['المؤلفون', { mode: 'authors' }, view.mode === 'authors' || view.mode === 'person'],
+              ['الموضوعات', { mode: 'subjects' }, view.mode === 'subjects' || view.mode === 'subject'],
+            ] as [string, View, boolean][]).map(([label, target, current]) => (
+              <button key={label} aria-current={current ? 'page' : undefined} onClick={() => go(target)}>
+                {current && <span className="nav-pill" aria-hidden="true" />}
+                <span className="nav-label">{label}</span>
+              </button>
+            ))}
           </nav>
           <div className="top-actions">
             <button className="icon-btn" onClick={() => setSavedOpen(true)} aria-label={`قائمتي، ${saved.length} كتاب`}>
@@ -181,7 +214,7 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
 
       <main>
         {!ready ? <Loading /> : (
-          <>
+          <div className="view" key={viewKey(view)}>
             {view.mode === 'home' && <Home ctx={ctx} />}
             {view.mode === 'search' && <Results key={view.query} ctx={ctx} query={view.query} />}
             {view.mode === 'work' && <WorkPage key={view.id} ctx={ctx} id={view.id} />}
@@ -189,7 +222,7 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
             {view.mode === 'subject' && <SubjectPage key={view.key} ctx={ctx} k={view.key} />}
             {view.mode === 'authors' && <AuthorsPage ctx={ctx} />}
             {view.mode === 'subjects' && <SubjectsPage ctx={ctx} />}
-          </>
+          </div>
         )}
       </main>
 
@@ -222,11 +255,11 @@ function coverUrlOf(work: OpacWorkEntity): string | undefined {
 }
 
 /** A record without a cover image gets a typographic jacket (title + author); tiny thumbnails get a plain moon. */
-function Cover({ work, big, jacket = true }: { work: OpacWorkEntity; big?: boolean; jacket?: boolean }) {
+function Cover({ work, big, jacket = true, morph = true }: { work: OpacWorkEntity; big?: boolean; jacket?: boolean; morph?: boolean }) {
   const url = coverUrlOf(work);
   const [broken, setBroken] = useState(false);
   return (
-    <div className={`cover ${big ? 'big' : ''}`}>
+    <div className={`cover ${big ? 'big' : ''}`} style={morph ? { viewTransitionName: vtName('cover', work.id) } as React.CSSProperties : undefined}>
       {url && !broken ? (
         <img src={url} alt="" loading="lazy" onError={() => setBroken(true)} />
       ) : (
@@ -243,9 +276,16 @@ function Cover({ work, big, jacket = true }: { work: OpacWorkEntity; big?: boole
   );
 }
 
-function BookCard({ work, ctx }: { work: OpacWorkEntity; ctx: Ctx }) {
+/** A view-transition-name must be a CSS identifier and unique on the page; record ids are neither guaranteed to be. */
+function vtName(kind: string, id: string): string {
+  return `${kind}-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+const stagger = (i = 0) => ({ '--i': Math.min(i, 12) } as React.CSSProperties);
+
+function BookCard({ work, ctx, i }: { work: OpacWorkEntity; ctx: Ctx; i?: number }) {
   return (
-    <button className="book glass" onClick={() => ctx.go({ mode: 'work', id: work.id })}>
+    <button className="book glass rise" style={stagger(i)} onClick={() => ctx.go({ mode: 'work', id: work.id })}>
       <Cover work={work} />
       <div className="book-meta">
         {coverUrlOf(work) && <div className="t" dir="auto">{work.title}</div>}
@@ -256,19 +296,19 @@ function BookCard({ work, ctx }: { work: OpacWorkEntity; ctx: Ctx }) {
   );
 }
 
-function Avatar({ p, cls = '' }: { p: OpacPersonEntity; cls?: string }) {
+function Avatar({ p, cls = '', morph }: { p: OpacPersonEntity; cls?: string; morph?: boolean }) {
   const [broken, setBroken] = useState(false);
   return (
-    <span className={`avatar ${cls}`} aria-hidden="true">
+    <span className={`avatar ${cls}`} aria-hidden="true" style={morph ? { viewTransitionName: vtName('avatar', p.id) } as React.CSSProperties : undefined}>
       {p.avatarUrl && !broken ? <img src={p.avatarUrl} alt="" onError={() => setBroken(true)} /> : initial(personName(p))}
     </span>
   );
 }
 
-function PersonCard({ p, ctx }: { p: OpacPersonEntity; ctx: Ctx }) {
+function PersonCard({ p, ctx, i }: { p: OpacPersonEntity; ctx: Ctx; i?: number }) {
   return (
-    <button className="person glass" onClick={() => ctx.go({ mode: 'person', key: p.id })}>
-      <Avatar p={p} />
+    <button className="person glass rise" style={stagger(i)} onClick={() => ctx.go({ mode: 'person', key: p.id })}>
+      <Avatar p={p} morph />
       <span>
         <span className="t" dir="auto" style={{ display: 'block' }}>{personName(p)}</span>
         <span className="s">{p.lifespan ? `${p.lifespan} · ` : ''}{p.worksCount} {p.worksCount === 1 ? 'كتاب' : 'كتب'}</span>
@@ -391,7 +431,6 @@ function Home({ ctx }: { ctx: Ctx }) {
   return (
     <>
       <section className="hero wrap">
-        <div className="moon" aria-hidden="true" />
         <h1>اعثر على كتابك التالي</h1>
         <p className="hero-sub">ابحث في {works.length} كتاباً بالعنوان أو المؤلف أو الموضوع، واعرف أين تجده في المكتبة.</p>
         <SearchBox ctx={ctx} />
@@ -411,7 +450,7 @@ function Home({ ctx }: { ctx: Ctx }) {
               <h2>أُضيف حديثاً</h2>
               <button className="link-btn" onClick={() => ctx.go({ mode: 'search', query: '' })}>كل الكتب</button>
             </div>
-            <div className="shelf">{recent.map(w => <BookCard key={w.id} work={w} ctx={ctx} />)}</div>
+            <div className="shelf">{recent.map((w, i) => <BookCard key={w.id} work={w} ctx={ctx} i={i} />)}</div>
           </section>
         )}
 
@@ -421,7 +460,7 @@ function Home({ ctx }: { ctx: Ctx }) {
               <h2>مؤلفون في الفهرس</h2>
               <button className="link-btn" onClick={() => ctx.go({ mode: 'authors' })}>كل المؤلفين</button>
             </div>
-            <div className="people">{authors.map(p => <PersonCard key={p.id} p={p} ctx={ctx} />)}</div>
+            <div className="people">{authors.map((p, i) => <PersonCard key={p.id} p={p} ctx={ctx} i={i} />)}</div>
           </section>
         )}
 
@@ -518,11 +557,11 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
             </div>
           ) : (
             <div className="rows">
-              {r.works.map(w => {
+              {r.works.map((w, i) => {
                 const inst = w.instances[0];
                 const st = workStatus(w);
                 return (
-                  <button key={w.id} className="row glass" onClick={() => ctx.go({ mode: 'work', id: w.id })}>
+                  <button key={w.id} className="row glass rise" style={stagger(i)} onClick={() => ctx.go({ mode: 'work', id: w.id })}>
                     <Cover work={w} jacket={false} />
                     <div style={{ minWidth: 0 }}>
                       <div className="t" dir="auto">{w.title}</div>
@@ -633,12 +672,12 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
         </aside>
 
         <div className="work-main">
-          <section className="work-intro glass">
+          <section className="work-intro glass rise">
             <h1 className="page-title book-title">{work.title}</h1>
             {work.subtitle && <div className="subtitle">{work.subtitle}</div>}
             {work.primaryCreator && personName(work.primaryCreator) && (
               <div className="byline">
-                <Avatar p={work.primaryCreator} />
+                <Avatar p={work.primaryCreator} morph />
                 <div>
                   <button onClick={() => ctx.go({ mode: 'person', key: work.primaryCreator.id })}>{personName(work.primaryCreator)}</button>
                   <div className="s">{[roleLabel(work.primaryCreator.role), work.primaryCreator.lifespan].filter(Boolean).join('، ')}</div>
@@ -654,14 +693,14 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
           </section>
 
           {summary && (
-            <section className="panel glass" aria-labelledby="h-sum">
+            <section className="panel glass rise" aria-labelledby="h-sum">
               <h2 id="h-sum">نبذة</h2>
               <p className="summary">{summary}</p>
             </section>
           )}
 
           {details.length > 0 && (
-            <section className="panel glass" aria-labelledby="h-det">
+            <section className="panel glass rise" aria-labelledby="h-det">
               <h2 id="h-det">بيانات الكتاب</h2>
               <dl className="dl">
                 {details.map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>)}
@@ -670,7 +709,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
           )}
 
           {(work.instances.length > 0 || realCopies.length > 0) && (
-            <section className="panel glass" aria-labelledby="h-where">
+            <section className="panel glass rise" aria-labelledby="h-where">
               <h2 id="h-where">أين تجده</h2>
               <div className="copies">
                 {(realCopies.length ? realCopies.map(h => ({
@@ -690,7 +729,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
           )}
 
           {(work.subjects.length > 0 || work.contributors.length > 0) && (
-            <section className="panel glass" aria-labelledby="h-sub">
+            <section className="panel glass rise" aria-labelledby="h-sub">
               <h2 id="h-sub">موضوعات ومشاركون</h2>
               {work.subjects.length > 0 && (
                 <div className="subjects">
@@ -709,7 +748,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
             </section>
           )}
 
-          <details className="panel glass">
+          <details className="panel glass rise">
             <summary>
               <span>البيانات الوصفية <span className="s">للمفهرسين والمطورين</span></span>
               <ChevronDown size={20} aria-hidden="true" />
@@ -732,7 +771,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
       {related.length > 0 && (
         <section className="section">
           <div className="section-head"><h2>كتب قريبة منه</h2></div>
-          <div className="shelf">{related.map(w => <BookCard key={w.id} work={w} ctx={ctx} />)}</div>
+          <div className="shelf">{related.map((w, i) => <BookCard key={w.id} work={w} ctx={ctx} i={i} />)}</div>
         </section>
       )}
 
@@ -798,8 +837,8 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
       <div className="page-head" style={{ paddingBottom: 0 }}>
         <Crumbs ctx={ctx} items={[{ label: 'المؤلفون', view: { mode: 'authors' } }, { label: personName(p) }]} />
       </div>
-      <section className="person-hero glass">
-        <Avatar p={p} cls="xl" />
+      <section className="person-hero glass rise">
+        <Avatar p={p} cls="xl" morph />
         <div>
           <h1 className="page-title">{personName(p)}</h1>
           <p className="lede">{[p.nameEnglish && p.nameEnglish !== personName(p) ? p.nameEnglish : '', p.lifespan, p.city].filter(Boolean).join('، ')}</p>
@@ -815,7 +854,7 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
       </section>
       <section className="section">
         <div className="section-head"><h2>{works.length} {works.length === 1 ? 'كتاب' : 'كتب'} في الفهرس</h2></div>
-        <div className="shelf">{works.map(w => <BookCard key={w.id} work={w} ctx={ctx} />)}</div>
+        <div className="shelf">{works.map((w, i) => <BookCard key={w.id} work={w} ctx={ctx} i={i} />)}</div>
       </section>
     </div>
   );
@@ -839,7 +878,7 @@ function SubjectPage({ ctx, k }: { ctx: Ctx; k: string }) {
         )}
       </div>
       <section className="section" style={{ marginTop: 32 }}>
-        <div className="shelf">{works.map(w => <BookCard key={w.id} work={w} ctx={ctx} />)}</div>
+        <div className="shelf">{works.map((w, i) => <BookCard key={w.id} work={w} ctx={ctx} i={i} />)}</div>
       </section>
     </div>
   );
@@ -875,7 +914,7 @@ function AuthorsPage({ ctx }: { ctx: Ctx }) {
         <div className="dir-tools"><FilterField value={q} onChange={setQ} label="ابحث عن مؤلف" /></div>
       </div>
       <section className="section" style={{ marginTop: 28 }}>
-        {out.length ? <div className="people">{out.map(p => <PersonCard key={p.id} p={p} ctx={ctx} />)}</div>
+        {out.length ? <div className="people">{out.map((p, i) => <PersonCard key={p.id} p={p} ctx={ctx} i={i} />)}</div>
           : <div className="empty glass"><h3>لا يوجد مؤلف بهذا الاسم</h3><p>جرّب جزءاً من الاسم فقط.</p></div>}
       </section>
     </div>
@@ -896,8 +935,8 @@ function SubjectsPage({ ctx }: { ctx: Ctx }) {
       <section className="section" style={{ marginTop: 28 }}>
         {out.length ? (
           <div className="subject-list">
-            {out.map(s => (
-              <button key={s.id} className="subject-row glass" onClick={() => ctx.go({ mode: 'subject', key: s.id })}>
+            {out.map((s, i) => (
+              <button key={s.id} className="subject-row glass rise" style={stagger(i)} onClick={() => ctx.go({ mode: 'subject', key: s.id })}>
                 <span className="t">{s.label}</span>
                 <span className="n">{s.worksCount} {s.worksCount === 1 ? 'كتاب' : 'كتب'}</span>
               </button>
@@ -942,7 +981,7 @@ function SavedSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
             <p style={{ color: 'var(--ink-2)' }}>احفظ الكتب التي تهمّك من صفحة كل كتاب، وستجدها هنا.</p>
           ) : works.map(w => (
             <div key={w.id} className="mini">
-              <Cover work={w} jacket={false} />
+              <Cover work={w} jacket={false} morph={false} />
               <button style={{ background: 'none', border: 0, padding: 0, textAlign: 'start' }} onClick={() => { onClose(); ctx.go({ mode: 'work', id: w.id }); }}>
                 <div className="t">{w.title}</div>
                 <div className="s">{personName(w.primaryCreator)}</div>
