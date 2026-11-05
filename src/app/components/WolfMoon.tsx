@@ -48,11 +48,8 @@ import { validateBibframeRecord, ValidationResult as BFValidationResult } from "
 import { validateInstitutionalBibframe, getValidationBadge, InstitutionalValidationResult } from "../../services/institutionalValidator";
 import {
   
-  getCategoriesForDomain, getPropertiesByCategory
+  getCategoriesForDomain, getPropertiesByCategory, getPropertiesByDomain
 } from "../../services/ontologyRegistry";
-import {
-  
-  getGroupsForDomain, getRequiredPropertiesByDomain} from "../../services/bibframePropertyRegistry";
 import {
   MONOGRAPH_COMPLETE_TEMPLATE, 
   
@@ -62,8 +59,7 @@ import {
   
   UriSet, BASE_URI
 } from "../../services/uriMintingService";
-import {
-  ONTOLOGY_VERSION} from "../../services/bibframeOntology";
+import { BF_ONTOLOGY_VERSION } from "../../services/bibframeTerms.generated";
 import {
   ISBNData
   
@@ -839,11 +835,12 @@ export default function WolfMoon({
   }, [uriSet, graphStore, enableExpression, t]);
 
   // ===== TEMPLATE-AWARE PROPERTIES =====
-  const templateWorkGroups = useMemo(() => getGroupsForDomain("Work"), []);
-  const templateInstanceGroups = useMemo(() => getGroupsForDomain("Instance"), []);
-  const templateItemGroups = useMemo(() => getGroupsForDomain("Item"), []);
-  const workRequiredProps = useMemo(() => getRequiredPropertiesByDomain("Work"), []);
-  const instanceRequiredProps = useMemo(() => getRequiredPropertiesByDomain("Instance"), []);
+  // The section headers count the Category Cards' own groups and required fields (from the profile).
+  const templateWorkGroups = useMemo(() => getCategoriesForDomain("Work"), []);
+  const templateInstanceGroups = useMemo(() => getCategoriesForDomain("Instance"), []);
+  const templateItemGroups = useMemo(() => getCategoriesForDomain("Item"), []);
+  const workRequiredProps = useMemo(() => getPropertiesByDomain("Work").filter(p => p.required), []);
+  const instanceRequiredProps = useMemo(() => getPropertiesByDomain("Instance").filter(p => p.required), []);
 
   // ============================== INITIALIZATION ==============================
 
@@ -1407,7 +1404,7 @@ export default function WolfMoon({
           catalogingInterface: "Wolf Moon",
           resourceType: `Wolf Moon (${template.name})`,
           templateId: selectedTemplate, recordId, uriSet,
-          ontologyVersion: ONTOLOGY_VERSION.version,
+          ontologyVersion: BF_ONTOLOGY_VERSION,
           createdAt: initialRecord?.metadata?.createdAt || new Date().toISOString(),
           catalogerId: username || "anonymous",
           hiddenFields: Array.from(hiddenFields),
@@ -2247,7 +2244,7 @@ export default function WolfMoon({
                   { label: t("cataloger"), value: username || "anonymous" },
                   { label: t("templateLabel"), value: template.name },
                   { label: t("conventions"), value: "RDA" },
-                  { label: t("ontology"), value: `BIBFRAME ${ONTOLOGY_VERSION.version}` },
+                  { label: t("ontology"), value: `BIBFRAME ${BF_ONTOLOGY_VERSION}` },
                   { label: t("source"), value: "Moon Library System — Blue Moon" },
                   { label: t("language"), value: language === "en" ? "English" : "العربية" },
                 ].map(row => (
