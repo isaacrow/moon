@@ -20,7 +20,9 @@ export default {
     if (!allowed.includes(request.method)) {
       return new Response('Method not allowed', { status: 405, headers: { Allow: allowed.join(', ') } });
     }
-    const target = `${env.MOON_API}${url.pathname}${url.search}`;
+    // https://mooon.site/sitemap.xml (every published record's page, for search engines) is built by the server.
+    const path = url.pathname === '/sitemap.xml' ? '/resource/sitemap.xml' : url.pathname;
+    const target = `${env.MOON_API}${path}${url.search}`;
     const upstream = await fetch(target, {
       method: request.method,
       body: request.method === 'POST' ? await request.text() : undefined,

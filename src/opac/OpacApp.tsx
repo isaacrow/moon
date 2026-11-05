@@ -21,6 +21,7 @@ import {
   resolveWorkCover,
   normalizeArabic,
 } from '../services/wolfMoonOpacService';
+import { bookJsonLd, metaDescription, pageUrl } from './schemaOrg';
 import './opac.css';
 
 type View =
@@ -172,7 +173,8 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
       home: 'فهرس مون', search: 'نتائج البحث — فهرس مون', work: 'فهرس مون', person: 'فهرس مون',
       subject: 'فهرس مون', authors: 'المؤلفون — فهرس مون', subjects: 'الموضوعات — فهرس مون',
     };
-    document.title = titles[view.mode];
+    // A record page sets its own title (the book's), with its schema.org data.
+    if (view.mode !== 'work') document.title = titles[view.mode];
   }, [view]);
 
   const ctx: Ctx = { go, saved, toggleSave, say, rev };
@@ -604,8 +606,39 @@ function download(name: string, text: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/**
+ * The record page's <head> for search engines: its title, description, canonical address, and the
+ * book as schema.org JSON-LD. Put back to the catalogue's own when the page is left.
+ */
+function useRecordHead(work: OpacWorkEntity | undefined) {
+  useEffect(() => {
+    if (!work) return;
+    const head = document.head;
+    const meta = head.querySelector<HTMLMetaElement>('meta[name="description"]');
+    const before = { title: document.title, description: meta?.content };
+    const who = work.primaryCreator?.nameArabic || work.primaryCreator?.name;
+    document.title = [work.title, who].filter(Boolean).join(' — ') + ' | فهرس مون';
+    if (meta) meta.content = metaDescription(work);
+    const canonical = document.createElement('link');
+    canonical.rel = 'canonical';
+    canonical.href = pageUrl(work.id);
+    const data = document.createElement('script');
+    data.type = 'application/ld+json';
+    data.id = 'schema-org-book';
+    data.textContent = JSON.stringify(bookJsonLd(work));
+    head.append(canonical, data);
+    return () => {
+      canonical.remove();
+      data.remove();
+      document.title = before.title;
+      if (meta && before.description !== undefined) meta.content = before.description;
+    };
+  }, [work]);
+}
+
 function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
   const work = useMemo(() => wolfMoonOpacService.getWorkByIdOrUri(id), [id, ctx.rev]);
+  useRecordHead(work);
   const related = useMemo(() => (work ? wolfMoonOpacService.getRelatedWorks(work.id, 6).filter(w => w.id !== work.id) : []), [work]);
   const [citeOpen, setCiteOpen] = useState(false);
   const [fmt, setFmt] = useState<'jsonld' | 'turtle' | 'marc'>('jsonld');
