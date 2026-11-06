@@ -34,6 +34,7 @@ import * as sparqlStore from "./sparqlEndpoint.tsx";
 import { missingForPublish, shapesFromProfile } from "./publishGate.tsx";
 import { PROFILES } from "./profiles.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
+import { reconcile, manifest } from "./reconcile.tsx";
 import { linkAuthorities } from "./authorityLinking.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
@@ -918,6 +919,39 @@ async function oaiEndpoint(c: any) {
     return c.text('OAI-PMH failed', 500);
   }
 }
+// W3C Reconciliation API for OpenRefine: https://mooon.site/resource/reconcile
+// GET with no queries gives the service manifest; queries come as ?queries={...} or a form / JSON POST.
+async function reconcileEndpoint(c: any) {
+  try {
+    const url = new URL(c.req.url);
+    let raw = url.searchParams.get('queries');
+    if (c.req.method === 'POST') {
+      const body = await c.req.text();
+      if ((c.req.header('Content-Type') || '').includes('json')) {
+        const parsed = JSON.parse(body || '{}');
+        raw = JSON.stringify(parsed.queries ?? parsed);
+      } else {
+        raw = new URLSearchParams(body).get('queries') ?? raw;
+      }
+    }
+    const callback = url.searchParams.get('callback');
+    const payload = raw
+      ? await reconcile(JSON.parse(raw), (q, kind, limit) => recordStore.searchAuthorities(q, kind, limit))
+      : manifest(linkedData.BASE_URI);
+    const json = JSON.stringify(payload);
+    // JSONP for older OpenRefine versions; only a plain function name is accepted.
+    if (callback && /^[A-Za-z_$][\w$.]{0,60}$/.test(callback)) {
+      return c.body(`${callback}(${json})`, 200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    }
+    return c.body(json, 200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+  } catch (error) {
+    console.error('Reconciliation error:', error);
+    return c.json({ error: 'Reconciliation failed: queries must be JSON' }, 400);
+  }
+}
+app.get("/make-server-49c0e13c/resource/reconcile", reconcileEndpoint);
+app.post("/make-server-49c0e13c/resource/reconcile", reconcileEndpoint);
+
 app.get("/make-server-49c0e13c/resource/oai", oaiEndpoint);
 app.post("/make-server-49c0e13c/resource/oai", oaiEndpoint);
 
