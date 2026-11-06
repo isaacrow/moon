@@ -7,6 +7,9 @@ import './styles/glassmorphism.css';
 import './styles/neon-theme.css';
 import './styles/classic-theme.css';
 import './styles/liquid-glass.css';
+import { installStaleChunkReload } from './app/utils/staleChunkReload';
+
+installStaleChunkReload();
 
 // The public OPAC is large; it loads only when an OPAC link is opened.
 const WolfMoonStandaloneOpac = React.lazy(() =>

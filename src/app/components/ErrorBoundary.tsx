@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RefreshCw, ArrowLeft } from "lucide-react";
+import { isStaleChunkError, reloadForNewBuild } from "../utils/staleChunkReload";
 
 interface Props {
   children: ReactNode;
@@ -25,6 +26,8 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // A page from the previous deploy: load the new build instead of showing an error.
+    if (isStaleChunkError(error) && reloadForNewBuild()) return;
     console.error("Uncaught error in component:", error, errorInfo);
     this.setState({ error, errorInfo });
   }

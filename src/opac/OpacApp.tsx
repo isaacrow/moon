@@ -29,7 +29,7 @@ import {
 import { MOON_API, moonHeaders } from '../app/utils/moonApi';
 import { t, opacLang, setOpacLang, type OpacLang } from './i18n';
 import { IiifViewer } from './IiifViewer';
-import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, type InfoCard as InfoCardData } from './linkedEntities';
+import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, clusterWorks, type InfoCard as InfoCardData } from './linkedEntities';
 import './opac.css';
 
 type View =
@@ -630,6 +630,31 @@ function ResultCard({ w, ctx, i }: { w: OpacWorkEntity; ctx: Ctx; i: number }) {
   );
 }
 
+/** Under a grouped result: the other records of the same Work (editions, translations), one line each. */
+function ClusterEditions({ members, ctx }: { members: OpacWorkEntity[]; ctx: Ctx }) {
+  const langs = new Set(members.map(w => w.language));
+  const label = langs.size > 1
+    ? t(`${members.length} طبعات وترجمات لهذا العمل`, `${members.length} editions and translations of this work`)
+    : t(`${members.length} طبعات لهذا العمل`, `${members.length} editions of this work`);
+  return (
+    <details className="cluster glass" style={{ marginTop: -6, padding: '8px 16px', borderRadius: 14 }}>
+      <summary style={{ cursor: 'pointer', fontSize: 14 }}>{label}</summary>
+      <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
+        {members.map(w => {
+          const inst = w.instances[0];
+          const line = [languageDisplay(languageName(w.languageLabel, w.language)), [inst?.publicationPlace && placeName(inst.publicationPlace), inst?.publisher].filter(Boolean).join(' : '), workYearOf(w)].filter(Boolean).join(' · ');
+          return (
+            <li key={w.id} style={{ padding: '4px 0' }}>
+              <button className="inline-link" dir="auto" onClick={() => ctx.go({ mode: 'work', id: w.id })}>{w.title}</button>
+              {line && <span className="muted" dir="auto"> — {line}</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
 function FacetGroup({ title, k, values, sel, onToggle, needle, startOpen }: {
   title: string; k: FacetKey; values: FacetValue[]; sel: Selection; onToggle: (k: FacetKey, v: string) => void; needle: string; startOpen: boolean;
 }) {
@@ -676,16 +701,20 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
   );
   const filtered = useMemo(() => sortWorks(applyFacets(base, sel), sort), [base, sel, sort]);
   const counts = useMemo(() => facetCounts(base, sel), [base, sel]);
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const shown = filtered.slice((Math.min(page, pages) - 1) * PAGE_SIZE, Math.min(page, pages) * PAGE_SIZE);
+  // One result per Work (Libris): editions, translations and hub members fold under the best-placed record.
+  const [grouped, setGrouped] = useState(() => new URLSearchParams(window.location.search).get('group') !== '0');
+  const clusters = useMemo(() => (grouped ? clusterWorks(filtered) : filtered.map(w => ({ key: w.id, lead: w, members: [w] }))), [filtered, grouped]);
+  const pages = Math.max(1, Math.ceil(clusters.length / PAGE_SIZE));
+  const shown = clusters.slice((Math.min(page, pages) - 1) * PAGE_SIZE, Math.min(page, pages) * PAGE_SIZE);
 
   // The filters live in the address, so a filtered list can be shared, bookmarked and come back with Back.
   useEffect(() => {
     const p = writeState(new URLSearchParams(window.location.search), { sel, sort, page });
+    if (grouped) p.delete('group'); else p.set('group', '0');
     const url = `${window.location.pathname}?${p.toString()}`;
     if (url !== `${window.location.pathname}${window.location.search}`) history.replaceState(history.state, '', url);
     try { sessionStorage.setItem(RESULTS_KEY, JSON.stringify({ ids: filtered.map(w => w.id), url, query })); } catch { /* private mode */ }
-  }, [sel, sort, page, filtered, query]);
+  }, [sel, sort, page, filtered, query, grouped]);
 
   const onToggle = (k: FacetKey, v: string) => { setSel(s => toggle(s, k, v)); setPage(1); };
   const clear = () => { setSel({}); setPage(1); };
@@ -718,7 +747,14 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
 
         <section aria-live="polite">
           <div className="results-bar glass">
-            <span className="count">{t('عدد النتائج:', 'Results:')} {filtered.length}</span>
+            <span className="count">
+              {t('عدد النتائج:', 'Results:')} {clusters.length}
+              {grouped && clusters.length < filtered.length ? <span className="muted"> {t(`(${filtered.length} تسجيلة)`, `(${filtered.length} records)`)}</span> : null}
+            </span>
+            <label className="sort">
+              <input type="checkbox" checked={grouped} onChange={e => { setGrouped(e.target.checked); setPage(1); }} />
+              <span>{t('جمع الطبعات والترجمات', 'Group editions and translations')}</span>
+            </label>
             <button className="btn-ghost filters-toggle" aria-expanded={showFilters} onClick={() => setShowFilters(s => !s)}>
               {t('الفلاتر', 'Filters')}{activeCount ? ` (${activeCount})` : ''}
             </button>
@@ -748,7 +784,12 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
             </div>
           ) : (
             <div className="rows">
-              {shown.map((w, i) => <ResultCard key={w.id} w={w} ctx={ctx} i={i} />)}
+              {shown.map((c, i) => (
+                <React.Fragment key={c.key}>
+                  <ResultCard w={c.lead} ctx={ctx} i={i} />
+                  {c.members.length > 1 && <ClusterEditions members={c.members} ctx={ctx} />}
+                </React.Fragment>
+              ))}
             </div>
           )}
 
