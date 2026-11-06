@@ -10,6 +10,7 @@ import { importBibframe, ImportFormat } from '../../../services/bibframeImport';
 import { readMarcFile } from '../../../services/marc/marcRecord';
 import { marcToBibframe, ImportedMarcRecord } from '../../../services/marc/marcToBibframe';
 import { importMarcBatch, BatchResult } from '../../../services/marc/marcBatch';
+import { AuthorityReportPanel } from './AuthorityReportPanel';
 import { searchBlueCore, importFromBlueCore, BlueCoreHit } from '../../../services/blueCore';
 import { listSruTargets, searchSru, SruIndex, SruTargetInfo } from '../../../services/sruClient';
 import { saveRecord, checkDuplicates } from '../../utils/recordStorageBackend';
@@ -390,6 +391,9 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
                 <details open><summary className="cursor-pointer text-red-200">Not saved</summary>
                   <ul className="mt-1 list-disc ps-5">{batchResult.failed.map((f, i) => <li key={i}>{f.title}: {f.error}</li>)}</ul>
                 </details>
+              )}
+              {batchResult.saved.length > 0 && (
+                <AuthorityReportPanel recordIds={batchResult.saved.map((s) => s.id)} rtl={document.documentElement.dir === 'rtl'} />
               )}
             </div>
           )}

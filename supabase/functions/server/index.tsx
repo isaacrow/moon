@@ -37,7 +37,7 @@ import { oaiResponse } from "./oaiPmh.tsx";
 import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
 import { reconcile, manifest } from "./reconcile.tsx";
-import { linkAuthorities } from "./authorityLinking.tsx";
+import { linkAuthorities, headingsOf, moonAuthorityId, authorityReport } from "./authorityLinking.tsx";
 import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceHash, type FolioConfig, type FolioRef, type FolioLink } from "./folio.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
@@ -1246,6 +1246,48 @@ app.post("/make-server-49c0e13c/authorities/link-records", async (c) => {
   } catch (error) {
     console.error('Authority link-records error:', error);
     return c.json({ error: 'Failed to link records to authorities' }, 500);
+  }
+});
+
+// Authority-link report for a set of records (e.g. a MARC batch just imported): which names and subjects
+// reach LC / VIAF / Wikidata …, which only Moon's own entry, which none. Body: { ids: [...] } (up to 500).
+app.post("/make-server-49c0e13c/authorities/report", async (c) => {
+  try {
+    if (!(await getSession(c))) return c.json({ error: 'Sign in to see the authority report' }, 401);
+    const body = await c.req.json().catch(() => ({}));
+    const ids = (Array.isArray(body?.ids) ? body.ids : []).filter((x: unknown) => typeof x === 'string' && /^[A-Za-z0-9._:-]{1,120}$/.test(x)).slice(0, 500);
+    if (!ids.length) return c.json({ error: 'ids: the record ids to report on' }, 400);
+    const records = (await Promise.all(ids.map((id: string) => recordStore.getRecord(id).catch(() => null))))
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map((r) => ({ id: r.id, title: r.title, document: r.document }));
+    const entryIds = [...new Set(records.flatMap((r) => headingsOf(r.document).map((h) => moonAuthorityId(h.uri)).filter((x): x is string => !!x)))].slice(0, 1000);
+    const entries = new Map<string, { sameAs: string[] }>();
+    await Promise.all(entryIds.map(async (id) => {
+      const a = await recordStore.getAuthority(id).catch(() => null);
+      if (a) entries.set(id, { sameAs: a.sameAs || [] });
+    }));
+    return c.json({ records: records.length, ...authorityReport(records, (id) => entries.get(id)) });
+  } catch (error) {
+    console.error('Authority report error:', error);
+    return c.json({ error: 'Failed to build the authority report' }, 500);
+  }
+});
+
+// Links a Moon authority entry to the same person, place or subject elsewhere (owl:sameAs).
+const SAME_AS_HOSTS = /^https?:\/\/(id\.loc\.gov\/(authorities|rwo)\/|viaf\.org\/viaf\/|(www\.)?wikidata\.org\/(wiki|entity)\/Q\d+$|id\.worldcat\.org\/fast\/|isni\.org\/isni\/|orcid\.org\/)/;
+app.post("/make-server-49c0e13c/authorities/:id/same-as", async (c) => {
+  try {
+    if (!(await getSession(c))) return c.json({ error: 'Sign in to link authority entries' }, 401);
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const uri = typeof body?.uri === 'string' ? body.uri.trim() : '';
+    if (!SAME_AS_HOSTS.test(uri) || uri.length > 300) return c.json({ error: 'Link to LC, VIAF, Wikidata, FAST, ISNI or ORCID' }, 400);
+    const updated = await recordStore.addAuthoritySameAs(id, [uri]);
+    if (!updated) return c.json({ error: 'No authority entry with this id' }, 404);
+    return c.json({ authority: withUri(updated) });
+  } catch (error) {
+    console.error('Authority same-as error:', error);
+    return c.json({ error: 'Failed to link the authority entry' }, 500);
   }
 });
 

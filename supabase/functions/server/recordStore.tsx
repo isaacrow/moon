@@ -499,6 +499,17 @@ export async function getAuthority(id: string): Promise<Authority | null> {
   return data || null;
 }
 
+/** Adds owl:sameAs links (LC, VIAF, Wikidata …) to an entry; returns the entry, or null when it is missing or merged. */
+export async function addAuthoritySameAs(id: string, uris: string[]): Promise<Authority | null> {
+  const { data: row, error } = await sb().from("authorities").select("same_as, merged_into").eq("id", id).maybeSingle();
+  if (error) throw new Error(`[authorities] read ${id} failed: ${error.message}`);
+  if (!row || row.merged_into) return null;
+  const same = [...new Set([...(row.same_as || []), ...uris])];
+  const { error: upd } = await sb().from("authorities").update({ same_as: same, updated_at: new Date().toISOString() }).eq("id", id);
+  if (upd) throw new Error(`[authorities] update ${id} failed: ${upd.message}`);
+  return getAuthority(id);
+}
+
 /** Merges `from` into `into` (same kind); false when either is missing, already merged, or of another kind. */
 export async function mergeAuthority(from: string, into: string): Promise<boolean> {
   const { data, error } = await sb().rpc("moon_merge_authority", { p_from: from, p_into: into });

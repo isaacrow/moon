@@ -85,6 +85,87 @@ export function findUnlinked(document: any): LinkTarget[] {
   return targets;
 }
 
+// ---------------------------------------------------------------------------
+// Authority-link report (Phase 7, as Alma's URI enrichment report): after a MARC import, how many names
+// and subjects reach an international authority (LC, VIAF, Wikidata, FAST, ISNI, ORCID), how many only
+// Moon's own entry, and which ones to link next.
+
+const MOON_AUTHORITY = /^https?:\/\/mooon\.site\/resource\/(agent|place|topic|hub)\/([^/?#.]+)$/;
+
+export interface Heading { kind: LinkKind; label: string; uri: string | null; where: string }
+
+/** Every name and subject heading in a record, linked or not (the record is not changed). */
+export function headingsOf(document: any): Heading[] {
+  const copy = JSON.parse(JSON.stringify(document || {}));
+  const unlinked = new Set(findUnlinked(copy).map((t) => t.node));
+  const out: Heading[] = [];
+  const graph: any[] = Array.isArray(copy["@graph"]) ? copy["@graph"] : [];
+  const visit = (parent: any, prop: string, kindOf: (n: any) => LinkKind, where: string) => {
+    for (const key of [`bf:${prop}`, prop]) {
+      if (parent?.[key] === undefined) continue;
+      for (const node of all(parent[key])) {
+        if (!node || typeof node !== "object") continue;
+        const labels = labelsOf(node);
+        const label = labels.find((l) => ARABIC.test(l)) || labels[0] || "";
+        const uri = unlinked.has(node) ? null : String(node["@id"] ?? node.uri ?? "").trim() || null;
+        if (label || uri) out.push({ kind: kindOf(node), label: label || uri!, uri, where });
+      }
+      return;
+    }
+  };
+  for (const work of graph.filter((n) => isA(n, "Work"))) {
+    for (const c of all(get(work, "contribution"))) if (c && typeof c === "object") visit(c, "agent", () => "agent", "contributor");
+    visit(work, "subject", (n) => (isA(n, "Place") || isA(n, "GeographicCoverage") ? "place" : typesOf(n).some((t) => AGENT_TYPES.test(t)) ? "agent" : "topic"), "subject");
+  }
+  for (const instance of graph.filter((n) => isA(n, "Instance"))) {
+    for (const p of all(get(instance, "provisionActivity"))) {
+      if (!p || typeof p !== "object") continue;
+      visit(p, "agent", () => "agent", "publisher");
+      visit(p, "place", () => "place", "place of publication");
+    }
+  }
+  return out;
+}
+
+/** The Moon authority entry id in a mooon.site/resource/<kind>/<id> URI. */
+export const moonAuthorityId = (uri: string | null) => (uri ? (uri.match(MOON_AUTHORITY) || [])[2] || null : null);
+
+export type LinkStatus = "international" | "moon-linked" | "moon-only" | "none";
+export interface ReportRow {
+  kind: LinkKind; label: string; uri: string | null; entryId: string | null; status: LinkStatus;
+  sameAs: string[]; records: { id: string; title: string }[];
+}
+export interface AuthorityReport { headings: number; counts: Record<LinkStatus, number>; rows: ReportRow[] }
+
+/**
+ * One row per heading (by URI, else by kind + label) across the records. A Moon entry with an owl:sameAs to
+ * LC, VIAF … counts as linked; without one it is "moon-only", the cataloguer's to-do list.
+ * `entry` looks up a Moon authority entry by id (sameAs links).
+ */
+export function authorityReport(records: { id: string; title: string; document: any }[], entry: (id: string) => { sameAs: string[] } | null | undefined): AuthorityReport {
+  const rows = new Map<string, ReportRow>();
+  for (const r of records) {
+    for (const h of headingsOf(r.document)) {
+      const key = h.uri || `${h.kind}|${h.label}`;
+      if (!rows.has(key)) {
+        const entryId = moonAuthorityId(h.uri);
+        const sameAs = entryId ? (entry(entryId)?.sameAs || []).filter((u) => /^https?:\/\//.test(u)) : [];
+        const status: LinkStatus = !h.uri ? "none" : !entryId ? "international" : sameAs.length ? "moon-linked" : "moon-only";
+        rows.set(key, { kind: h.kind, label: h.label, uri: h.uri, entryId, status, sameAs, records: [] });
+      }
+      const row = rows.get(key)!;
+      if (!row.records.some((x) => x.id === r.id)) row.records.push({ id: r.id, title: r.title });
+    }
+  }
+  const list = [...rows.values()];
+  const counts: Record<LinkStatus, number> = { international: 0, "moon-linked": 0, "moon-only": 0, none: 0 };
+  list.forEach((r) => counts[r.status]++);
+  // To-do first (no link, then Moon-only), most-used first.
+  const order: Record<LinkStatus, number> = { none: 0, "moon-only": 1, "moon-linked": 2, international: 3 };
+  list.sort((a, b) => order[a.status] - order[b.status] || b.records.length - a.records.length || a.label.localeCompare(b.label));
+  return { headings: list.length, counts, rows: list };
+}
+
 /** Links every unlinked name and subject; returns how many were linked. Never throws. */
 export async function linkAuthorities(
   document: any,
