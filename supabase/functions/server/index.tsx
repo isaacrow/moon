@@ -40,7 +40,7 @@ import { oaiResponse } from "./oaiPmh.tsx";
 import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
 import { reconcile, manifest } from "./reconcile.tsx";
-import { linkAuthorities, headingsOf, moonAuthorityId, authorityReport } from "./authorityLinking.tsx";
+import { linkAuthorities, mirrorOutsideLinked, headingsOf, moonAuthorityId, authorityReport } from "./authorityLinking.tsx";
 import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceHash, type FolioConfig, type FolioRef, type FolioLink } from "./folio.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
@@ -720,6 +720,9 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     let authoritiesLinked = 0;
     try {
       authoritiesLinked = await linkAuthorities(document, (input) => addLinkedEntity(input, session.username), (a) => withUri(a).uri);
+      // Names and subjects picked from LC, VIAF or Wikidata keep that address; Moon's entity store gets their
+      // entity too (one per link), so every person, place and subject a record uses exists in Moon.
+      await mirrorOutsideLinked(document, (input) => addLinkedEntity(input, session.username));
     } catch (error) {
       console.error('Authority linking failed (record saved without new links):', error);
     }
@@ -1319,12 +1322,14 @@ app.post("/make-server-49c0e13c/authorities/link-records", async (c) => {
     const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 50));
     const records = (await recordStore.listRecords()).sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
     const batch = records.slice(offset, offset + limit);
-    let changed = 0, linked = 0;
+    let changed = 0, linked = 0, mirrored = 0;
     const failed: string[] = [];
     for (const rec of batch as any[]) {
       try {
         const document = JSON.parse(JSON.stringify(rec.document));
         const n = await linkAuthorities(document, (input) => addLinkedEntity(input, admin.username), (a) => withUri(a).uri);
+        // LC-, VIAF- and Wikidata-linked headings get their Moon entity (the record itself is unchanged by this).
+        mirrored += await mirrorOutsideLinked(document, (input) => addLinkedEntity(input, admin.username));
         if (!n) continue;
         await recordStore.saveRecord({ ...rec, document, saved: new Date().toISOString() }, admin.username, 'authority links',
           Number.isInteger(rec.version) ? rec.version : undefined);
@@ -1336,7 +1341,7 @@ app.post("/make-server-49c0e13c/authorities/link-records", async (c) => {
       }
     }
     const next = offset + batch.length < records.length ? offset + batch.length : null;
-    return c.json({ total: records.length, processed: batch.length, changed, linked, failed, next });
+    return c.json({ total: records.length, processed: batch.length, changed, linked, mirrored, failed, next });
   } catch (error) {
     console.error('Authority link-records error:', error);
     return c.json({ error: 'Failed to link records to authorities' }, 500);
@@ -1373,7 +1378,8 @@ app.get("/make-server-49c0e13c/authorities/:id", async (c) => {
     const entry = await recordStore.getAuthority(c.req.param('id'));
     if (!entry) return c.json({ error: 'No entity with this id' }, 404);
     const withAddress = withUri(entry);
-    const usage = await recordStore.authorityUsage(withAddress.uri);
+    // Records that point at the entity, or at the same thing in LC, VIAF or Wikidata.
+    const usage = await recordStore.authorityUsage(withAddress.uri, withAddress.sameAs || []);
     return c.json({ authority: withAddress, usage }, 200, { 'Access-Control-Allow-Origin': '*' });
   } catch (error) {
     console.error('Entity read error:', error);
