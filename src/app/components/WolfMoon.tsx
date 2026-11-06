@@ -97,6 +97,8 @@ import { MarcView } from "./RecordView/MarcView";
 
 // Panels shown only on their own tab or dialog load when first opened, so the editor itself opens fast.
 const WolfMoonStandaloneOpac = React.lazy(() => import("./WolfMoonStandaloneOpac"));
+// MARC 21 cataloguing layout (loads only when chosen).
+const MarcEditor = React.lazy(() => import("./wolfmoon/MarcEditor").then(m => ({ default: m.MarcEditor })));
 const MindMapPreview = React.lazy(() => import("./ontology/MindMapPreview").then(m => ({ default: m.MindMapPreview })));
 const SolarSystemMindMap = React.lazy(() => import("./SolarSystemMindMap").then(m => ({ default: m.SolarSystemMindMap })));
 const ImportRecordDialog = React.lazy(() => import("./ontology/ImportRecordDialog").then(m => ({ default: m.ImportRecordDialog })));
@@ -332,10 +334,10 @@ export default function WolfMoon({
 
   // ===== ONTOLOGY-DRIVEN STATE =====
   // Category Cards is the main way to catalog; the last layout the cataloger picked is remembered.
-  const [fieldViewMode, setFieldViewMode] = useState<'both' | 'categories' | 'standard'>(() => {
+  const [fieldViewMode, setFieldViewMode] = useState<'both' | 'categories' | 'standard' | 'marc'>(() => {
     try {
       const saved = localStorage.getItem("moon-field-view-mode");
-      return saved === "standard" || saved === "both" ? saved : "categories";
+      return saved === "standard" || saved === "both" || saved === "marc" ? saved : "categories";
     } catch {
       return "categories";
     }
@@ -2040,10 +2042,31 @@ export default function WolfMoon({
                   <Eye className="h-3.5 w-3.5" />
                   <span>{language === "ar" ? "عرض الكل" : "Show Both"}</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFieldViewMode('marc')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    fieldViewMode === 'marc'
+                      ? 'bg-blue-600 text-white shadow-lg scale-105'
+                      : 'text-white/70 hover:text-white hover:bg-white/10'
+                  }`}
+                  title={language === "ar" ? "فهرسة بمارك 21 مع تحويل فوري إلى BIBFRAME" : "Catalogue in MARC 21, converted to BIBFRAME as you type"}
+                >
+                  <Code className="h-3.5 w-3.5" />
+                  <span>MARC 21</span>
+                </button>
               </div>
             </div>
 
-            <div className={
+            {fieldViewMode === 'marc' && (
+              <React.Suspense fallback={null}>
+                <MarcEditor workData={workData} instanceData={instanceData} uriSet={uriSet} language={language}
+                  onApply={(work, instance) => { setWorkData(work); setInstanceData(instance); setSaveStatus("unsaved"); }} />
+              </React.Suspense>
+            )}
+
+            {fieldViewMode !== 'marc' && <div className={
               loadType === "work-only" || loadType === "instance-only"
                 ? "flex flex-col gap-6"
                 : marvaPreferences.layoutMode === "split"
@@ -2136,7 +2159,7 @@ export default function WolfMoon({
                 )}
               </BMEntitySection>
               )}
-            </div>
+            </div>}
             </>
             )}
 
