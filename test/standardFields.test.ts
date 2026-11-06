@@ -33,6 +33,7 @@ test('only real BIBFRAME properties, each with its MARC tags and a label', () =>
     assert.ok(f.label, `${local} has no label`);
   }
   const title = getPropertiesForDomain('bf:Work').find((f) => f.uri === `${BF}title`)!;
-  assert.deepEqual(title.marc, ['130', '240', '245']);
+  assert.deepEqual(title.marc, ['130', '240'], 'a Work title is the uniform title');
+  assert.deepEqual(getPropertiesForDomain('bf:Instance').find((f) => f.uri === `${BF}title`)!.marc, ['245', '246'], 'an Instance title is the title proper');
   assert.equal(title.labelAr, 'العنوان');
 });

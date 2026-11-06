@@ -25,12 +25,14 @@ export interface OntologyProperty {
 
 const BF = 'http://id.loc.gov/ontologies/bibframe/';
 
-type LayoutRow = Omit<OntologyProperty, 'uri' | 'label'> & { name: string; label?: string };
+/** `marcFor`: the tags for one entity when they differ from the property's general list. */
+type LayoutRow = Omit<OntologyProperty, 'uri' | 'label'> & { name: string; label?: string; marcFor?: Record<string, string[]> };
 
 // Only real BIBFRAME properties (the former engine also listed invented ones such as "topical",
 // "primary" or "publisher", which every export had to repair; their inputs are covered by the real ones).
 const LAYOUT: LayoutRow[] = [
-  {name:"title",domain:["bf:Work","bf:Instance"],marc:["130","240","245"],range:["bf:Title"],valueType:"entity",labelAr:"العنوان"},
+  // A Work's title is its uniform title (130/240); an Instance's is the title proper and its variants (245/246).
+  {name:"title",domain:["bf:Work","bf:Instance"],marc:["130","240","245"],marcFor:{"bf:Work":["130","240"],"bf:Instance":["245","246"]},range:["bf:Title"],valueType:"entity",labelAr:"العنوان"},
   {name:"contribution",domain:["bf:Work","bf:Instance"],marc:["100","110","111","700","710","711"],range:["bf:Contribution"],valueType:"entity",api:"loc-names",labelAr:"المساهمة"},
   {name:"subject",domain:["bf:Work"],marc:["600","610","611","630","650","651","653","654","655","656","657"],range:["bf:Topic","bf:Subject"],valueType:"entity",api:"loc-subjects",labelAr:"الموضوع"},
   {name:"classification",domain:["bf:Work"],marc:["050","082","080","084"],range:["bf:Classification"],valueType:"entity",api:"loc-classification",labelAr:"التصنيف"},
@@ -65,11 +67,12 @@ const registryByUri = new Map(Object.values(ONTOLOGY_REGISTRY).map((p) => [p.uri
 export function getPropertiesForDomain(domain: string): OntologyProperty[] {
   const entity = domain.replace(/^bf:/, '');
   const required = new Set(getPropertiesByDomain(entity).filter((p) => p.required).map((p) => p.uri));
-  return LAYOUT.filter((row) => row.domain.includes(domain)).map(({ name, ...row }) => {
+  return LAYOUT.filter((row) => row.domain.includes(domain)).map(({ name, marcFor, ...row }) => {
     const uri = BF + name;
     const reg = registryByUri.get(uri);
     return {
       ...row,
+      marc: marcFor?.[domain] || row.marc,
       uri,
       label: reg?.label || row.label || name,
       repeatable: reg ? reg.repeatable : row.repeatable,
