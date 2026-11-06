@@ -1271,6 +1271,22 @@ app.get("/make-server-49c0e13c/authorities", async (c) => {
   }
 });
 
+// The entity that already has one of these outside links (?uri=…, repeatable; LC, VIAF, Wikidata …), so a
+// copy from LC or Wikidata opens Moon's existing entity instead of making a second one. Public, like search.
+app.get("/make-server-49c0e13c/authorities/by-link", async (c) => {
+  try {
+    const uris = (c.req.queries('uri') || []).map((u) => u.trim()).filter((u) => /^https?:\/\/\S{3,300}$/.test(u)).slice(0, 20);
+    if (!uris.length) return c.json({ error: 'uri: one or more outside links' }, 400);
+    const kind = c.req.query('kind') || null;
+    if (kind && !AUTHORITY_KINDS.includes(kind)) return c.json({ error: KINDS_ERROR }, 400);
+    const found = await recordStore.findAuthorityByLinks(uris, kind as any);
+    return c.json({ authority: found ? withUri(found) : null }, 200, { 'Access-Control-Allow-Origin': '*' });
+  } catch (error) {
+    console.error('Authority by-link error:', error);
+    return c.json({ error: 'Failed to look up the link' }, 500);
+  }
+});
+
 app.post("/make-server-49c0e13c/authorities", async (c) => {
   try {
     const session = await getSession(c);

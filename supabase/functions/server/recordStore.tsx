@@ -495,6 +495,13 @@ export async function searchAuthorities(query: string, kind?: AuthorityKind | nu
   return data || [];
 }
 
+/** The entity (not merged) that already has one of these outside links, however the link is spelled. */
+export async function findAuthorityByLinks(uris: string[], kind?: AuthorityKind | null): Promise<Authority | null> {
+  const { data, error } = await sb().rpc("moon_find_authority_by_links", { p_links: uris, p_kind: kind ?? null });
+  if (error) throw new Error(`[authorities] find by link failed: ${error.message}`);
+  return data || null;
+}
+
 export async function getAuthority(id: string): Promise<Authority | null> {
   const { data, error } = await sb().rpc("moon_get_authority", { p_id: id });
   if (error) throw new Error(`[authorities] get ${id} failed: ${error.message}`);
