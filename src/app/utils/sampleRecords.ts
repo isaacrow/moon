@@ -9,6 +9,7 @@ import type { BIBFRAMERecord } from '../types/bibframe';
 import { mintUriSet } from '../../services/uriMintingService';
 import { getRecordById, saveRecord } from './recordStorageBackend';
 import { coverFromIsbn, uploadCoverImage } from './recordCovers';
+import { moonFetch } from './moonApi';
 
 export interface SampleBook {
   isbn: string;
@@ -25,7 +26,7 @@ export interface SampleBook {
   extent?: string;
   genre: string;
   subjects: string[];
-  summary: string;
+  summary?: string;
 }
 
 export const SAMPLE_BOOKS: SampleBook[] = [
@@ -145,7 +146,7 @@ export function sampleRecord(b: SampleBook, cataloger: string): BIBFRAMERecord {
     'bf:contribution': contribution,
     'bf:genreForm': { '@type': 'bf:GenreForm', 'rdfs:label': b.genre },
     'bf:subject': b.subjects.map((s) => ({ '@type': 'bf:Topic', 'rdfs:label': s })),
-    'bf:summary': { '@type': 'bf:Summary', 'rdfs:label': b.summary },
+    ...(b.summary ? { 'bf:summary': { '@type': 'bf:Summary', 'rdfs:label': b.summary } } : {}),
     'bf:hasInstance': { '@id': uris.instance },
   };
   const instance = {
@@ -238,11 +239,34 @@ export interface SampleImportResult {
   failed: string[];
 }
 
-/** Saves every sample book (an existing one is left as it is) and gives each a cover. */
+/** How many books one click of "Add sample books" adds. */
+export const SAMPLE_BATCH = 10;
+
+/** The books for one click: the built-in ones Moon does not have yet, then new real books the server finds
+ *  on Open Library whose ISBN no record in Moon has. So every click adds books Moon did not have. */
+async function nextSampleBooks(): Promise<SampleBook[]> {
+  const missing: SampleBook[] = [];
+  for (const b of SAMPLE_BOOKS) {
+    if (missing.length >= SAMPLE_BATCH) break;
+    if (!(await getRecordById(sampleStorageId(b)).catch(() => null))) missing.push(b);
+  }
+  const want = SAMPLE_BATCH - missing.length;
+  if (want <= 0) return missing;
+  const res = await moonFetch<{ books?: SampleBook[]; error?: string }>(`/samples/books?count=${want}`);
+  if (!res.ok) {
+    if (missing.length) return missing;
+    throw new Error(res.data?.error || `Could not find new books (${res.status})`);
+  }
+  return [...missing, ...(res.data.books || [])];
+}
+
+/** Saves the next batch of sample books (each one Moon does not have yet) and gives each a cover. */
 export async function importSampleRecords(cataloger: string, onProgress?: (done: number, total: number) => void): Promise<SampleImportResult> {
   const result: SampleImportResult = { saved: 0, skipped: 0, covers: 0, failed: [] };
   let done = 0;
-  for (const b of SAMPLE_BOOKS) {
+  const books = await nextSampleBooks();
+  onProgress?.(0, books.length);
+  for (const b of books) {
     const id = sampleStorageId(b);
     try {
       const existing = await getRecordById(id).catch(() => null);
@@ -265,7 +289,7 @@ export async function importSampleRecords(cataloger: string, onProgress?: (done:
     } catch (e) {
       result.failed.push(`${b.title}: ${e instanceof Error ? e.message : String(e)}`);
     }
-    onProgress?.(++done, SAMPLE_BOOKS.length);
+    onProgress?.(++done, books.length);
   }
   return result;
 }

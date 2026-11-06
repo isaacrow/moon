@@ -34,6 +34,7 @@ import * as sparqlStore from "./sparqlEndpoint.tsx";
 import { missingForPublish, shapesFromProfile } from "./publishGate.tsx";
 import { PROFILES } from "./profiles.tsx";
 import { profileToDctap, dctapToProfile } from "./dctap.tsx";
+import { findNewSampleBooks } from "./sampleBooks.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
 import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
@@ -145,6 +146,39 @@ const supabase = createClient(
 // Health check endpoint
 app.get("/make-server-49c0e13c/health", (c) => {
   return c.json({ status: "ok" });
+});
+
+// 📚 New sample books for the Super Admin's "Add sample books": real books from Open Library that Moon does
+// not have yet (no record, deleted or not, has their ISBN). ?count= how many (1–25, default 10).
+app.get("/make-server-49c0e13c/samples/books", async (c) => {
+  if (!(await isAdminSession(c))) return c.json({ error: "Super Admin session required" }, 403);
+  try {
+    const count = Math.min(Math.max(Number(c.req.query("count")) || 10, 1), 25);
+    const { data, error } = await (supabase as any).from("records").select("identifier_keys");
+    if (error) throw new Error(error.message);
+    const known = new Set<string>((data || []).flatMap((r: any) => (r.identifier_keys || []) as string[])
+      .filter((k: string) => k.startsWith("isbn:")).map((k: string) => k.slice(5)));
+    return c.json({ books: await findNewSampleBooks(count, known) });
+  } catch (e) {
+    console.error("Sample books error:", e);
+    return c.json({ error: "Could not find new books" }, 500);
+  }
+});
+
+// 💾 How much of the backend's space Moon uses (database and file storage), for the Super Admin. The limits
+// are the Supabase plan's: 500 MB database and 1 GB files on the free plan; set MOON_DB_LIMIT_MB and
+// MOON_STORAGE_LIMIT_MB when the plan changes.
+app.get("/make-server-49c0e13c/admin/storage", async (c) => {
+  if (!(await isAdminSession(c))) return c.json({ error: "Super Admin session required" }, 403);
+  try {
+    const { data, error } = await (supabase as any).rpc("moon_storage_usage");
+    if (error) throw new Error(error.message);
+    const mb = (name: string, fallback: number) => Math.max(Number(Deno.env.get(name)) || fallback, 1) * 1024 * 1024;
+    return c.json({ ...data, databaseLimitBytes: mb("MOON_DB_LIMIT_MB", 500), storageLimitBytes: mb("MOON_STORAGE_LIMIT_MB", 1024) });
+  } catch (e) {
+    console.error("Storage usage error:", e);
+    return c.json({ error: "Could not read storage use" }, 500);
+  }
 });
 
 // Cataloguing profiles (LC Marva JSON) and the SHACL shapes the publish gate enforces, both public.
