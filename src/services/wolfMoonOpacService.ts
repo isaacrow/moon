@@ -16,9 +16,9 @@
  */
 
 import { AISuggestionProfile, saveAuthorityProfileToMoonSystem } from './authorFinderService';
-import { getAllRecords, getDeletedRecordIds } from '../app/utils/recordStorageBackend';
+import { getAllRecords } from '../app/utils/recordStorageBackend';
 import { nodeToCopy, hasCopyData } from './itemCopies';
-import { realLocExamples } from '../app/utils/realLocExamples';
+import { namesAgree } from '../opac/personPhoto';
 import { FOLIO_ENABLED, VUFIND_ENABLED } from '../app/utils/integrations';
 import { buildW3CJsonLd, BIBFRAME_JSONLD_CONTEXT } from './w3cJsonLdBuilder';
 import { finishForExport } from './bibframeNormalizer';
@@ -121,6 +121,10 @@ export interface OpacPersonEntity {
   locUri?: string;
   isniUri?: string;
   wikidataId?: string;
+  /** The person's links in the records (LC, VIAF, Wikidata, their Moon entity …), for their photo and links. */
+  authorityLinks?: string[];
+  /** Other headings the records give them ("درويش، محمود، 1941-2008"). */
+  otherNames?: string[];
   bioArabic?: string;
   bioEnglish?: string;
   disciplines?: string[];
@@ -278,662 +282,6 @@ export interface OpacFacets {
 // SEED LINKED DATA (Rich Benchmark Iraqi & International Works)
 // =========================================================================
 
-const SEED_WORKS: OpacWorkEntity[] = [
-  {
-    id: 'work-wardi-mahzala',
-    uri: getEntityIri('work', 'work-wardi-mahzala'),
-    canonicalMoonUri: 'moon:work:wardi:mahzala:1955',
-    title: 'مهزلة العقل البشري',
-    subtitle: 'محاولة في التحليل الاجتماعي والنفسي للمجتمع العراقي',
-    language: 'ara',
-    languageLabel: 'العربية (Arabic)',
-    summaryArabic: 'دراسة اجتماعية وفلسفية رائدة للدكتور علي الوردي، تتناول ازدواجية الشخصية في المجتمع العراقي والصراع بين البداوة والحضارة ودور التناقضات الاجتماعية في صياغة الفكر العربي.',
-    summaryEnglish: 'A seminal sociological treatise by Dr. Ali Al-Wardi analyzing the dualism of the Iraqi personality and the conflict between nomadism (Bedouin values) and urban civilization.',
-    originDate: '1955',
-    era: 'منتصف القرن العشرين (1955)',
-    genreForm: ['دراسة اجتماعية', 'فلسفة اجتماعية', 'علم الاجتماع العراقي'],
-    classificationDdc: '301.09567',
-    classificationLcc: 'HN667 .W37 1955',
-    primaryCreator: {
-      id: 'person-ali-wardi',
-      uri: getEntityIri('agent', 'person-ali-wardi'),
-      canonicalMoonUri: 'moon:person:ali-al-wardi:1913-1995',
-      name: 'علي الوردي',
-      nameArabic: 'د. علي الوردي',
-      nameEnglish: 'Ali Al-Wardi',
-      birthDate: '1913',
-      deathDate: '1995',
-      lifespan: '1913 – 1995',
-      role: 'Author (مؤلف)',
-      wikidataId: 'Q6406143',
-      bioArabic: 'رائد علم الاجتماع في العراق والوطن العربي، حاصل على الدكتوراه من جامعة تكساس أوستن 1950، صاحب أطروحة ازدواج الشخصية وصراع البداوة والحضارة.',
-      bioEnglish: 'Pioneering Iraqi sociologist and intellectual who earned his doctorate from UT Austin in 1950, renowned for his theory on social dualism in Iraq.',
-      disciplines: ['علم الاجتماع', 'الفكر العربي الحديث', 'فلسفة التاريخ'],
-      affiliation: 'جامعة بغداد - قسم علم الاجتماع',
-      city: 'بغداد (الكاظمية)',
-      worksCount: 2,
-      workIds: ['work-wardi-mahzala', 'work-wardi-lamahat']
-    },
-    contributors: [],
-    subjects: [
-      {
-        id: 'subj-iraq-sociology',
-        uri: getEntityIri('subject', 'subj-iraq-sociology'),
-        label: 'علم الاجتماع -- العراق',
-        labelEnglish: 'Sociology -- Iraq',
-        scheme: 'lcsh',
-        notationDdc: '301.09567',
-        broader: 'العلوم الاجتماعية والتاريخ',
-        worksCount: 2,
-        workIds: ['work-wardi-mahzala', 'work-wardi-lamahat']
-      },
-      {
-        id: 'subj-dual-personality',
-        uri: getEntityIri('subject', 'subj-dual-personality'),
-        label: 'ازدواج الشخصية -- دراسات نفسية واجتماعية',
-        labelEnglish: 'Social psychology -- Arab countries',
-        scheme: 'fast',
-        notationDdc: '302',
-        broader: 'علم النفس الاجتماعي',
-        worksCount: 1,
-        workIds: ['work-wardi-mahzala']
-      }
-    ],
-    instances: [
-      {
-        id: 'inst-wardi-mahzala-1',
-        uri: getEntityIri('instance', 'inst-wardi-mahzala-1'),
-        title: 'مهزلة العقل البشري',
-        subtitle: 'الطبعة الأولى الأصلية',
-        workId: 'work-wardi-mahzala',
-        workTitle: 'مهزلة العقل البشري',
-        publisher: 'مطبعة الرابطة - بغداد',
-        publicationPlace: 'بغداد، العراق',
-        publicationYear: '1955',
-        extent: '280 صفحة ؛ 21 سم',
-        isbn: '978-9953-36-810-0',
-        carrierType: 'مجلد ورقي (Print Volume)',
-        mediaType: 'unmediated (بصري مباشر)',
-        callNumber: 'DS79.65 .W37 1955',
-        shelfLocation: 'قسم المراجع الوطنية',
-        holdingStatus: 'available',
-        items: [
-          {
-            id: 'item-wardi-mahzala-sample-1',
-            instanceId: 'inst-wardi-mahzala-1',
-            heldBy: 'دار الكتب والوثائق الوطنية العراقية (INLA) — بغداد',
-            shelfMark: 'DS79.65 .W37 1955',
-            extent: '280 صفحة',
-            status: 'not_connected',
-            notes: ['نموذج استرشادي للمعايرة الببليوغرافية — غير متصل بنظام إدارة الإعارة الحي']
-          }
-        ]
-      }
-    ],
-    holdingItems: [
-      {
-        id: 'item-wardi-mahzala-sample-1',
-        instanceId: 'inst-wardi-mahzala-1',
-        heldBy: 'دار الكتب والوثائق الوطنية العراقية (INLA) — بغداد',
-        shelfMark: 'DS79.65 .W37 1955',
-        extent: '280 صفحة',
-        status: 'not_connected',
-        notes: ['نموذج استرشادي للمعايرة الببليوغرافية — غير متصل بنظام إدارة الإعارة الحي']
-      }
-    ],
-    publisher: {
-      id: 'pub-rabita',
-      name: 'مطبعة الرابطة',
-      city: 'بغداد',
-      country: 'العراق',
-      worksCount: 1,
-      workIds: ['work-wardi-mahzala']
-    },
-    source: 'seed',
-    catalogingInterface: 'Wolf Moon Linked Cataloger',
-    createdAt: '2026-01-15T10:00:00Z',
-    modifiedAt: '2026-10-09T18:00:00Z'
-  },
-  {
-    id: 'work-wardi-lamahat',
-    uri: getEntityIri('work', 'work-wardi-lamahat'),
-    canonicalMoonUri: 'moon:work:wardi:lamahat:1969',
-    title: 'لمحات اجتماعية من تاريخ العراق الحديث',
-    subtitle: 'دراسة تحليلية موسعة في تاريخ المجتمع العراقي وتطوره (8 أجزاء)',
-    language: 'ara',
-    languageLabel: 'العربية (Arabic)',
-    summaryArabic: 'الموسوعة الاجتماعية التاريخية الكبرى للوردي في ثمانية أجزاء، ترصد تحولات المجتمع العراقي من العهد العثماني مرورا بالاحتلال البريطاني وثورة العشرين وتأسيس الحكم الوطني.',
-    summaryEnglish: 'The comprehensive multi-volume historical sociology encyclopedia tracing Iraqi society from the Ottoman era through the 1920 revolution to the modern monarchy.',
-    originDate: '1969',
-    era: 'النصف الثاني من القرن العشرين',
-    genreForm: ['تاريخ اجتماعي', 'موسوعة تاريخية', 'دراسات عراقية'],
-    classificationDdc: '956.7',
-    classificationLcc: 'DS79.65 .W37 1969',
-    primaryCreator: {
-      id: 'person-ali-wardi',
-      uri: getEntityIri('agent', 'person-ali-wardi'),
-      canonicalMoonUri: 'moon:person:ali-al-wardi:1913-1995',
-      name: 'علي الوردي',
-      nameArabic: 'د. علي الوردي',
-      nameEnglish: 'Ali Al-Wardi',
-      birthDate: '1913',
-      deathDate: '1995',
-      lifespan: '1913 – 1995',
-      role: 'Author (مؤلف)',
-      wikidataId: 'Q6406143',
-      disciplines: ['علم الاجتماع', 'تاريخ العراق'],
-      worksCount: 2,
-      workIds: ['work-wardi-mahzala', 'work-wardi-lamahat']
-    },
-    contributors: [],
-    subjects: [
-      {
-        id: 'subj-iraq-history-modern',
-        uri: getEntityIri('subject', 'subj-iraq-history-modern'),
-        label: 'العراق -- تاريخ -- العصر الحديث',
-        labelEnglish: 'Iraq -- History -- Modern period',
-        scheme: 'lcsh',
-        notationDdc: '956.704',
-        broader: 'تاريخ الشرق الأدنى المعاصر',
-        worksCount: 1,
-        workIds: ['work-wardi-lamahat']
-      },
-      {
-        id: 'subj-iraq-sociology',
-        uri: getEntityIri('subject', 'subj-iraq-sociology'),
-        label: 'علم الاجتماع -- العراق',
-        labelEnglish: 'Sociology -- Iraq',
-        scheme: 'lcsh',
-        notationDdc: '301.09567',
-        worksCount: 2,
-        workIds: ['work-wardi-mahzala', 'work-wardi-lamahat']
-      }
-    ],
-    instances: [
-      {
-        id: 'inst-wardi-lamahat-1',
-        uri: getEntityIri('instance', 'inst-wardi-lamahat-1'),
-        title: 'لمحات اجتماعية من تاريخ العراق الحديث (8 مجلدات)',
-        subtitle: 'المجموعة الكاملة',
-        workId: 'work-wardi-lamahat',
-        workTitle: 'لمحات اجتماعية من تاريخ العراق الحديث',
-        publisher: 'مطبعة الإرشاد - بغداد',
-        publicationPlace: 'بغداد، العراق',
-        publicationYear: '1969',
-        extent: '8 مجلدات (3200 صفحة) ؛ 24 سم',
-        isbn: '978-9953-36-812-4',
-        carrierType: 'مجلد مقوى (Hardcover Set)',
-        callNumber: 'DS79.65 .W37 1969',
-        shelfLocation: 'قسم الدراسات العراقية',
-        holdingStatus: 'available'
-      }
-    ],
-    publisher: {
-      id: 'pub-irshad',
-      name: 'مطبعة الإرشاد',
-      city: 'بغداد',
-      country: 'العراق',
-      worksCount: 1,
-      workIds: ['work-wardi-lamahat']
-    },
-    source: 'seed',
-    catalogingInterface: 'Wolf Moon Linked Cataloger',
-    createdAt: '2026-02-01T12:00:00Z',
-    modifiedAt: '2026-10-09T18:00:00Z'
-  },
-  {
-    id: 'work-sayyab-rain-song',
-    uri: getEntityIri('work', 'work-sayyab-rain-song'),
-    canonicalMoonUri: 'moon:work:sayyab:rain-song:1960',
-    title: 'أنشودة المطر',
-    subtitle: 'ديوان شعر وتأسيس حركة الشعر الحر العربية',
-    language: 'ara',
-    languageLabel: 'العربية (Arabic)',
-    summaryArabic: 'الديوان الشعري المؤسس لقصيدة التفعيلة والشعر العربي الحر الحديث، يضم قصائد خالدة منها أنشودة المطر، النهر والموت، والأسلحة والأطفال، حافلا بالرموز الأسطورية والتموزية.',
-    summaryEnglish: 'The landmark collection of modern Arabic poetry that pioneered the free verse movement, featuring the celebrated title poem Rain Song filled with Mesopotamian and Thammuzian mythological symbolism.',
-    originDate: '1960',
-    era: 'العصر الحديث (1960)',
-    genreForm: ['شعر حر', 'قصيدة التفعيلة', 'الشعر العربي الحديث'],
-    classificationDdc: '892.716',
-    classificationLcc: 'PJ7862.A86 U5 1960',
-    primaryCreator: {
-      id: 'person-badr-sayyab',
-      uri: getEntityIri('agent', 'person-badr-sayyab'),
-      canonicalMoonUri: 'moon:person:badr-sayyab:1926-1964',
-      name: 'بدر شاكر السياب',
-      nameArabic: 'بدر شاكر السياب',
-      nameEnglish: 'Badr Shakir Al-Sayyab',
-      birthDate: '1926',
-      deathDate: '1964',
-      lifespan: '1926 – 1964',
-      role: 'Poet / Author (شاعر ومؤلف)',
-      wikidataId: 'Q2756530',
-      bioArabic: 'رائد حركة الشعر العربي الحديث ومؤسس شعر التفعيلة إلى جانب نازك الملائكة، ولد في جيكور بالبصرة ومزج التراث الأسطوري الرافديني بالهم الوطني والإنساني.',
-      bioEnglish: 'Leading Iraqi poet and founder of modern Arabic free-verse poetry from Jaykur, Basra.',
-      disciplines: ['الشعر العربي الحديث', 'الأدب المقارن', 'الترجمة الأدبية'],
-      affiliation: 'دار المعلمين العالية - بغداد',
-      city: 'البصرة (جيكور)',
-      worksCount: 1,
-      workIds: ['work-sayyab-rain-song']
-    },
-    contributors: [],
-    subjects: [
-      {
-        id: 'subj-modern-arabic-poetry',
-        uri: getEntityIri('subject', 'subj-modern-arabic-poetry'),
-        label: 'الشعر العربي -- القرن 20 -- الشعر الحر',
-        labelEnglish: 'Arabic poetry -- 20th century -- Free verse',
-        scheme: 'lcsh',
-        notationDdc: '892.716',
-        broader: 'الأدب العربي واللغات السامية',
-        worksCount: 3,
-        workIds: ['work-sayyab-rain-song', 'work-malaika-cholera', 'work-jawahiri-diwan']
-      }
-    ],
-    instances: [
-      {
-        id: 'inst-sayyab-rain-1',
-        uri: getEntityIri('instance', 'inst-sayyab-rain-1'),
-        title: 'أنشودة المطر',
-        subtitle: 'الطبعة الأولى - منشورات مجلة شعر',
-        workId: 'work-sayyab-rain-song',
-        workTitle: 'أنشودة المطر',
-        publisher: 'دار مجلة شعر',
-        publicationPlace: 'بيروت، لبنان',
-        publicationYear: '1960',
-        extent: '196 صفحة ؛ 20 سم',
-        isbn: '978-9953-21-102-1',
-        carrierType: 'مجلد ورقي طبعة أصلية',
-        callNumber: 'PJ7862.A86 U5 1960',
-        shelfLocation: 'قسم الشعر العربي الحديث',
-        holdingStatus: 'available'
-      }
-    ],
-    publisher: {
-      id: 'pub-shir',
-      name: 'دار مجلة شعر',
-      city: 'بيروت',
-      country: 'لبنان',
-      worksCount: 1,
-      workIds: ['work-sayyab-rain-song']
-    },
-    source: 'seed',
-    catalogingInterface: 'Wolf Moon Linked Cataloger',
-    createdAt: '2026-02-10T14:30:00Z',
-    modifiedAt: '2026-10-09T18:00:00Z'
-  },
-  {
-    id: 'work-malaika-cholera',
-    uri: getEntityIri('work', 'work-malaika-cholera'),
-    canonicalMoonUri: 'moon:work:malaika:shazaya:1949',
-    title: 'شظايا ورماد',
-    subtitle: 'مع مقدمة نظرية في أوزان الشعر الحر وقصيدة الكوليرا الشهيرة',
-    language: 'ara',
-    languageLabel: 'العربية (Arabic)',
-    summaryArabic: 'ديوان نازك الملائكة التاريخي الصادر عام 1949 والذي افتتح عهد الشعر الحر الحديث ببيان نظري صريح حول عروض الشعر وتفعيلات الخليل، متضمنا قصيدتها التأسيسية الكوليرا.',
-    summaryEnglish: 'Nazik Al-Malaika’s historic 1949 collection featuring the pioneering poem Cholera and her foundational theoretical essay establishing modern free-verse poetics in Arabic literature.',
-    originDate: '1949',
-    era: 'منتصف القرن العشرين (1949)',
-    genreForm: ['شعر حر', 'نظرية أدبية', 'عروض الشعر الحديث'],
-    classificationDdc: '892.716',
-    classificationLcc: 'PJ7846.A4 S5 1949',
-    primaryCreator: {
-      id: 'person-nazik-malaika',
-      uri: getEntityIri('agent', 'person-nazik-malaika'),
-      canonicalMoonUri: 'moon:person:nazik-malaika:1923-2007',
-      name: 'نازك الملائكة',
-      nameArabic: 'نازك الملائكة',
-      nameEnglish: 'Nazik Al-Malaika',
-      birthDate: '1923',
-      deathDate: '2007',
-      lifespan: '1923 – 2007',
-      role: 'Poet & Theorist (شاعرة وناقدة منظرة)',
-      wikidataId: 'Q446761',
-      bioArabic: 'الشاعرة والناقدة العراقية الرائدة، أول من كتب ونظّر لقصيدة الشعر الحر في الأدب العربي، خريجة دار المعلمين العالية وجامعة برينستون الأمريكية.',
-      disciplines: ['الشعر العربي', 'النقد الأدبي والعروض', 'اللسانيات'],
-      affiliation: 'جامعة الموصل / جامعة البصرة',
-      city: 'بغداد',
-      worksCount: 1,
-      workIds: ['work-malaika-cholera']
-    },
-    contributors: [],
-    subjects: [
-      {
-        id: 'subj-modern-arabic-poetry',
-        uri: getEntityIri('subject', 'subj-modern-arabic-poetry'),
-        label: 'الشعر العربي -- القرن 20 -- الشعر الحر',
-        labelEnglish: 'Arabic poetry -- 20th century -- Free verse',
-        scheme: 'lcsh',
-        notationDdc: '892.716',
-        worksCount: 3,
-        workIds: ['work-sayyab-rain-song', 'work-malaika-cholera', 'work-jawahiri-diwan']
-      }
-    ],
-    instances: [
-      {
-        id: 'inst-malaika-shazaya-1',
-        uri: getEntityIri('instance', 'inst-malaika-shazaya-1'),
-        title: 'شظايا ورماد',
-        subtitle: 'الطبعة البغدادية الأولى',
-        workId: 'work-malaika-cholera',
-        workTitle: 'شظايا ورماد',
-        publisher: 'مطبعة السعدي - بغداد',
-        publicationPlace: 'بغداد، العراق',
-        publicationYear: '1949',
-        extent: '172 صفحة ؛ 21 سم',
-        isbn: '978-9953-417-77-9',
-        carrierType: 'مجلد ورقي',
-        callNumber: 'PJ7846.A4 S5 1949',
-        shelfLocation: 'قسم المطبوعات التراثية',
-        holdingStatus: 'available'
-      }
-    ],
-    publisher: {
-      id: 'pub-saadi',
-      name: 'مطبعة السعدي',
-      city: 'بغداد',
-      country: 'العراق',
-      worksCount: 1,
-      workIds: ['work-malaika-cholera']
-    },
-    source: 'seed',
-    catalogingInterface: 'Wolf Moon Linked Cataloger',
-    createdAt: '2026-02-15T09:00:00Z',
-    modifiedAt: '2026-10-09T18:00:00Z'
-  },
-  {
-    id: 'work-jawahiri-diwan',
-    uri: getEntityIri('work', 'work-jawahiri-diwan'),
-    canonicalMoonUri: 'moon:work:jawahiri:diwan:1982',
-    title: 'ديوان الجواهري (الأعمال الشعرية الكاملة)',
-    subtitle: 'المجموعة الكاملة لشاعر العرب الأكبر محمد مهدي الجواهري في 5 أجزاء',
-    language: 'ara',
-    languageLabel: 'العربية (Arabic)',
-    summaryArabic: 'ديوان شاعر العرب الأكبر محمد مهدي الجواهري، قمة الشعر العمودي الكلاسيكي في القرن العشرين، متضمنا قصائد دجلة الخير، أخي جعفر، يوم الشهيد، وذكرياتي.',
-    summaryEnglish: 'The complete poetic works of the greatest 20th-century classical Arabic poet, Muhammad Mahdi Al-Jawahiri, featuring his masterworks including Dijlat Al-Khair and Ya Dajjata Al-Khayr.',
-    originDate: '1982',
-    era: 'القرن العشرين (1900-1997)',
-    genreForm: ['شعر عمودي كلاسيكي', 'ديوان كامل', 'قصائد وطنية وفكرية'],
-    classificationDdc: '892.716',
-    classificationLcc: 'PJ7840.A9 A17 1982',
-    primaryCreator: {
-      id: 'person-jawahiri',
-      uri: getEntityIri('agent', 'person-jawahiri'),
-      canonicalMoonUri: 'moon:person:jawahiri:1899-1997',
-      name: 'محمد مهدي الجواهري',
-      nameArabic: 'محمد مهدي الجواهري',
-      nameEnglish: 'Muhammad Mahdi Al-Jawahiri',
-      birthDate: '1899',
-      deathDate: '1997',
-      lifespan: '1899 – 1997',
-      role: 'Poet / شاعر العرب الأكبر',
-      wikidataId: 'Q4121866',
-      bioArabic: 'أعظم شعراء العربية في العصر الحديث، لُقّب بشاعر العرب الأكبر ومتنبي العصر، ولد بالنجف الأشرف وكان شاعرا وثائرا ومؤسسا لاتحاد الأدباء العراقيين.',
-      disciplines: ['الشعر العمودي', 'الأدب العربي', 'الصحافة السياسية'],
-      affiliation: 'اتحاد الأدباء والكتاب العراقيين (الرئيس المؤسس)',
-      city: 'النجف الأشرف / بغداد',
-      worksCount: 1,
-      workIds: ['work-jawahiri-diwan']
-    },
-    contributors: [],
-    subjects: [
-      {
-        id: 'subj-classical-arabic-poetry',
-        uri: getEntityIri('subject', 'subj-classical-arabic-poetry'),
-        label: 'الشعر العربي العمودي -- مدرسة الإحياء والبعث',
-        labelEnglish: 'Neoclassical Arabic poetry',
-        scheme: 'lcsh',
-        notationDdc: '892.716',
-        worksCount: 1,
-        workIds: ['work-jawahiri-diwan']
-      }
-    ],
-    instances: [
-      {
-        id: 'inst-jawahiri-diwan-beirut',
-        uri: getEntityIri('instance', 'inst-jawahiri-diwan-beirut'),
-        title: 'ديوان الجواهري (5 مجلدات)',
-        subtitle: 'إعداد وتحقيق ومراجعة د. علي جواد الطاهر ود. إبراهيم السامرائي',
-        workId: 'work-jawahiri-diwan',
-        workTitle: 'ديوان الجواهري',
-        publisher: 'دار الطليعة للطباعة والنشر',
-        publicationPlace: 'بيروت، لبنان',
-        publicationYear: '1982',
-        extent: '5 مجلدات (2450 صفحة) ؛ 25 سم',
-        isbn: '978-9953-417-90-8',
-        carrierType: 'مجلد فاخر (Deluxe Set)',
-        callNumber: 'PJ7840.A9 A17 1982',
-        shelfLocation: 'قسم المراجع الأدبية',
-        holdingStatus: 'available'
-      }
-    ],
-    publisher: {
-      id: 'pub-talia',
-      name: 'دار الطليعة',
-      city: 'بيروت',
-      country: 'لبنان',
-      worksCount: 1,
-      workIds: ['work-jawahiri-diwan']
-    },
-    source: 'seed',
-    catalogingInterface: 'Wolf Moon Linked Cataloger',
-    createdAt: '2026-02-20T16:00:00Z',
-    modifiedAt: '2026-10-09T18:00:00Z'
-  },
-  {
-    id: 'work-nawab-rail-hamad',
-    uri: getEntityIri('work', 'work-nawab-rail-hamad'),
-    canonicalMoonUri: 'moon:work:nawab:ril-hamad:1969',
-    title: 'للريل وحمد',
-    subtitle: 'الديوان الشعري الشعبي العراقي الأبرز وأيقونة الحداثة الشعرية',
-    language: 'ara',
-    languageLabel: 'العربية / اللهجة العراقية الجنوبية',
-    summaryArabic: 'ديوان الشاعر الكبير مظفر النواب الذي أحدث ثورة في القصيدة الشعبية العراقية وحولها إلى لغة فنية عالية تجمع بين وجدان الريف الجنوبي وجماليات الحداثة الشعرية المقاومة.',
-    summaryEnglish: 'Muzaffar Al-Nawwab’s iconic poetry collection that transformed Iraqi vernacular poetry into profound modernist literature.',
-    originDate: '1969',
-    era: 'النصف الثاني من القرن العشرين',
-    genreForm: ['شعر شعبي عراقي حديث', 'أدب المقاومة والحرية'],
-    classificationDdc: '892.716',
-    primaryCreator: {
-      id: 'person-muzaffar-nawab',
-      uri: getEntityIri('agent', 'person-muzaffar-nawab'),
-      canonicalMoonUri: 'moon:person:nawab:1934-2022',
-      name: 'مظفر النواب',
-      nameArabic: 'مظفر النواب',
-      nameEnglish: 'Muzaffar Al-Nawab',
-      birthDate: '1934',
-      deathDate: '2022',
-      lifespan: '1934 – 2022',
-      role: 'Poet / شاعر الرفض والحرية',
-      wikidataId: 'Q6401163',
-      bioArabic: 'شاعر عراقي كبير، تخرج في كلية الآداب ببغداد، جمع بين فصيح الشعر وعاميه، ولُقّب بشاعر الثورة والمنفى.',
-      disciplines: ['الشعر الشعبي', 'الشعر الفصيح', 'الفنون التشكيلية'],
-      city: 'بغداد (الكرخ)',
-      worksCount: 1,
-      workIds: ['work-nawab-rail-hamad']
-    },
-    contributors: [],
-    subjects: [
-      {
-        id: 'subj-iraqi-vernacular-poetry',
-        uri: getEntityIri('subject', 'subj-iraqi-vernacular-poetry'),
-        label: 'الشعر العامي والشعبي -- العراق -- حداثة القصيدة',
-        labelEnglish: 'Iraqi folk poetry and vernacular modernism',
-        scheme: 'arabic-authority',
-        worksCount: 1,
-        workIds: ['work-nawab-rail-hamad']
-      }
-    ],
-    instances: [
-      {
-        id: 'inst-nawab-ril-1',
-        uri: getEntityIri('instance', 'inst-nawab-ril-1'),
-        title: 'للريل وحمد',
-        subtitle: 'الطبعة الأصلية البغدادية',
-        workId: 'work-nawab-rail-hamad',
-        workTitle: 'للريل وحمد',
-        publisher: 'مطبعة النجاح - بغداد',
-        publicationPlace: 'بغداد، العراق',
-        publicationYear: '1969',
-        extent: '112 صفحة ؛ 19 سم',
-        carrierType: 'غلاف ورقي',
-        shelfLocation: 'قسم التراث الشعبي',
-        holdingStatus: 'available'
-      }
-    ],
-    source: 'seed',
-    catalogingInterface: 'Wolf Moon Linked Cataloger',
-    createdAt: '2026-03-01T11:00:00Z',
-    modifiedAt: '2026-10-09T18:00:00Z'
-  },
-  {
-    id: 'work-iraq-lukitz',
-    uri: getEntityIri('work', 'work-iraq-lukitz'),
-    canonicalMoonUri: 'moon:work:lukitz:iraq-national-identity:1995',
-    title: 'Iraq : the search for national identity',
-    subtitle: 'A comprehensive study on the political development and national identity in modern Iraq',
-    language: 'eng',
-    languageLabel: 'الإنجليزية (English)',
-    summaryArabic: 'دراسة سياسية وتاريخية معمقة للدكتورة ليورا لوكيتز تبحث في جذور الهوية الوطنية العراقية وتشكل الدولة الحديثة وتفاعلات القومية والسياسة والحكم.',
-    summaryEnglish: 'A pioneering analytical monograph on modern Iraqi nationalism and political development from the British Mandate through the republican era.',
-    originDate: '1995',
-    era: 'أواخر القرن العشرين (1995)',
-    genreForm: ['دراسة سياسية', 'Non-fiction literature', 'Bibliography'],
-    classificationDdc: '320.5409567',
-    classificationLcc: 'DS79 .L85 1995',
-    primaryCreator: {
-      id: 'person-liora-lukitz',
-      uri: getEntityIri('agent', 'person-liora-lukitz'),
-      canonicalMoonUri: 'moon:person:liora-lukitz',
-      name: 'Liora Lukitz',
-      nameArabic: 'ليورا لوكيتز (Liora Lukitz)',
-      nameEnglish: 'Liora Lukitz',
-      role: 'Author (مؤلف)',
-      wikidataId: 'Q21155119',
-      disciplines: ['تاريخ الشرق الأوسط', 'العلوم السياسية'],
-      affiliation: 'Centre for Middle Eastern Studies',
-      worksCount: 1,
-      workIds: ['work-iraq-lukitz']
-    },
-    contributors: [],
-    subjects: [
-      {
-        id: 'subj-nationalism-iraq',
-        uri: getEntityIri('subject', 'subj-nationalism-iraq'),
-        label: 'Nationalism -- Iraq',
-        labelEnglish: 'القومية والهوية الوطنية في العراق',
-        scheme: 'lcsh',
-        notationDdc: '320.5409567',
-        worksCount: 1,
-        workIds: ['work-iraq-lukitz']
-      }
-    ],
-    instances: [
-      {
-        id: 'inst-lukitz-cass-1995',
-        uri: getEntityIri('instance', 'inst-lukitz-cass-1995'),
-        title: 'Iraq : the search for national identity',
-        subtitle: 'Digital & Print Resource',
-        workId: 'work-iraq-lukitz',
-        workTitle: 'Iraq : the search for national identity',
-        publisher: 'F. Cass',
-        publicationPlace: 'London ; Portland, Ore.',
-        publicationYear: '1995',
-        extent: 'xii, 207 p. ; 22 cm',
-        isbn: '0-7146-4550-8',
-        carrierType: 'Digital Resource / E-book / Print',
-        mediaType: 'computer / unmediated',
-        callNumber: 'DS79 .L85 1995',
-        shelfLocation: 'قسم الدراسات الدولية',
-        holdingStatus: 'available'
-      }
-    ],
-    publisher: {
-      id: 'pub-frank-cass',
-      name: 'F. Cass Publishers',
-      city: 'London ; Portland, Ore.',
-      country: 'UK / USA',
-      worksCount: 1,
-      workIds: ['work-iraq-lukitz']
-    },
-    source: 'seed',
-    catalogingInterface: 'Libris XL / Kungliga biblioteket',
-    createdAt: '2026-03-06T10:00:00Z',
-    modifiedAt: '2026-10-09T18:00:00Z'
-  },
-  {
-    id: 'work-iraq-cartographic',
-    uri: getEntityIri('work', 'work-iraq-cartographic'),
-    canonicalMoonUri: 'moon:work:iraq-cartographic:1986',
-    title: '[Iraq] = ʻIrāq',
-    subtitle: 'Topographic Series 1:100,000 / الخارطة الطبوغرافية الموحدة لجمهورية العراق',
-    language: 'mul',
-    languageLabel: 'العربية والإنجليزية (Arabic & English)',
-    summaryArabic: 'المجموعة الخرائطية الطبوغرافية الكاملة لجمهورية العراق بمقياس رسم 1:100,000، تتضمن 451 لوحة ملونة تفصيلية للتضاريس والمواقع المأهولة والمياه والحدود.',
-    summaryEnglish: 'Comprehensive topographic map series of Iraq at scale 1:100,000 produced by Iraq Survey Directorate comprising 451 full-color sheets.',
-    originDate: '1986-2002',
-    era: '1986 – 2002',
-    genreForm: ['خرائط طبوغرافية', 'Cartographic Material', 'خرائط عسكرية وجغرافية'],
-    classificationDdc: '912.567',
-    classificationLcc: 'G7610 s100 .I7',
-    primaryCreator: {
-      id: 'person-iraq-survey-dir',
-      uri: getEntityIri('agent', 'person-iraq-survey-dir'),
-      canonicalMoonUri: 'moon:agent:iraq-survey-directorate',
-      name: 'مديرية المساحة العسكرية العراقية',
-      nameArabic: 'العراق. مديرية المساحة العامة / العسكرية، مساح ورسام خرائط',
-      nameEnglish: 'Iraq. Jaysh. Survey Directorate, Cartographer',
-      role: 'Cartographer / مساح جغرافي',
-      city: 'بغداد (الدورة)',
-      disciplines: ['المساحة الجغرافية', 'علم الخرائط الطبوغرافية'],
-      worksCount: 1,
-      workIds: ['work-iraq-cartographic']
-    },
-    contributors: [],
-    subjects: [
-      {
-        id: 'subj-iraq-maps',
-        uri: getEntityIri('subject', 'subj-iraq-maps'),
-        label: 'Iraq -- Maps, Topographic',
-        labelEnglish: 'العراق -- خرائط طبوغرافية تفصيلية',
-        scheme: 'lcsh',
-        notationDdc: '912.567',
-        worksCount: 1,
-        workIds: ['work-iraq-cartographic']
-      }
-    ],
-    instances: [
-      {
-        id: 'inst-iraq-maps-loc',
-        uri: getEntityIri('instance', 'inst-iraq-maps-loc'),
-        title: '[Iraq] = ʻIrāq',
-        subtitle: 'طبعة الدورة الأولى المعتمدة',
-        workId: 'work-iraq-cartographic',
-        workTitle: '[Iraq] = ʻIrāq',
-        publisher: 'مديرية المساحة العسكرية',
-        publicationPlace: 'al-Dawrah, Iraq : Directorate',
-        publicationYear: '1986-2002',
-        extent: '451 maps : color ; 55 x 68 cm',
-        callNumber: 'G7610 s100 .I7',
-        shelfLocation: 'قسم الخرائط والمواد الجغرافية',
-        holdingStatus: 'available',
-        carrierType: 'خرائط ورقية ملونة مصورة'
-      }
-    ],
-    publisher: {
-      id: 'pub-survey-dawrah',
-      name: 'مديرية المساحة - الدورة',
-      city: 'بغداد (الدورة)',
-      country: 'العراق',
-      worksCount: 1,
-      workIds: ['work-iraq-cartographic']
-    },
-    source: 'seed',
-    catalogingInterface: 'Library of Congress Cataloging',
-    createdAt: '2026-03-07T12:00:00Z',
-    modifiedAt: '2026-10-09T18:00:00Z'
-  }
-];
 
 // =========================================================================
 // WOF MOON LINKED OPAC SERVICE IMPLEMENTATION
@@ -1108,33 +456,8 @@ class WolfMoonOpacService {
       console.warn('Error reading extra localStorage records:', e);
     }
 
-    // 2b. Load authentic BIBFRAME 2.0 works (including Al-Qabasat - Mir Damad with full WEMI connections)
-    try {
-      const deletedIds = getDeletedRecordIds();
-      if (Array.isArray(realLocExamples)) {
-        for (const locEx of realLocExamples) {
-          if (deletedIds.has(locEx.id)) continue;
-          const parsed = this.parseBibframeDocumentToOpacWork(locEx);
-          if (parsed && !gatheredWorks.some(gw => gw.id === parsed.id || gw.title === parsed.title)) {
-            parsed.source = 'national-authority';
-            gatheredWorks.unshift(parsed);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Error loading realLocExamples:', e);
-    }
-
-    // 2c. Always include core Iraqi & Arabic national bibliography works so the catalog is rich
-    for (const seedWork of SEED_WORKS) {
-      if (!gatheredWorks.some(gw => gw.id === seedWork.id || normalizeArabic(gw.title) === normalizeArabic(seedWork.title))) {
-        gatheredWorks.push({
-          ...seedWork,
-          source: 'national-authority',
-          instances: seedWork.instances.map(inst => ({ ...inst, items: inst.items ? [...inst.items] : [] }))
-        });
-      }
-    }
+    // Only records published in Moon are shown, so every book's permanent address resolves. (The bundled
+    // examples and the demo works that used to be mixed in had addresses that led nowhere.)
 
     // 3. Connect to LIVE FOLIO OPAC CATALOG (/api/opac/catalog) & Enrich Holdings/Items + Convert FOLIO-only Instances
     try {
@@ -1490,6 +813,22 @@ class WolfMoonOpacService {
       // 4. Resolve Creators and Contributors (from responsibility statement, bf:contribution, bf:creator)
       let primaryCreatorName = '';
       let primaryRole = 'Author (مؤلف)';
+      const primaryLinks: string[] = [];
+      const primaryOtherNames: string[] = [];
+      const linksOf = (agent: any): string[] => {
+        if (!agent || typeof agent !== 'object') return [];
+        const out: string[] = [];
+        const id = agent['@id'];
+        if (typeof id === 'string' && /^https?:\/\//.test(id)) out.push(id);
+        for (const k of ['owl:sameAs', 'sameAs', 'madsrdf:hasExactExternalAuthority']) {
+          const v = agent[k];
+          for (const x of Array.isArray(v) ? v : v ? [v] : []) {
+            const u = typeof x === 'string' ? x : x?.['@id'];
+            if (typeof u === 'string' && /^https?:\/\//.test(u)) out.push(u);
+          }
+        }
+        return out;
+      };
       const contributorsList: OpacPersonEntity[] = [];
 
       const respStatement = instanceNode['responsibilityStatement'] || instanceNode['bf:responsibilityStatement'] || '';
@@ -1537,10 +876,17 @@ class WolfMoonOpacService {
         const agentNode = deref(cNode?.['bf:agent'] || cNode?.['agent']);
         const agentLabel = agentNode?.['rdfs:label'] || agentNode?.['name'] || (typeof agentNode === 'string' ? agentNode : '');
         const roleLabel = cNode?.['bf:role']?.['rdfs:label'] || cNode?.['role'] || 'مؤلف';
+        const agentLinks = linksOf(agentNode);
         if (agentLabel && typeof agentLabel === 'string') {
+          const sameAsAuthor = !!primaryCreatorName && (agentLabel.trim() === primaryCreatorName || namesAgree(agentLabel, primaryCreatorName));
           if (!primaryCreatorName) {
             primaryCreatorName = agentLabel.trim();
             primaryRole = roleLabel;
+            primaryLinks.push(...agentLinks);
+          } else if (sameAsAuthor) {
+            // The statement of responsibility's author and this linked heading are one person.
+            primaryLinks.push(...agentLinks);
+            if (agentLabel.trim() !== primaryCreatorName) primaryOtherNames.push(agentLabel.trim());
           } else if (agentLabel.trim() !== primaryCreatorName && !contributorsList.some(c => c.nameArabic === agentLabel.trim())) {
             const cId = `person-${encodeURIComponent(agentLabel.trim().slice(0, 30))}`;
             contributorsList.push({
@@ -1550,6 +896,7 @@ class WolfMoonOpacService {
               name: agentLabel.trim(),
               nameArabic: agentLabel.trim(),
               role: roleLabel,
+              ...(agentLinks.length ? { authorityLinks: [...new Set(agentLinks)] } : {}),
               worksCount: 1,
               workIds: [recordObj.id]
             });
@@ -1567,6 +914,8 @@ class WolfMoonOpacService {
         name: primaryCreatorFinal,
         nameArabic: primaryCreatorFinal,
         role: primaryRole,
+        ...(primaryLinks.length ? { authorityLinks: [...new Set(primaryLinks)] } : {}),
+        ...(primaryOtherNames.length ? { otherNames: [...new Set(primaryOtherNames)] } : {}),
         worksCount: 1,
         workIds: [recordObj.id || 'work-1']
       };
@@ -2100,6 +1449,8 @@ class WolfMoonOpacService {
             existing.workIds.push(work.id);
             existing.worksCount = existing.workIds.length;
           }
+          existing.authorityLinks = [...new Set([...(existing.authorityLinks || []), ...(creator.authorityLinks || [])])];
+          existing.otherNames = [...new Set([...(existing.otherNames || []), ...(creator.otherNames || [])])];
         }
       }
 
@@ -2118,6 +1469,7 @@ class WolfMoonOpacService {
             existing.workIds.push(work.id);
             existing.worksCount = existing.workIds.length;
           }
+          existing.authorityLinks = [...new Set([...(existing.authorityLinks || []), ...(contrib.authorityLinks || [])])];
         }
       }
 
