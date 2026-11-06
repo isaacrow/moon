@@ -10,6 +10,7 @@ import type { BIBFRAMERecord } from '../types/bibframe';
 import { importSampleRecords, SAMPLE_MAX } from '../utils/sampleRecords';
 import { ActivityLog } from './ActivityLog';
 import { StorageUsageCard } from './StorageUsageCard';
+import { OpacVisitsCard } from './OpacVisitsCard';
 import { UserAvatar } from './UserAvatar';
 import { toast } from 'sonner';
 import { 
@@ -445,6 +446,8 @@ Each is a real edition from Open Library; its author is linked to Wikidata, LC a
         </div>
 
         {isSuperAdmin && <StorageUsageCard isAr={isAr} />}
+
+        <OpacVisitsCard isAr={isAr} />
 
         {/* Stats Grid - Glass Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

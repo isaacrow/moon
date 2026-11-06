@@ -41,6 +41,8 @@ import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
 import { reconcile, manifest } from "./reconcile.tsx";
 import { linkAuthorities, mirrorOutsideLinked, headingsOf, moonAuthorityId, authorityReport } from "./authorityLinking.tsx";
+import { relatedFrom, resolveRelated } from "./entityRelations.tsx";
+import { isBot, visitFrom, visitDay, visitorKey } from "./opacVisits.tsx";
 import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceHash, type FolioConfig, type FolioRef, type FolioLink } from "./folio.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
@@ -1386,6 +1388,68 @@ app.get("/make-server-49c0e13c/authorities/:id", async (c) => {
     return c.json({ error: 'Failed to read the entity' }, 500);
   }
 });
+
+// 🕸️ How an entity relates to other entities, read from the records that use it (public, like the entity):
+// who it worked with, what it wrote about, who published it and where. Each related entity is Moon's own
+// when Moon has it (found by its Moon address or by its LC, VIAF or Wikidata link).
+app.get("/make-server-49c0e13c/authorities/:id/relations", async (c) => {
+  try {
+    const entry = await recordStore.getAuthority(c.req.param('id'));
+    if (!entry) return c.json({ error: 'No entity with this id' }, 404);
+    const withAddress = withUri(entry);
+    const links = [withAddress.uri, ...(withAddress.sameAs || [])];
+    const usage = await recordStore.authorityUsage(withAddress.uri, withAddress.sameAs || []);
+    const records = (await Promise.all(usage.records.map((r) => recordStore.getRecord(r.id).catch(() => null))))
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map((r) => ({ id: r.id, document: r.document }));
+    const titles = Object.fromEntries(usage.records.map((r) => [r.id, r.title]));
+    const related = await resolveRelated(relatedFrom(links, records), async (uri, kind) => {
+      const found = await recordStore.findAuthorityByLinks([uri], kind as any);
+      return found && found.id !== entry.id ? { id: found.id, label: found.label } : null;
+    });
+    const rows = related
+      .filter((r) => r.entityId !== entry.id)
+      .map((r) => ({ ...r, entityUri: r.entityId ? `${linkedData.BASE_URI}/${r.kind}/${r.entityId}` : null, titles: r.records.map((id) => titles[id] || id) }));
+    return c.json({ records: usage.count, read: records.length, relations: rows }, 200, { 'Access-Control-Allow-Origin': '*' });
+  } catch (error) {
+    console.error('Entity relations error:', error);
+    return c.json({ error: 'Failed to read the entity\'s relations' }, 500);
+  }
+});
+
+// 👣 The OPAC reports each page a reader opens. Robots and signed-in staff are not counted; no address is kept.
+app.post("/make-server-49c0e13c/opac/visit", async (c) => {
+  try {
+    const ua = c.req.header('user-agent') || '';
+    if (isBot(ua) || c.req.header('X-Moon-Session')) return c.json({ counted: false });
+    const visit = visitFrom(await c.req.json().catch(() => null));
+    if (!visit) return c.json({ error: 'kind: home, search, work, person, subject, hub, place, authors or subjects; ref: what was opened' }, 400);
+    const ip = (c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '').split(',')[0].trim();
+    const day = visitDay();
+    const visitor = await visitorKey(ip, ua, day, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || 'moon');
+    const { error } = await (supabase as any).rpc('moon_record_visit', { p_day: day, p_visitor: visitor, p_kind: visit.kind, p_ref: visit.ref });
+    if (error) throw new Error(error.message);
+    return c.json({ counted: true });
+  } catch (error) {
+    console.error('OPAC visit error:', error);
+    return c.json({ counted: false }, 500);
+  }
+});
+
+// The dashboard's OPAC visitors card (signed-in staff): today, the last 7 days, each day of ?days= (default 30).
+app.get("/make-server-49c0e13c/opac/visits", async (c) => {
+  try {
+    if (!(await getSession(c))) return c.json({ error: 'Sign in to see OPAC visitors' }, 401);
+    const days = Math.min(366, Math.max(1, Number(c.req.query('days')) || 30));
+    const { data, error } = await (supabase as any).rpc('moon_visit_stats', { p_today: visitDay(), p_days: days });
+    if (error) throw new Error(error.message);
+    return c.json(data);
+  } catch (error) {
+    console.error('OPAC visits error:', error);
+    return c.json({ error: 'Could not read OPAC visitors' }, 500);
+  }
+});
+
 
 // Edits an entity (signed in). Body: { label, variants, sameAs, note, data, version }; version is the one
 // the editor loaded, and if someone saved since, 409 with the current entry. Every edit keeps the old state.

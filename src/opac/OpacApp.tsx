@@ -44,6 +44,23 @@ type View =
   | { mode: 'authors' }
   | { mode: 'subjects' };
 
+/**
+ * Tells the server a reader opened this page, for the dashboard's visitor count. The server keeps no address;
+ * robots and signed-in staff are not counted. Never in the way of the reader: errors are ignored.
+ */
+function reportVisit(v: View) {
+  const ref = v.mode === 'search' ? v.query : v.mode === 'work' ? v.id : 'key' in v ? v.key : '';
+  if (v.mode === 'search' && !ref.trim()) return;
+  try {
+    fetch(`${MOON_API}/opac/visit`, {
+      method: 'POST',
+      keepalive: true,
+      headers: moonHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ kind: v.mode, ref }),
+    }).catch(() => {});
+  } catch { /* no network: nothing to count */ }
+}
+
 function viewFromUrl(): View {
   const p = new URLSearchParams(window.location.search);
   if (p.get('work')) return { mode: 'work', id: p.get('work')! };
@@ -195,6 +212,9 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
     if (!(document as any).startViewTransition) document.documentElement.classList.add('no-vt');
     return () => { alive = false; off(); window.removeEventListener('popstate', onPop); };
   }, []);
+
+  // One visit per page opened (a link, Back or Forward, or the first load).
+  useEffect(() => { reportVisit(view); }, [view]);
 
   const go = useCallback((v: View) => {
     window.history.pushState({}, '', urlFor(v));
