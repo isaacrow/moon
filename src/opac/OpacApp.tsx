@@ -29,6 +29,7 @@ import {
 import { MOON_API, moonHeaders } from '../app/utils/moonApi';
 import { t, opacLang, setOpacLang, type OpacLang } from './i18n';
 import { IiifViewer } from './IiifViewer';
+import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, type InfoCard as InfoCardData } from './linkedEntities';
 import './opac.css';
 
 type View =
@@ -38,6 +39,7 @@ type View =
   | { mode: 'person'; key: string }
   | { mode: 'subject'; key: string }
   | { mode: 'hub'; key: string }
+  | { mode: 'place'; key: string }
   | { mode: 'authors' }
   | { mode: 'subjects' };
 
@@ -47,6 +49,7 @@ function viewFromUrl(): View {
   if (p.get('person')) return { mode: 'person', key: p.get('person')! };
   if (p.get('subject')) return { mode: 'subject', key: p.get('subject')! };
   if (p.get('hub')) return { mode: 'hub', key: p.get('hub')! };
+  if (p.get('place')) return { mode: 'place', key: p.get('place')! };
   if (p.get('dir') === 'persons') return { mode: 'authors' };
   if (p.get('dir') === 'subjects') return { mode: 'subjects' };
   if (p.has('q')) return { mode: 'search', query: p.get('q') || '' };
@@ -55,12 +58,13 @@ function viewFromUrl(): View {
 
 function urlFor(v: View): string {
   const u = new URL(window.location.href);
-  ['work', 'person', 'subject', 'hub', 'dir', 'q', 'view', 'sort', 'page'].forEach(k => u.searchParams.delete(k));
+  ['work', 'person', 'subject', 'hub', 'place', 'dir', 'q', 'view', 'sort', 'page'].forEach(k => u.searchParams.delete(k));
   [...u.searchParams.keys()].filter(k => k.startsWith('f_')).forEach(k => u.searchParams.delete(k));
   if (v.mode === 'work') u.searchParams.set('work', v.id);
   if (v.mode === 'person') u.searchParams.set('person', v.key);
   if (v.mode === 'subject') u.searchParams.set('subject', v.key);
   if (v.mode === 'hub') u.searchParams.set('hub', v.key);
+  if (v.mode === 'place') u.searchParams.set('place', v.key);
   if (v.mode === 'authors') u.searchParams.set('dir', 'persons');
   if (v.mode === 'subjects') u.searchParams.set('dir', 'subjects');
   if (v.mode === 'search') {
@@ -199,7 +203,7 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
     const name = t('فهرس مون', 'Moon Catalogue');
     const titles: Record<View['mode'], string> = {
       home: name, search: `${t('نتائج البحث', 'Search results')} — ${name}`, work: name, person: name,
-      subject: name, hub: name, authors: `${t('المؤلفون', 'Authors')} — ${name}`, subjects: `${t('الموضوعات', 'Subjects')} — ${name}`,
+      subject: name, hub: name, place: view.mode === 'place' ? `${view.key} — ${name}` : name, authors: `${t('المؤلفون', 'Authors')} — ${name}`, subjects: `${t('الموضوعات', 'Subjects')} — ${name}`,
     };
     // A record page sets its own title (the book's), with its schema.org data.
     if (view.mode !== 'work') document.title = titles[view.mode];
@@ -252,6 +256,7 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
             {view.mode === 'person' && <PersonPage key={view.key} ctx={ctx} k={view.key} />}
             {view.mode === 'subject' && <SubjectPage key={view.key} ctx={ctx} k={view.key} />}
             {view.mode === 'hub' && <HubPage key={view.key} ctx={ctx} k={view.key} />}
+            {view.mode === 'place' && <PlacePage key={view.key} ctx={ctx} k={view.key} />}
             {view.mode === 'authors' && <AuthorsPage ctx={ctx} />}
             {view.mode === 'subjects' && <SubjectsPage ctx={ctx} />}
           </div>
@@ -794,8 +799,18 @@ function useRecordHead(work: OpacWorkEntity | undefined) {
     data.type = 'application/ld+json';
     data.id = 'schema-org-book';
     data.textContent = JSON.stringify(bookJsonLd(work));
-    head.append(canonical, data);
+    // The same Work as linked data, for crawlers and tools that follow rel="alternate".
+    const uri = workUri(work);
+    const alternates = uri ? ([['jsonld', 'application/ld+json'], ['ttl', 'text/turtle'], ['rdf', 'application/rdf+xml']] as const).map(([ext, type]) => {
+      const l = document.createElement('link');
+      l.rel = 'alternate';
+      l.type = type;
+      l.href = `${uri}.${ext}`;
+      return l;
+    }) : [];
+    head.append(canonical, data, ...alternates);
     return () => {
+      alternates.forEach((l) => l.remove());
       canonical.remove();
       data.remove();
       document.title = before.title;
@@ -958,7 +973,9 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
               {inst?.isbn && <div>ISBN {inst.isbn}{fmt ? ` · ${fmt}` : ''}</div>}
               {(publisher || year) && (
                 <div>
-                  {t('النشر:', 'Published:')} {inst?.publicationPlace ? `${inst.publicationPlace} : ` : ''}
+                  {t('النشر:', 'Published:')} {inst?.publicationPlace ? (placeName(inst.publicationPlace)
+                    ? <><button className="inline-link" onClick={() => ctx.go({ mode: 'place', key: placeName(inst.publicationPlace) })}>{inst.publicationPlace.replace(/\s*[:;]\s*$/, '')}</button>{' : '}</>
+                    : `${inst.publicationPlace} : `) : ''}
                   {publisher ? <button className="inline-link" onClick={() => searchFor(publisher)}>{publisher}</button> : null}
                   {year ? `${t('، ', ', ')}${year}` : ''}
                 </div>
@@ -1003,6 +1020,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
             </section>
           )}
 
+          <RelatedWorks work={work} ctx={ctx} />
           <IiifViewer urls={copies.map(c => c.accessUrl).filter((u): u is string => !!u)} />
           <section className="panel glass rise" aria-labelledby="h-where-t" id="h-where">
             <h2 id="h-where-t">{t('أين تجده', 'Where to find it')}</h2>
@@ -1067,6 +1085,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
               <a href={`${uri}.jsonld`} target="_blank" rel="noreferrer">JSON-LD</a>
               <a href={`${uri}.ttl`} target="_blank" rel="noreferrer">Turtle</a>
               <a href={`${uri}.nt`} target="_blank" rel="noreferrer">N-Triples</a>
+              <a href={`${uri}.rdf`} target="_blank" rel="noreferrer">RDF/XML</a>
               <button className="inline-link" onClick={() => downloadMarc(work, 'mrc', ctx.say)}>MARC 21 (ISO 2709)</button>
               <button className="inline-link" onClick={() => downloadMarc(work, 'xml', ctx.say)}>MARCXML</button>
               <button className="inline-link" onClick={() => downloadMarc(work, 'mrk', ctx.say)}>MarcEdit (.mrk)</button>
@@ -1148,7 +1167,7 @@ function yearSpan(works: OpacWorkEntity[]): string {
 
 /** A Moon authority entry (mooon.site/resource/agent|topic|hub/…) whose name or variant is exactly this one. */
 interface MoonEntry { id: string; uri: string; label: string; variants: string[]; sameAs: string[]; note?: string | null }
-function useMoonAuthority(kind: 'agent' | 'topic' | 'hub', name: string | undefined): MoonEntry | null {
+function useMoonAuthority(kind: 'agent' | 'topic' | 'hub' | 'place', name: string | undefined): MoonEntry | null {
   const [entry, setEntry] = useState<MoonEntry | null>(null);
   useEffect(() => {
     setEntry(null);
@@ -1189,6 +1208,7 @@ function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; no
             <a href={`${own}.jsonld`} target="_blank" rel="noreferrer">JSON-LD</a>
             <a href={`${own}.ttl`} target="_blank" rel="noreferrer">Turtle</a>
             <a href={`${own}.nt`} target="_blank" rel="noreferrer">N-Triples</a>
+            <a href={`${own}.rdf`} target="_blank" rel="noreferrer">RDF/XML</a>
           </div>
         </>
       )}
@@ -1260,6 +1280,7 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
           ))}
         </div>
         <aside className="entity-side">
+          <WikidataCard sameAs={sameAs} kind="person" />
           <LinkedPanel uri={moon?.uri} sameAs={sameAs} note={moon ? undefined : t('لهذا الشخص سجل في ملفات الاستناد العالمية؛ يمكن إضافته إلى ملف مون الاستنادي من محرر مون.', 'This person has a record in international authority files; it can be added to Moon’s authority file from the Moon editor.')} />
           {subjects.length > 0 && (
             <section className="panel glass rise">
@@ -1344,6 +1365,116 @@ function HubPage({ ctx, k }: { ctx: Ctx; k: string }) {
         </aside>
       </div>
     </div>
+  );
+}
+
+/** A place (city of publication), with every Work published there and Moon's authority entry for it. */
+function PlacePage({ ctx, k }: { ctx: Ctx; k: string }) {
+  const all = useMemo(() => wolfMoonOpacService.getAllWorks(), [ctx.rev]);
+  const works = useMemo(() => worksAtPlace(all, k), [all, k]);
+  const others = useMemo(() => placesOf(all).filter(p => p.name !== k).slice(0, 12), [all, k]);
+  const moon = useMoonAuthority('place', k);
+  if (!works.length) return <NotFound ctx={ctx} what={t('المكان', 'place')} back={{ mode: 'search', query: '' }} backLabel={t('كل الكتب', 'All books')} />;
+  const publishers = [...new Set(works.flatMap(w => w.instances.map(i => i.publisher)).filter((p): p is string => !!p))].slice(0, 10);
+  const sameAs = (moon?.sameAs || []).filter(u => !u.startsWith('https://mooon.site/'));
+  return (
+    <div className="wrap">
+      <div className="page-head">
+        <Crumbs ctx={ctx} items={[{ label: t('الكتب', 'Books'), view: { mode: 'search', query: '' } }, { label: k }]} />
+        <div className="kicker">{t('مكان', 'Place')}</div>
+        <h1 className="page-title" dir="auto">{k}</h1>
+        <p className="lede">{works.length} {works.length === 1 ? t('عمل نُشر هنا', 'work published here') : t('أعمال نُشرت هنا', 'works published here')}{yearSpan(works) ? ` · ${yearSpan(works)}` : ''}</p>
+        {moon && moon.variants.length > 0 && <p className="muted">{t('أشكال أخرى للاسم:', 'Other forms of the name:')} {moon.variants.filter(v => v !== k).join(' · ')}</p>}
+      </div>
+      <div className="entity-layout">
+        <div className="entity-main">
+          <div className="section-head"><h2>{t('نُشر هنا', 'Published here')} <span className="count-n">{works.length}</span></h2></div>
+          <WorkRows works={works} ctx={ctx} />
+        </div>
+        <aside className="entity-side">
+          <WikidataCard sameAs={sameAs} kind="place" />
+          <LinkedPanel uri={moon?.uri} sameAs={sameAs} />
+          {publishers.length > 0 && (
+            <section className="panel glass rise">
+              <h2>{t('الناشرون', 'Publishers')}</h2>
+              <div className="subjects">{publishers.map(p => <button key={p} className="chip" onClick={() => ctx.go({ mode: 'search', query: p })}>{p}</button>)}</div>
+            </section>
+          )}
+          {others.length > 0 && (
+            <section className="panel glass rise">
+              <h2>{t('أماكن أخرى', 'Other places')}</h2>
+              <div className="subjects">{others.map(p => <button key={p.name} className="chip" onClick={() => ctx.go({ mode: 'place', key: p.name })}>{p.name} <span className="count-n">{p.count}</span></button>)}</div>
+            </section>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+/** Wikidata info card (as Primo shows): description, picture, dates or map position, with its source. */
+const infoCardCache = new Map<string, InfoCardData | null>();
+function WikidataCard({ sameAs, kind }: { sameAs: (string | undefined)[]; kind: 'person' | 'place' }) {
+  const qid = wikidataQid(sameAs);
+  const lang = opacLang();
+  const cacheKey = `${qid}|${lang}|${kind}`;
+  const [card, setCard] = useState<InfoCardData | null>(() => (qid ? infoCardCache.get(cacheKey) ?? null : null));
+  useEffect(() => {
+    if (!qid) { setCard(null); return; }
+    if (infoCardCache.has(cacheKey)) { setCard(infoCardCache.get(cacheKey)!); return; }
+    let live = true;
+    fetch(wikidataApiUrl(qid))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { const c = j ? parseInfoCard(j, qid, lang, kind) : null; infoCardCache.set(cacheKey, c); if (live) setCard(c); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [qid, cacheKey]);
+  if (!card || (!card.description && !card.image)) return null;
+  const life = [card.born, card.died].filter(Boolean).join(' – ');
+  return (
+    <section className="panel glass rise info-card" aria-label={t('بطاقة من ويكي بيانات', 'Card from Wikidata')}>
+      {card.image && <img src={card.image} alt={card.label || ''} loading="lazy" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', borderRadius: 12 }} />}
+      {card.label && <h2 dir="auto">{card.label}</h2>}
+      {card.description && <p dir="auto">{card.description}</p>}
+      {life && <p className="muted" dir="ltr">{life}</p>}
+      {card.coordinates && (
+        <p><a href={`https://www.openstreetmap.org/?mlat=${card.coordinates.lat}&mlon=${card.coordinates.lon}#map=10/${card.coordinates.lat}/${card.coordinates.lon}`} target="_blank" rel="noreferrer">
+          {t('على الخريطة', 'On the map')} <ArrowUpRight size={13} />
+        </a></p>
+      )}
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t('المصدر:', 'Source:')} <a href={card.url} target="_blank" rel="noreferrer">{t('ويكي بيانات', 'Wikidata')} {card.qid}</a>
+      </p>
+    </section>
+  );
+}
+
+/** BIBFRAME relationships (translation of, related to …) in both directions, linked when Moon holds the Work. */
+function RelatedWorks({ work, ctx }: { work: OpacWorkEntity; ctx: Ctx }) {
+  const { outgoing, incoming } = useMemo(() => relationsOf(work, wolfMoonOpacService.getAllWorks()), [work, ctx.rev]);
+  if (!outgoing.length && !incoming.length) return null;
+  const titleOf = (id: string) => wolfMoonOpacService.getAllWorks().find(w => w.id === id)?.title;
+  return (
+    <section className="panel glass rise" aria-labelledby="h-rel">
+      <h2 id="h-rel">{t('أعمال ذات صلة', 'Related works')}</h2>
+      <dl className="dl">
+        {outgoing.map((r, i) => (
+          <React.Fragment key={`o${i}`}>
+            <dt>{r.predicateLabel}</dt>
+            <dd dir="auto">{r.workId
+              ? <button className="inline-link" onClick={() => ctx.go({ mode: 'work', id: r.workId! })}>{titleOf(r.workId) || r.targetTitle}</button>
+              : r.targetUri && /^https?:\/\//.test(r.targetUri) ? <a href={r.targetUri} target="_blank" rel="noreferrer">{r.targetTitle}</a> : r.targetTitle}
+              {r.details ? ` — ${r.details}` : ''}</dd>
+          </React.Fragment>
+        ))}
+        {incoming.map(({ work: w, relation }) => (
+          <React.Fragment key={`i${w.id}${relation.predicate}`}>
+            <dt>{t(`يشير إليه (${relation.predicateLabel})`, `Points here (${relation.predicateLabel})`)}</dt>
+            <dd dir="auto"><button className="inline-link" onClick={() => ctx.go({ mode: 'work', id: w.id })}>{w.title}</button></dd>
+          </React.Fragment>
+        ))}
+      </dl>
+    </section>
   );
 }
 
