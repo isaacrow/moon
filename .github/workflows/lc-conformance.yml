@@ -1,4 +1,4 @@
-# Runs the Library of Congress's own BIBFRAME -> MARC converter (lcnetdev/bibframe2marc, XSLT 1.0) on Moon's
+# Runs the Library of Congress's own converters both ways and compares them with Moon: its BIBFRAME -> MARC converter (lcnetdev/bibframe2marc, XSLT 1.0) on Moon's
 # published records written as bounded RDF/XML, and reports how many LC's tool could read and what it made.
 # Phase 9 of the plan: "match LC's own BIBFRAME tools". Reported, not yet blocking.
 name: LC conformance
@@ -9,6 +9,8 @@ on:
       - 'supabase/functions/server/rdfXml.tsx'
       - 'supabase/functions/server/linkedData.tsx'
       - 'scripts/lc-rdfxml-samples.mts'
+      - 'scripts/lc-compare.mts'
+      - 'src/services/marc/**'
       - '.github/workflows/lc-conformance.yml'
   workflow_dispatch:
 
@@ -32,8 +34,8 @@ jobs:
           git clone --depth 1 https://github.com/lcnetdev/bibframe2marc.git lc-b2m
           make -C lc-b2m
           ls -l lc-b2m/bibframe2marc.xsl
-      - name: Moon records as bounded RDF/XML
-        run: npx tsx scripts/lc-rdfxml-samples.mts lc-check/rdf 50
+      - name: Moon records as bounded RDF/XML, and Moon's own MARC export of each
+        run: npx tsx scripts/lc-rdfxml-samples.mts lc-check/rdf 50 lc-check/moon-marc
       - name: Convert with LC's bibframe2marc
         run: |
           mkdir -p lc-check/marc
@@ -55,6 +57,18 @@ jobs:
           echo '' >> "$GITHUB_STEP_SUMMARY"; echo '```xml' >> "$GITHUB_STEP_SUMMARY"
           head -c 6000 "$first" >> "$GITHUB_STEP_SUMMARY"
           echo '' >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"; echo '</details>' >> "$GITHUB_STEP_SUMMARY"
+      - name: Get LC's marc2bibframe2 (MARC -> BIBFRAME)
+        run: git clone --depth 1 https://github.com/lcnetdev/marc2bibframe2.git lc-m2b
+      - name: Convert Moon's MARC export with LC's marc2bibframe2
+        run: |
+          mkdir -p lc-check/lc-bf
+          for f in lc-check/moon-marc/*.xml; do
+            id=$(basename "$f" .xml)
+            xsltproc --stringparam baseuri "https://mooon.site/lc-check/$id/" lc-m2b/xsl/marc2bibframe2.xsl "$f" > "lc-check/lc-bf/$id.rdf" 2> "lc-check/lc-bf/$id.err" \
+              || echo "::warning::$id: marc2bibframe2 failed: $(head -c 300 lc-check/lc-bf/$id.err)"
+          done
+      - name: Compare Moon with LC's converters
+        run: npx tsx scripts/lc-compare.mts lc-check/moon-marc lc-check/marc lc-check/lc-bf
       - uses: actions/upload-artifact@v4
         if: always()
         with:
