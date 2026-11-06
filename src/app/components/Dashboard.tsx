@@ -7,8 +7,9 @@ import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
 import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, returnRecord, assignRecord } from '../utils/recordStorageBackend';
 import type { BIBFRAMERecord } from '../types/bibframe';
-import { importSampleRecords, SAMPLE_BOOKS } from '../utils/sampleRecords';
+import { importSampleRecords, SAMPLE_BATCH } from '../utils/sampleRecords';
 import { ActivityLog } from './ActivityLog';
+import { StorageUsageCard } from './StorageUsageCard';
 import { UserAvatar } from './UserAvatar';
 import { toast } from 'sonner';
 import { 
@@ -113,11 +114,18 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
   const [sampleProgress, setSampleProgress] = useState<string | null>(null);
   const addSampleBooks = async () => {
     const ok = window.confirm(isAr
-      ? `إضافة ${SAMPLE_BOOKS.length} كتاباً حقيقياً (عربي وإنجليزي) مع أغلفتها إلى الفهرس؟ الكتب الموجودة من قبل لا تتغير.`
-      : `Add ${SAMPLE_BOOKS.length} real books (Arabic and English) with their covers to the catalogue? Books already there are left as they are.`);
+      ? `إضافة ${SAMPLE_BATCH} كتب حقيقية جديدة (عربي وإنجليزي) مع أغلفتها إلى الفهرس؟ كل مرة تُضاف كتب ليست في الفهرس.`
+      : `Add ${SAMPLE_BATCH} new real books (Arabic and English) with their covers to the catalogue? Each time adds books the catalogue does not have yet.`);
     if (!ok) return;
-    setSampleProgress(`0/${SAMPLE_BOOKS.length}`);
-    const r = await importSampleRecords(user?.username || 'isaac', (done, total) => setSampleProgress(`${done}/${total}`));
+    setSampleProgress('…');
+    let r;
+    try {
+      r = await importSampleRecords(user?.username || 'isaac', (done, total) => setSampleProgress(`${done}/${total}`));
+    } catch (e) {
+      setSampleProgress(null);
+      toast.error(isAr ? 'تعذر العثور على كتب جديدة' : 'Could not find new books', { description: e instanceof Error ? e.message : String(e) });
+      return;
+    }
     setSampleProgress(null);
     await loadRecords();
     const summary = isAr
@@ -421,6 +429,8 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
             )}
           </div>
         </div>
+
+        {isSuperAdmin && <StorageUsageCard isAr={isAr} />}
 
         {/* Stats Grid - Glass Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
