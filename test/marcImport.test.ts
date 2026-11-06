@@ -87,6 +87,37 @@ test('a Koha-style record: ISBD punctuation, 260, 082 slashes, subdivided subjec
   assert.deepEqual(missingForPublish(doc).map((m) => m.field), ['bf:media', 'bf:carrier']);
 });
 
+test('Arabic and romanization: linked 880 fields out, parallel values back in', () => {
+  const doc = buildW3CJsonLd({
+    workData: {
+      'bf:title': { 'bf:mainTitle': ['al-Qabasāt', 'القبسات'] },
+      'bf:contribution': [{ '@type': ['bf:Contribution', 'bf:PrimaryContribution'], 'bf:agent': { '@type': 'bf:Person', 'rdfs:label': ['Mīr Dāmād, Muḥammad Bāqir', 'مير داماد، محمد باقر'] }, 'bf:role': 'aut' }],
+      'bf:language': 'ara', 'bf:content': 'txt',
+    },
+    instanceData: {
+      'bf:responsibilityStatement': ['Mīr Dāmād', 'مير داماد'],
+      'bf:provisionActivity': { '@type': 'bf:Publication', 'bf:place': { 'rdfs:label': ['Tihrān', 'طهران'] }, 'bf:agent': { 'rdfs:label': 'Tehran University Press' }, 'bf:date': '1977' },
+      'bf:media': 'n', 'bf:carrier': 'nc', 'bf:issuance': 'mono',
+    },
+    uriSet: URIS,
+  });
+  const marc = bibframeToMarc(doc, { recordId: 'm1', now: NOW });
+  const mrk = toMrk(marc);
+  assert.match(mrk, /^=100 {2}1\\\$6880-01\$aMīr Dāmād, Muḥammad Bāqir\$0[^$]+\$4aut$/m, 'the 100 keeps the romanization and links to its 880');
+  assert.match(mrk, /^=880 {2}1\\\$6100-01\/\(3\/r\$aمير داماد، محمد باقر\$0/m);
+  assert.match(mrk, /^=245 {2}10\$6880-02\$aal-Qabasāt\$cMīr Dāmād$/m);
+  assert.match(mrk, /^=880 {2}10\$6245-02\/\(3\/r\$aالقبسات\$cمير داماد$/m, 'the 880 holds the Arabic, marked Arabic script, right to left');
+  assert.match(mrk, /^=880 {2}\\1\$6264-03\/\(3\/r\$aطهران\$bTehran University Press\$c1977$/m, 'subfields with only one script are repeated in the 880');
+
+  // And back: every 880 rejoins its field as the parallel value, so the record exports the same again.
+  for (const bytes of [toIso2709(marc), new TextEncoder().encode(toMarcXml([marc]))]) {
+    const back = marcToBibframe(readMarcFile(bytes)[0]);
+    assert.deepEqual(back.work['bf:title']['bf:mainTitle'], ['al-Qabasāt', 'القبسات']);
+    const again = bibframeToMarc(buildW3CJsonLd({ workData: back.work, instanceData: back.instance, uriSet: URIS }), { recordId: 'm1', now: NOW });
+    assert.deepEqual(described(again), described(marc));
+  }
+});
+
 test('a batch file: every record is read', () => {
   const a = bibframeToMarc(source(), { recordId: 'a', now: NOW });
   const b = { ...a, fields: a.fields.map((f) => (f.tag === '001' ? { tag: '001', data: 'b' } : f)) };

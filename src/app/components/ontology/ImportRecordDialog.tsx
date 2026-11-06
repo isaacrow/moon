@@ -10,6 +10,7 @@ import { importBibframe, ImportFormat } from '../../../services/bibframeImport';
 import { readMarcFile } from '../../../services/marc/marcRecord';
 import { marcToBibframe, ImportedMarcRecord } from '../../../services/marc/marcToBibframe';
 import { importMarcBatch, BatchResult } from '../../../services/marc/marcBatch';
+import { searchBlueCore, importFromBlueCore, BlueCoreHit } from '../../../services/blueCore';
 import { saveRecord, checkDuplicates } from '../../utils/recordStorageBackend';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -30,6 +31,35 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
   const { user, username } = useAuth();
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
   const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
+
+  // Blue Core copy cataloguing
+  const [bcQuery, setBcQuery] = useState('');
+  const [bcHits, setBcHits] = useState<BlueCoreHit[] | null>(null);
+  const [bcBusy, setBcBusy] = useState(false);
+  const handleBlueCoreSearch = async () => {
+    setBcBusy(true);
+    setError('');
+    try {
+      setBcHits((await searchBlueCore(bcQuery.trim())).hits);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Blue Core could not be searched.');
+    } finally {
+      setBcBusy(false);
+    }
+  };
+  const handleBlueCoreImport = async (hit: BlueCoreHit) => {
+    setBcBusy(true);
+    setError('');
+    try {
+      const rec = await importFromBlueCore(hit);
+      onImport(rec.work, rec.instance, rec.item);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'This Blue Core record could not be copied.');
+    } finally {
+      setBcBusy(false);
+    }
+  };
 
   const handleSaveAll = async () => {
     setBatchResult(null);
@@ -152,6 +182,40 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
           <p className="text-sm text-white/80">
             Import a MARC record (from Koha, MarcEdit or any library system) or a BIBFRAME record (RDF/XML, JSON-LD, Turtle or N-Triples, including id.loc.gov records) into MOON.
           </p>
+
+          {/* Copy cataloguing: LC and the LD4P libraries' shared BIBFRAME store */}
+          <div className="p-4 rounded-2xl border border-white/20 space-y-3" style={{ background: 'rgba(255, 255, 255, 0.06)' }}>
+            <label htmlFor="bluecore-q" className="block text-xs font-semibold text-white/80 uppercase tracking-wider">
+              Copy from Blue Core (Library of Congress & LD4P)
+            </label>
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); handleBlueCoreSearch(); }}>
+              <input id="bluecore-q" value={bcQuery} onChange={(e) => setBcQuery(e.target.value)} dir="auto"
+                placeholder="Title, author or LCCN (Arabic or romanized)"
+                className="flex-1 min-w-0 px-3 py-2 rounded-xl text-sm bg-black/40 border border-white/20 text-white placeholder-white/40" />
+              <button type="submit" disabled={bcBusy || !bcQuery.trim()}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 disabled:opacity-50 cursor-pointer">
+                {bcBusy ? 'Searching…' : 'Search'}
+              </button>
+            </form>
+            {bcHits && (
+              <div className="max-h-56 overflow-auto space-y-1.5" role="list">
+                {bcHits.length === 0 && <div className="text-xs text-white/60">Nothing found in Blue Core.</div>}
+                {bcHits.map((h) => (
+                  <div key={h.uri} role="listitem" className="flex items-center gap-2 p-2 rounded-xl bg-black/30 border border-white/10">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-white truncate" title={h.title}>{h.title}</div>
+                      {h.titleArabic && <div className="text-xs text-white/70 truncate" dir="rtl">{h.titleArabic}</div>}
+                      <div className="text-[10px] text-white/50">{h.type === 'works' ? 'Work' : 'Instance'}{h.date ? ` · ${h.date}` : ''}{h.lccn ? ` · LCCN ${h.lccn}` : ''}</div>
+                    </div>
+                    <button type="button" onClick={() => handleBlueCoreImport(h)} disabled={bcBusy}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 cursor-pointer">
+                      Copy
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* File Upload Drop Area */}
           <div 
