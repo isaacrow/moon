@@ -59,8 +59,33 @@ const LEADER_LEVEL: Record<string, string> = { mono: 'm', serl: 's', intg: 'i', 
 const ROLE_FIELDS: Record<string, [string, string]> = { 'bf:Person': ['00', '1'], 'bf:Family': ['00', '3'], 'bf:Organization': ['10', '2'], 'bf:Jurisdiction': ['10', '1'], 'bf:Meeting': ['11', '2'] };
 const PROVISION_IND2: Record<string, string> = { 'bf:Production': '0', 'bf:Publication': '1', 'bf:Distribution': '2', 'bf:Manufacture': '3' };
 
+/**
+ * The graph with references to its own nodes written out in place: a Work whose bf:title is
+ * {"@id": "_:b1"} gets the bf:Title node itself, as the fields below expect. The Work, Instance, Item and
+ * AdminMetadata stay references (they are the record's top-level resources), and a node is never written
+ * inside itself, so a loop cannot run forever.
+ */
+function inlineReferences(graph: any[]): any[] {
+  const byId = new Map(graph.filter((n) => typeof n?.['@id'] === 'string').map((n) => [n['@id'], n]));
+  const top = (n: any) => ['bf:Work', 'bf:Instance', 'bf:Item', 'bf:AdminMetadata'].some((t) => isA(n, t));
+  const walk = (v: any, path: Set<any>): any => {
+    if (Array.isArray(v)) return v.map((x) => walk(x, path));
+    if (!v || typeof v !== 'object') return v;
+    const keys = Object.keys(v);
+    if (keys.length === 1 && keys[0] === '@id') {
+      const target = byId.get(v['@id']);
+      if (target && !top(target) && !path.has(target)) return walk(target, new Set([...path, target]));
+      return v;
+    }
+    const out: any = {};
+    for (const [k, x] of Object.entries(v)) out[k] = k.startsWith('@') ? x : walk(x, new Set([...path, v]));
+    return out;
+  };
+  return graph.map((n) => walk(n, new Set([n])));
+}
+
 export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: string; now?: Date } = {}): MarcRecord {
-  const graph = doc['@graph'] || [];
+  const graph = inlineReferences(doc['@graph'] || []);
   const work = graph.find((n) => isA(n, 'bf:Work') && !get(n, 'expressionOf')) || graph.find((n) => isA(n, 'bf:Work')) || {};
   const instance = graph.find((n) => isA(n, 'bf:Instance')) || {};
   const item = graph.find((n) => isA(n, 'bf:Item')) || {};
@@ -112,6 +137,9 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     else if (isA(ident, 'bf:Issn')) push(field('022', ' ', ' ', [sf('a', value)]));
   }
   push(field('040', ' ', ' ', [sf('b', codeIn(get(admin, 'descriptionLanguage'), 'languages')), sf('e', codeIn(get(admin, 'descriptionConventions'), 'descriptionConventions'))]));
+  // Geographic area codes (MARC 043, padded to seven characters: "a-iq---"), from the Work's coverage.
+  const areas = [...new Set(all(get(work, 'geographicCoverage')).map((g) => codeIn(g, 'geographicAreas')).filter(Boolean))];
+  if (areas.length) push(field('043', ' ', ' ', areas.slice(0, 3).map((a) => sf('a', a.padEnd(7, '-')))));
   for (const c of all(get(work, 'classification'))) {
     const portion = text(get(c, 'classificationPortion'));
     if (isA(c, 'bf:ClassificationLcc')) push(field('050', ' ', '4', [sf('a', portion), sf('b', text(get(c, 'itemPortion')))]));
@@ -172,6 +200,9 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
   // ---- Notes ----
   for (const n of [...all(get(work, 'note')), ...all(get(instance, 'note'))]) push(field('500', ' ', ' ', [sf('a', text(n))]));
   for (const s of all(get(work, 'summary'))) push(field('520', ' ', ' ', [sf('a', text(s))]));
+  // Contents and audience, as LC's bibframe2marc writes them.
+  for (const t of [...all(get(work, 'tableOfContents')), ...all(get(instance, 'tableOfContents'))]) push(field('505', '0', ' ', [sf('a', text(t))]));
+  for (const a of all(get(work, 'intendedAudience'))) push(field('521', ' ', ' ', [sf('a', text(a))]));
 
   // ---- Subjects and genre (LCSH / LCGFT when the link says so) ----
   for (const s of all(get(work, 'subject'))) {
@@ -188,6 +219,9 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     push(field('655', ' ', lcgft ? '7' : '4', [sf('a', text(node)), lcgft ? sf('2', 'lcgft') : null, sf('0', link)]));
   }
 
+  // The Work this Instance is an instance of, by its URI (758), as LC's bibframe2marc writes it.
+  const workUri = typeof work['@id'] === 'string' && /^https?:\/\//.test(work['@id']) ? work['@id'] : '';
+  if (workUri) push(field('758', ' ', ' ', [sf('4', 'http://id.loc.gov/ontologies/bibframe/instanceOf'), sf('a', text(get(work, 'title'))), sf('1', workUri)]));
   for (const loc of all(get(item, 'electronicLocator'))) push(field('856', '4', '0', [sf('u', uri(loc) || text(loc))]));
 
   return { leader, fields };
