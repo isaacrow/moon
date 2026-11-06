@@ -152,6 +152,18 @@ https://mooon.site/resource/dump.nt</code></pre>
 https://mooon.site/robots.txt</code></pre>
   </section>
 
+  <section class="card glass" id="profiles">
+    <h2>قوالب الفهرسة (Profiles)</h2>
+    <p>قوالب مون (كتاب، مخطوط، دورية، موسيقى مدونة، خريطة) تحدد حقول كل تسجيلة وأيها إلزامي. تُنشر بثلاث صيغ: صيغة Marva من مكتبة الكونغرس (JSON)، وأشكال SHACL التي تطبقها بوابة النشر، وجدول DCTAP الذي يفتحه محرر القوالب <a href="https://bibframe.org/dancer/">Dancer</a> من مكتبة الكونغرس ويعدّله.</p>
+<pre><code>https://gfbagczwhvxxstbfrfhu.supabase.co/functions/v1/make-server-49c0e13c/profiles/monograph
+https://gfbagczwhvxxstbfrfhu.supabase.co/functions/v1/make-server-49c0e13c/profiles/monograph/shapes.ttl
+https://gfbagczwhvxxstbfrfhu.supabase.co/functions/v1/make-server-49c0e13c/profiles/monograph/dctap.csv</code></pre>
+    <p>ولتحويل جدول DCTAP معدَّل في Dancer (أو جدول قوالب Marva من مكتبة الكونغرس) إلى صيغة Marva، أرسله في جسم الطلب:</p>
+<pre><code>curl -X POST "…/make-server-49c0e13c/profiles/dctap/convert?id=moon:MyProfile&amp;title=My%20profile" \
+  -H "Content-Type: text/csv" --data-binary @my-profile.dctap.csv</code></pre>
+    <p>القوالب المتاحة: <code>monograph</code> · <code>manuscript</code> · <code>serial</code> · <code>music</code> · <code>map</code>.</p>
+  </section>
+
   <section class="card glass" id="notes">
     <h2>ملاحظات</h2>
     <ul>
