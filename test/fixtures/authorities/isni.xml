@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?xml-stylesheet type="text/xsl" href="?xsl=searchRetrieveResponse" ?>
+<srw:searchRetrieveResponse xmlns:srw="http://www.loc.gov/zing/srw/"
+			    xmlns:dc="http://purl.org/dc/elements/1.1/"
+			    xmlns:diag="http://www.loc.gov/zing/srw/diagnostic/"
+			    xmlns:xcql="http://www.loc.gov/zing/cql/xcql/">
+    <srw:version>1.1</srw:version>
+    <srw:numberOfRecords>18</srw:numberOfRecords>
+    <srw:resultSetId>SID4da11078-1S1</srw:resultSetId>
+    <srw:records>
+    
+
+	
+	    <srw:record>
+	    <srw:recordSchema>isni-b</srw:recordSchema>
+	    <srw:recordPacking>xml</srw:recordPacking>
+	    <srw:recordData><responseRecord>
+<ISNIAssigned>
+<isniUnformatted>0000000499115413</isniUnformatted>
+<isniURI>https://isni.org/isni/0000000499115413</isniURI>
+<dataConfidence>60</dataConfidence>
+<ISNIMetadata>
+<identity><personOrFiction>
+<personalName>
+<forename>Kifāḥ Muḥammad Mahdī</forename>
+<surname>Jawāhirī</surname>
+<marcDate>1941-</marcDate>
+<nameUse>public</nameUse>
+<source>LCNACO</source>
+</personalName>
+<creativeActivity>
+<creationRole source="LCNACO">aut</creationRole>
+<creationClass source="LCNACO">am</creationClass>
+</creativeActivity>
+<personalNameVariant>
+<surname>جواهري، كفاح محمد مهدي،</surname>
+<marcDate>1941-</marcDate>
+<nameUse>public</nameUse>
+<source>LCNACO</source>
+</personalNameVariant>
+</personOrFiction>
+</identity>
+<otherIdentifierOfIdentity>
+<type>OCoLC</type>
+<identifier>oca11258943</identifier>
+<source>LCNACO</source>
+</otherIdentifierOfIdentity>
+<sources>
+<codeOfSource>LCNACO</codeOfSource>
+<sourceIdentifier>no2018037992</sourceIdentifier>
+</sources>
+</ISNIMetadata>
+</ISNIAssigned>
+</responseRecord>
+</srw:recordData>
+	    <srw:recordPosition>1</srw:recordPosition>
+	    </srw:record>
+	    <srw:record>
+	    <srw:recordSchema>isni-b</srw:recordSchema>
+	    <srw:recordPacking>xml</srw:recordPacking>
+	    <srw:recordData><responseRecord>
+<ISNIAssigned>
+<isniUnformatted>0000000485092847</isniUnformatted>
+<isniURI>https://isni.org/isni/0000000485092847</isniURI>
+<dataConfidence>30</dataConfidence>
+<ISNIMetadata>
+<identity><personOrFiction>
+<personalName>
+<forename>Reem</forename>
+<surname>Al-Jawahiri</surname>
+<source>ETHOS</source>
+</personalName>
+<creativeActivity>
+<creationRole source="ETHOS">aut</creationRole>
+<creationClass source="ETHOS">text</creationClass>
+<titleOfWork source="ETHOS">
+<title>@Neural activity of 16p11.2 CNV human and mouse</title>
+</titleOfWork>
+</creativeActivity>
+</personOrFiction>
+</identity>
+<otherIdentifierOfIdentity>
+<type>ORCID</type>
+<identifier>0000000256893368</identifier>
+<source>ETHOS</source>
+</otherIdentifierOfIdentity>
+<sources>
+<codeOfSource>ETHOS</codeOfSource>
+<sourceIdentifier>800566</sourceIdentifier>
+</sources>
+<sources>
+<codeOfSource>ORCID</codeOfSource>
+<sourceIdentifier>0000000256893368</sourceIdentifier>
+</sources><externalInformation>
+<URI>https://ethos.bl.uk/OrderDetails.do?uin=uk.bl.ethos.800566</URI>
+</externalInformation>
+</ISNIMetadata>
+</ISNIAssigned>
+</responseRecord>
+</srw:recordData>
+	    <srw:recordPosition>2</srw:recordPosition>
+	    </srw:record>
+    
+</srw:records>
+    <srw:echoedSearchRetrieveRequest>
+	<srw:version>1.1</srw:version>
+	<srw:query>pica.nw%3D%22jawahiri%22</srw:query>
+	<srw:xQuery><xcql:searchClause><xcql:index>pica.nw</xcql:index><xcql:relation><xcql:value>=</xcql:value></xcql:relation><xcql:term>"jawahiri"</xcql:term></xcql:searchClause></srw:xQuery>
+	<startRecord>1</startRecord>
+	<maximumRecords>2</maximumRecords>
+	<srw:recordPacking>xml</srw:recordPacking>
+	<srw:recordSchema>isni-b</srw:recordSchema>
+	
+	<srw:stylesheet>?xsl=searchRetrieveResponse</srw:stylesheet>
+    </srw:echoedSearchRetrieveRequest>
+    <diag:diagnostics>
+        <diag:uri>info:srw/diagnostic/1/0</diag:uri>
+	
+	
+    </diag:diagnostics>
+    <srw:extraResponseData>
+	<rob:authenticationToken xmlns:rob="info:srw/extension/2/auth-1.0">U50,KENDUSER,I28,B0028++++++,SY,NISNI,D1.2,E4da11078-1,A,H1,,3-28,,30-41,,43-59,,65-70,,74-75,R217.142.31.79,FY</rob:authenticationToken>
+        <mg:resultGrouping xmlns:mg="info:srw/extension/5/metadata-grouping-v1.0">
+	    
+	    <mg:grouping key="9021" description="ISNI status (ST:)"></mg:grouping>
+	    
+	    <mg:grouping key="9001" description="Material Code (MTC:)"></mg:grouping>
+	    
+	    <mg:grouping key="9000" description="Year of Birth (YOB:)"></mg:grouping>
+	    
+	    <mg:grouping key="9029" description="Source Count (SC:)"></mg:grouping>
+	    
+	    <mg:grouping key="9022" description="Creation class (CC:)"></mg:grouping>
+	    
+	    <mg:grouping key="9028" description="Creation Role (CR:)"></mg:grouping>
+	    
+
+	
+	</mg:resultGrouping>
+	
+    </srw:extraResponseData>
+</srw:searchRetrieveResponse>
