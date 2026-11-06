@@ -1,0 +1,422 @@
+{
+ "id": "record-1789649846891",
+ "title": "القبسات",
+ "document": {
+  "@graph": [
+   {
+    "@id": "https://mooon.site/resource/work/record-1789649846891",
+    "date": "1650",
+    "note": "أوله: الحمد لله الواحد الاحد الصمد المصمود مهيمن كل وجود وجاعل كل موجود...\nآخره: ولا تخلنا اللهم مع ذلك من عواطف رأفتك وسوابغ رحمتك ولطايف كفايتك وحوط عنايتك...\nالذريعة الى تصانيف الشيعة: ج 17، ص 32، رقم 183.\nمكتبة مجلس الشورى: 4662، طهران، ايران.",
+    "@type": "bf:Work",
+    "title": "القبسات",
+    "partOf": "مجموعة مخطوطات الفلسفة والحكمة الإلهية",
+    "bf:note": [
+     {
+      "@type": "bf:Note",
+      "rdfs:label": "أوله : الحمد لله الواحد الاحد الصمد المصمود مهيمن كل وجود وجاعل كل موجود، والصلاة على من اقتفاه من زمرة الانبياء، واصطفاه من رسل الرسل فابتعثه بالذكر..."
+     },
+     {
+      "@type": "bf:Note",
+      "rdfs:label": "آخره : ولا تخلنا اللهم مع ذلك من عواطف رأفتك وسوابغ رحمتك ولطايف كفايتك وحوط عنايتك وحسن كلائتك بجودك ومنك وفضلك وطولك يا أرحم الراحمين."
+     },
+     {
+      "@type": "bf:Note",
+      "rdfs:label": "الذريعة الى تصانيف الشيعة، الجزء 17، الصفحه 32، الرقم 183."
+     },
+     {
+      "@type": "bf:Note",
+      "rdfs:label": "مكتبة مجلس الشورى : 4662، طهران، ايران (ir)"
+     }
+    ],
+    "content": "نص (مصور مخطوط)",
+    "creator": "الميرداماد، محمد باقر بن محمد، توفي 1041 هجري، مؤلف",
+    "hasPart": "القبسة الأولى في مراتب الوجود والدهر",
+    "subject": "الفلسفة الاسلامية الشيعية",
+    "summary": "كتاب فلسفي كلامي للميرداماد يناقش حدوث العالم وقدمه ومسألة الدهر والزمان والمصادر الوجودية وفق الحكمة المتعالية والمشائية.",
+    "bf:title": {
+     "@type": "bf:Title",
+     "mainTitle": "القبسات",
+     "rdfs:label": "القبسات",
+     "bf:mainTitle": "القبسات",
+     "bflc:nonSortNum": "2"
+    },
+    "language": "ara",
+    "notation": "خط عربي (النستعليق الفارسي العربي)",
+    "bf:partOf": {
+     "rdfs:label": "مجموعة مخطوطات الفلسفة والحكمة الإلهية"
+    },
+    "genreForm": "مخطوطات",
+    "hasSeries": "تراث الحكمة والفلسفة الاسلامية",
+    "mainTitle": "القبسات",
+    "relatedTo": "الذريعة الى تصانيف الشيعة (الرقم 183)",
+    "shelfMark": "B753.D363 Q23 1650",
+    "bf:content": {
+     "@id": "http://id.loc.gov/vocabulary/contentTypes/txt",
+     "@type": "bf:Content",
+     "rdfs:label": "نص"
+    },
+    "bf:hasPart": {
+     "rdfs:label": "القبسة الأولى في مراتب الوجود والدهر"
+    },
+    "bf:subject": [
+     {
+      "@id": "http://id.loc.gov/authorities/subjects/sh85068499",
+      "@type": "bf:Topic",
+      "rdfs:label": "الفلسفة الاسلامية الشيعية"
+     },
+     {
+      "@id": "http://id.loc.gov/authorities/genreForms/gf2014026139",
+      "@type": "bf:Topic",
+      "rdfs:label": "مخطوطات اسلامية"
+     }
+    ],
+    "bf:summary": "كتاب فلسفي كلامي للميرداماد يناقش حدوث العالم وقدمه ومسألة الدهر والزمان والمصادر الوجودية وفق الحكمة المتعالية والمشائية.",
+    "creatorUri": "http://id.loc.gov/authorities/names/n85043844",
+    "originDate": "1650 [1061 هـ.]",
+    "rdfs:label": "القبسات — الميرداماد",
+    "bf:language": {
+     "@id": "http://id.loc.gov/vocabulary/languages/ara",
+     "@type": "bf:Language",
+     "rdfs:label": "العربية"
+    },
+    "bf:notation": {
+     "@type": "bf:Notation",
+     "rdfs:label": "خط عربي (نستعليق)"
+    },
+    "contentType": "نص (مصور مخطوط)",
+    "hasInstance": "http://id.loc.gov/resources/instances/b125923",
+    "originPlace": "طهران، ايران / كربلاء المقدسة",
+    "subjectName": "الميرداماد، محمد باقر بن محمد، توفي 1041 هـ",
+    "bf:genreForm": {
+     "@id": "http://id.loc.gov/authorities/genreForms/gf2014026139",
+     "@type": "bf:GenreForm",
+     "rdfs:label": "مخطوطات"
+    },
+    "bf:hasSeries": {
+     "@type": "bf:Series",
+     "title": "تراث الحكمة والفلسفة الاسلامية",
+     "number": "القسم الفلسفي 14",
+     "bf:title": "تراث الحكمة والفلسفة الاسلامية"
+    },
+    "bf:relatedTo": {
+     "@id": "http://id.loc.gov/resources/works/al-dhariah",
+     "rdfs:label": "الذريعة الى تصانيف الشيعة (الرقم 183)"
+    },
+    "contribution": "الميرداماد، محمد باقر بن محمد، توفي 1041 هجري (مؤلف)",
+    "dissertation": "أطروحة فلسفية حكيمة في إثبات حدوث الدهر",
+    "expressionOf": "الميرداماد، محمد باقر بن محمد، توفي 1041 هجري. القبسات",
+    "adminMetadata": "IQ-KaCCS | ara | RDA | b125923",
+    "bf:originDate": "1650 [1061 هـ.]",
+    "copyrightDate": "1650",
+    "hasDerivative": "شرح القبسات للعلامة عبد الرزاق اللاهيجي",
+    "hasExpression": "النسخة المخطوطة المحفوظة في العتبة العباسية",
+    "translationOf": "الأصل العربي — مخطوط في دار الكتب والوثائق",
+    "bf:hasInstance": {
+     "@id": "http://id.loc.gov/resources/instances/b125923",
+     "rdfs:label": "نسخة مخطوطة كاملة 1061 هـ."
+    },
+    "bf:originPlace": {
+     "@id": "http://id.loc.gov/vocabulary/countries/ir",
+     "@type": "bf:Place",
+     "rdfs:label": "طهران، ايران (ir)"
+    },
+    "classification": "B753.D363 Q23 1650",
+    "subjectTopical": "الفلسفة الاسلامية الشيعية",
+    "bf:contribution": [
+     {
+      "@type": "bf:PrimaryContribution",
+      "bf:role": {
+       "@id": "http://id.loc.gov/vocabulary/relators/aut",
+       "@type": "bf:Role",
+       "rdfs:label": "مؤلف"
+      },
+      "bf:agent": {
+       "@id": "http://id.loc.gov/authorities/names/n85043844",
+       "@type": "bf:Person",
+       "rdfs:label": "الميرداماد، محمد باقر بن محمد، توفي 1041 هجري"
+      }
+     }
+    ],
+    "bf:dissertation": {
+     "name": "أطروحة فلسفية حكيمة في إثبات حدوث الدهر",
+     "@type": "bf:Dissertation",
+     "degree": "رسالة حكمية كلامية"
+    },
+    "bf:expressionOf": {
+     "@id": "http://id.loc.gov/resources/hubs/mir-damad-qabasat",
+     "bflc:aap": "الميرداماد، محمد باقر بن محمد، توفي 1041 هجري. القبسات"
+    },
+    "originalVersion": "النسخة الأصلية بخط المؤلف سنة 1041 هـ.",
+    "tableOfContents": "مقدمة في حدوث العالم، الومضة الأولى في الوجود والعدم، القبسة الأولى في مراتب الوجود والدهر والسرمد، القبسة الثانية في إثبات الواجب، القبسة الثالثة في الحركة والزمان والآن.",
+    "bf:adminMetadata": {
+     "@type": "bf:AdminMetadata",
+     "bf:source": "IQ-KaCCS",
+     "rdfs:label": "IQ-KaCCS / العتبة العباسية (RDA)",
+     "bf:descriptionLanguage": "ara",
+     "bf:descriptionConventions": "rda"
+    },
+    "bf:copyrightDate": "1650",
+    "bf:hasDerivative": {
+     "rdfs:label": "شرح القبسات للعلامة عبد الرزاق اللاهيجي"
+    },
+    "bf:hasExpression": {
+     "@id": "http://id.loc.gov/resources/instances/b125923",
+     "rdfs:label": "النسخة المخطوطة المحفوظة في العتبة العباسية"
+    },
+    "bf:translationOf": {
+     "rdfs:label": "الأصل العربي — مخطوط في دار الكتب والوثائق"
+    },
+    "intendedAudience": "باحثو وعلماء الفلسفة الإسلامية والحكمة المتعالية",
+    "temporalCoverage": "1041-1061 هـ. / القرن 17 الميلادي",
+    "bf:classification": {
+     "@type": "bf:ClassificationLcc",
+     "rdfs:label": "B753.D363 Q23 1650",
+     "itemPortion": "Q23 1650",
+     "bf:itemPortion": "Q23 1650",
+     "classificationPortion": "B753.D363",
+     "bf:classificationPortion": "B753.D363"
+    },
+    "classificationDdc": "181.07",
+    "classificationLcc": "B753.D363 Q23 1650",
+    "subjectGeographic": "إيران -- تاريخ الفلسفة -- القرن 11 هـ",
+    "bf:originalVersion": {
+     "rdfs:label": "النسخة الأصلية بخط المؤلف سنة 1041 هـ."
+    },
+    "bf:tableOfContents": "مقدمة في حدوث العالم، الومضة الأولى في الوجود والعدم، القبسة الأولى في مراتب الوجود والدهر والسرمد، القبسة الثانية في إثبات الواجب، القبسة الثالثة في الحركة والزمان والآن.",
+    "geographicAreaCode": "a-iq / a-ir",
+    "geographicCoverage": "العراق - إيران (الشرق الأوسط)",
+    "bf:temporalCoverage": {
+     "end": "1061 هـ. (1650 م.)",
+     "@type": "bflc:TemporalCoverage",
+     "start": "1041 هـ.",
+     "rdfs:label": "1041-1061 هـ. / القرن 17 الميلادي"
+    },
+    "accessibilityContent": "نسخة مصورة عالية الدقة متاحة رقمياً",
+    "supplementaryContent": "الذريعة الى تصانيف الشيعة، الجزء 17، الصفحه 32، الرقم 183.",
+    "governmentPublication": "غير حكومي (مخطوط تراثي أصيل)",
+    "additionalContributors": "خطاط غير مصرح، ناسخ المخطوطة",
+    "bf:accessibilityContent": {
+     "@type": "bf:AccessibilityContent",
+     "rdfs:label": "نسخة مصورة عالية الدقة متاحة رقمياً"
+    },
+    "bf:supplementaryContent": {
+     "@type": "bf:SupplementaryContent",
+     "rdfs:label": "الذريعة الى تصانيف الشيعة، الجزء 17، الصفحه 32، الرقم 183."
+    },
+    "bf:governmentPublication": {
+     "@type": "bf:GovernmentPublication",
+     "rdfs:label": "غير حكومي"
+    },
+    "descriptionAuthentication": "rda",
+    "bf:descriptionAuthentication": "rda"
+   },
+   {
+    "@id": "https://mooon.site/resource/instance/record-1789649846891",
+    "lccn": "b125923",
+    "note": "مرتبة بنظام التعقيبات.\nفي اولها مجموعة اختام.\nالنسخة مجدولة والورقة الاولى عليها زخرفة.\nالغلاف : جلد، احمر.\nمكتبة مجلس الشورى : 4662، طهران، ايران (ir)",
+    "@type": "bf:Instance",
+    "media": "حاسوب",
+    "title": "القبسات",
+    "extent": "344 ورقة (18 سطرًا)",
+    "heldBy": "مكتبة العتبة العباسية المقدسة (IQ-KaCCS)",
+    "itemOf": "http://id.loc.gov/resources/instances/b125923",
+    "partOf": "خزانة المخطوطات المصورة — العتبة العباسية المقدسة",
+    "bf:note": [
+     {
+      "@type": "bf:Note",
+      "rdfs:label": "مرتبة بنظام التعقيبات."
+     },
+     {
+      "@type": "bf:Note",
+      "rdfs:label": "في اولها مجموعة اختام."
+     },
+     {
+      "@type": "bf:Note",
+      "rdfs:label": "النسخة مجدولة والورقة الاولى عليها زخرفة."
+     },
+     {
+      "@type": "bf:Note",
+      "rdfs:label": "الغلاف : جلد، احمر."
+     },
+     {
+      "@type": "bf:Note",
+      "rdfs:label": "مكتبة مجلس الشورى : 4662، طهران، ايران (ir)"
+     }
+    ],
+    "carrier": "مصدر الكتروني",
+    "edition": "نسخة مخطوطة كاملة مجدولة ومذهبة",
+    "hasPart": "الورقة 1-344 (كامل المخطوط)",
+    "bf:media": {
+     "@id": "http://id.loc.gov/vocabulary/mediaTypes/c",
+     "@type": "bf:Media",
+     "rdfs:label": "حاسوب"
+    },
+    "bf:title": {
+     "@type": "bf:Title",
+     "mainTitle": "القبسات",
+     "rdfs:label": "القبسات",
+     "bf:mainTitle": "القبسات"
+    },
+    "issuance": "مخطوط وحيد / أحادي (Single unit)",
+    "notation": "خط عربي (النستعليق الفارسي العربي)",
+    "bf:extent": {
+     "@type": "bf:Extent",
+     "value": "344 ورقة (18 سطرًا)",
+     "rdfs:label": "344 ورقة (18 سطرًا)"
+    },
+    "bf:itemOf": "http://id.loc.gov/resources/instances/b125923",
+    "bf:partOf": {
+     "rdfs:label": "خزانة المخطوطات المصورة — العتبة العباسية المقدسة"
+    },
+    "genreForm": "مخطوطات",
+    "hasSeries": "تراث الحكمة والفلسفة الاسلامية",
+    "mainTitle": "القبسات",
+    "mediaType": "حاسوب",
+    "publisher": "نسخة مخطوطة بخط النستعليق",
+    "relatedTo": "مخطوطة الخزانة الغروية رقم 1205",
+    "shelfMark": "B753.D363 Q23 1650",
+    "bf:carrier": {
+     "@id": "http://id.loc.gov/vocabulary/carriers/ck",
+     "@type": "bf:Carrier",
+     "rdfs:label": "مصدر الكتروني"
+    },
+    "bf:hasItem": {
+     "@id": "http://id.loc.gov/resources/items/b125923",
+     "@type": "bf:Item",
+     "bf:heldBy": {
+      "@type": "bf:Agent",
+      "rdfs:label": "مكتبة العتبة العباسية المقدسة"
+     },
+     "shelfMark": "B753.D363 Q23 1650",
+     "bf:shelfMark": "B753.D363 Q23 1650"
+    },
+    "bf:hasPart": {
+     "rdfs:label": "الورقة 1-344 (كامل المخطوط)"
+    },
+    "dimensions": "ورق، حبر اسود، خط النستعليق (18 سطرًا في الصفحة)",
+    "identifier": "b125923",
+    "instanceOf": "http://id.loc.gov/resources/works/b125923",
+    "originDate": "1061 هـ. = [1650]",
+    "rdfs:label": "القبسات — نسخة مخطوطة 1061 هـ.",
+    "bf:issuance": "مخطوط وحيد / أحادي (Single unit)",
+    "bf:notation": {
+     "@type": "bf:Notation",
+     "rdfs:label": "خط عربي (نستعليق)"
+    },
+    "carrierType": "مصدر الكتروني",
+    "originPlace": "كربلاء المقدسة / طهران",
+    "bf:genreForm": "مخطوطات",
+    "bf:hasSeries": {
+     "@type": "bf:Series",
+     "number": "القسم الفلسفي 14",
+     "bf:title": "تراث الحكمة والفلسفة الاسلامية"
+    },
+    "bf:relatedTo": {
+     "rdfs:label": "مخطوطة الخزانة الغروية رقم 1205"
+    },
+    "contribution": "للميرداماد محمد باقر الحسيني الاسترآبادي (مؤلف)",
+    "identifiedBy": "b125923",
+    "adminMetadata": "IQ-KaCCS | ara | RDA | b125923",
+    "bf:dimensions": "ورق، حبر اسود، خط النستعليق (18 سطرًا في الصفحة)",
+    "bf:instanceOf": {
+     "@id": "https://mooon.site/resource/work/record-1789649846891"
+    },
+    "bf:originDate": "1061 هـ. = [1650]",
+    "copyrightDate": "1650",
+    "translationOf": "الأصل العربي",
+    "bf:originPlace": "كربلاء المقدوة / طهران",
+    "classification": "B753.D363 Q23 1650",
+    "bf:contribution": [
+     {
+      "@type": "bf:Contribution",
+      "bf:role": {
+       "@id": "http://id.loc.gov/vocabulary/relators/aut",
+       "rdfs:label": "مؤلف"
+      },
+      "bf:agent": {
+       "@id": "http://id.loc.gov/authorities/names/n85043844",
+       "@type": "bf:Person",
+       "rdfs:label": "الميرداماد محمد باقر الحسيني الاسترآبادي"
+      }
+     }
+    ],
+    "bf:identifiedBy": [
+     {
+      "@type": "bf:Local",
+      "value": "b125923",
+      "rdf:value": "b125923",
+      "rdfs:label": "b125923"
+     },
+     {
+      "@type": "bf:Identifier",
+      "value": "(Sirsi) a209527",
+      "rdf:value": "(Sirsi) a209527",
+      "rdfs:label": "(Sirsi) a209527"
+     }
+    ],
+    "publicationDate": "1061 هـ. = [1650]",
+    "seriesStatement": "تراث الحكمة والفلسفة الاسلامية ؛ القسم الفلسفي 14",
+    "tableOfContents": "القبسة الأولى في مراتب الوجود والدهر، القبسة الثانية في إثبات الواجب، القبسة الثالثة في الزمان والحركة",
+    "bf:adminMetadata": {
+     "@type": "bf:AdminMetadata",
+     "bf:source": "IQ-KaCCS",
+     "rdfs:label": "IQ-KaCCS / العتبة العباسية (RDA)",
+     "bf:descriptionLanguage": "ara",
+     "bf:descriptionConventions": "rda"
+    },
+    "bf:copyrightDate": "1650",
+    "bf:translationOf": "الأصل العربي",
+    "editionStatement": "نسخة مخطوطة كاملة مجدولة ومذهبة",
+    "acquisitionSource": "مكتبة العتبة العباسية المقدسة — قسم الشؤون الفكرية والثقافية",
+    "bf:classification": {
+     "@type": "bf:ClassificationLcc",
+     "rdfs:label": "B753.D363 Q23 1650",
+     "itemPortion": "Q23 1650",
+     "bf:itemPortion": "Q23 1650",
+     "classificationPortion": "B753.D363",
+     "bf:classificationPortion": "B753.D363"
+    },
+    "provisionActivity": "كربلاء المقدسة / طهران : خطاط غير مصرح (خط النستعليق)، 1061 هـ. = [1650]",
+    "bf:tableOfContents": "القبسة الأولى في مراتب الوجود والدهر، القبسة الثانية في إثبات الواجب، القبسة الثالثة في الزمان والحركة",
+    "placeOfPublication": "كربلاء المقدسة / طهران",
+    "bf:editionStatement": "نسخة مخطوطة كاملة مجدولة ومذهبة",
+    "illustrativeContent": "زخرفة وتذهيب وتجديل في الورقة الأولى وعناوين مؤطرة",
+    "accessibilityContent": "نسخة مصورة عالية الدقة متاحة رقمياً",
+    "bf:acquisitionSource": "مكتبة العتبة العباسية المقدسة — قسم الشؤون الفكرية والثقافية",
+    "bf:provisionActivity": {
+     "date": "1061 هـ. = [1650]",
+     "@type": "bf:Production",
+     "agent": "خطاط غير مصرح (خط النستعليق)",
+     "place": "كربلاء المقدسة / طهران",
+     "bf:date": "1650",
+     "bf:agent": {
+      "@type": "bf:Agent",
+      "rdfs:label": "خطاط غير مصرح (خط النستعليق)"
+     },
+     "bf:place": {
+      "@type": "bf:Place",
+      "rdfs:label": "كربلاء المقدسة / طهران"
+     },
+     "bflc:simpleDate": "1061 هـ. = [1650]"
+    },
+    "immediateAcquisition": "إهداء / تصوير من أصل مخطوطة مجلس الشورى الإيراني رقم 4662",
+    "supplementaryContent": "الذريعة الى تصانيف الشيعة، ج 17، ص 32، رقم 183",
+    "governmentPublication": "غير حكومي",
+    "projectedProvisionDate": "1650",
+    "bf:accessibilityContent": {
+     "@type": "bf:AccessibilityContent",
+     "rdfs:label": "نسخة مصورة عالية الدقة متاحة رقمياً"
+    },
+    "bf:immediateAcquisition": "إهداء / تصوير من أصل مخطوطة مجلس الشورى الإيراني رقم 4662",
+    "responsibilityStatement": "للميرداماد محمد باقر الحسيني الاسترآبادي.",
+    "bf:governmentPublication": "غير حكومي",
+    "bf:projectedProvisionDate": "1650",
+    "descriptionAuthentication": "rda",
+    "statementOfResponsibility": "للميرداماد محمد باقر الحسيني الاسترآبادي.",
+    "bf:responsibilityStatement": "للميرداماد محمد باقر الحسيني الاسترآبادي.",
+    "bf:descriptionAuthentication": "rda"
+   }
+  ],
+  "@context": "http://id.loc.gov/ontologies/bibframe/"
+ }
+}

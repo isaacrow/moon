@@ -1,0 +1,45 @@
+name: Fix old records
+
+# Run by hand from the Actions tab (or `gh workflow run fix-legacy-records.yml -f mode=dry-run`).
+# Repairs published records saved by Moon's early editor (see scripts/fix-legacy-records.mts), each as a
+# new published version. Both modes first back up every record; the backup and a report are kept as a
+# workflow artifact for 90 days.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run: repair and roll back, keep nothing. apply: repair for real.'
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fix-legacy-records
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: gfbagczwhvxxstbfrfhu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Back up and repair (${{ inputs.mode }})
+        run: npx tsx scripts/fix-legacy-records.mts --${{ inputs.mode }}
+      - name: Keep the backup and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fix-legacy-records-${{ inputs.mode }}-${{ github.run_number }}
+          path: backups/
+          retention-days: 90
+          if-no-files-found: error
