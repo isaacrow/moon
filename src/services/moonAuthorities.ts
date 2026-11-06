@@ -6,7 +6,7 @@ import { moonFetch } from '../app/utils/moonApi';
 import type { AuthorityResult } from './authoritySearch';
 import type { AISuggestionProfile } from './authorFinderService';
 
-export type MoonAuthorityKind = 'agent' | 'place' | 'topic';
+export type MoonAuthorityKind = 'agent' | 'place' | 'topic' | 'hub' | 'genre' | 'period';
 
 export interface MoonAuthority {
   id: string;
@@ -32,6 +32,7 @@ export async function searchMoonAuthorities(query: string, kind: MoonAuthorityKi
       uri: a.uri,
       source: 'Moon' as const,
       type: kind,
+      sameAs: a.sameAs || [],
       description: [a.variants.slice(0, 2).join(' · '), [a.data?.birthDate, a.data?.deathDate].filter(Boolean).join('–')]
         .filter(Boolean).join(' — ') || undefined,
     }));

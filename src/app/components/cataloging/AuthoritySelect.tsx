@@ -8,6 +8,8 @@ import { createPortal } from 'react-dom';
 import { Search, X, Check, Globe, Database } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AuthorityResult } from '../../../services/authoritySearch';
+import { moonFetch } from '../../utils/moonApi';
+import type { MoonAuthorityKind } from '../../../services/moonAuthorities';
 
 interface AuthoritySelectProps {
   label: string;
@@ -18,6 +20,11 @@ interface AuthoritySelectProps {
   placeholder?: string;
   required?: boolean;
   allowCustom?: boolean;
+  /** When set, a name not found can be created as a Moon entity of this kind on the spot (a real address
+   *  the record links to), instead of a label with no address. */
+  entityKind?: MoonAuthorityKind;
+  /** For people and bodies: which LC agent type a new entity is. */
+  agentType?: 'person' | 'family' | 'organization' | 'meeting' | 'jurisdiction';
   isLight?: boolean;
   /** A short tag beside the selected value, e.g. that it was pre-filled from LC's profile; `noteTitle` explains it on hover. */
   note?: string;
@@ -32,6 +39,8 @@ export function AuthoritySelect({
   placeholder = 'Search authorities...',
   required = false,
   allowCustom = false,
+  entityKind,
+  agentType,
   isLight = false,
   note,
   noteTitle,
@@ -113,6 +122,33 @@ export function AuthoritySelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const [creating, setCreating] = useState(false);
+
+  // Phase 10, step 4: a name Moon does not know yet becomes a Moon entity right away (or the existing one with
+  // that name is used), so the record links to a permanent address. Without an entity kind, or when the
+  // server refuses (not signed in), the value is kept as a plain label, which the save links later.
+  const createEntity = async () => {
+    const label = query.trim();
+    if (!label) return;
+    if (entityKind) {
+      setCreating(true);
+      const res = await moonFetch<any>('/authorities', {
+        body: { kind: entityKind, label, data: entityKind === 'agent' ? { agentType: agentType || 'person' } : {} },
+      }).catch(() => null);
+      setCreating(false);
+      const made = res?.ok ? res.data?.authority : null;
+      if (made?.uri) {
+        handleSelect({ label: made.label, uri: made.uri, source: 'Moon', sameAs: made.sameAs || [] });
+        return;
+      }
+    }
+    handleSelect({ label, uri: '', source: 'Local' });
+  };
+  // Read at render time (t is declared below).
+  const createLabel = () => entityKind
+    ? (i18n.language?.startsWith('ar') ? `أنشئ «${query.trim()}» كياناً في Moon` : `Create "${query.trim()}" as a Moon entity`)
+    : `${t('editor.createLocalAuthority')}: "${query}"`;
+
   const handleSelect = (result: AuthorityResult) => {
     onChange(result);
     setQuery('');
@@ -177,7 +213,7 @@ export function AuthoritySelect({
     }
   };
 
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const displayValue = useMemo(() => {
     if (!value) return null;
@@ -342,6 +378,18 @@ export function AuthoritySelect({
                     </div>
                   </button>
                 ))}
+                {allowCustom && entityKind && (
+                  <button
+                    onClick={createEntity}
+                    disabled={creating}
+                    className="w-full text-start px-4 py-3 text-sm font-semibold last:rounded-b-xl disabled:opacity-60"
+                    style={{ color: "rgba(30,64,175,0.9)", background: "rgba(59,130,246,0.05)" }}
+                    type="button"
+                    dir="auto"
+                  >
+                    {creating ? '…' : '+ '}{createLabel()}
+                  </button>
+                )}
               </div>
             </>,
             document.body
@@ -371,20 +419,13 @@ export function AuthoritySelect({
                 {allowCustom && (
                   <div className="mt-2">
                     <button
-                      onClick={() => {
-                        onChange({
-                          label: query,
-                          uri: '', // a local entry is a labelled value, not a link to a page that does not exist
-                          source: 'Local'
-                        });
-                        setQuery('');
-                        setIsOpen(false);
-                      }}
+                      onClick={createEntity}
+                      disabled={creating}
                       className="text-sm font-semibold"
                       style={{ color: "rgba(59,130,246,0.85)" }}
                       type="button"
                     >
-                      {t('editor.createLocalAuthority')}: "{query}"
+                      {creating ? '…' : ''}{createLabel()}
                     </button>
                   </div>
                 )}

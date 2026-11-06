@@ -276,6 +276,8 @@ export function ContributionEditorModal({ value, onChange, onClose, triggerRect 
             value={contribution.agent}
             onChange={(agent) => setContribution({ ...contribution, agent })}
             onSearch={(q) => searchAllAuthorities(q, 'person')}
+            entityKind="agent"
+            agentType="person"
             placeholder={t('editor.searchPerson')}
             required
             allowCustom
@@ -390,6 +392,8 @@ export function ProvisionActivityEditorModal({ value, onChange, onClose, trigger
             value={provision.agent}
             onChange={(agent) => setProvision({ ...provision, agent })}
             onSearch={(q) => searchAllAuthorities(q, 'organization')}
+            entityKind="agent"
+            agentType="organization"
             placeholder={t('editor.searchPublisher')}
             allowCustom
           />
@@ -399,6 +403,7 @@ export function ProvisionActivityEditorModal({ value, onChange, onClose, trigger
             value={provision.place}
             onChange={(place) => setProvision({ ...provision, place })}
             onSearch={(q) => searchAllAuthorities(q, 'place')}
+            entityKind="place"
             placeholder={t('editor.searchPlace')}
             allowCustom
           />
@@ -664,6 +669,8 @@ export function DissertationEditorModal({ value, onChange, onClose, triggerRect 
             value={institution}
             onChange={setInstitution}
             onSearch={(q) => searchAllAuthorities(q, 'organization')}
+            entityKind="agent"
+            agentType="organization"
             placeholder="Search for institution..."
             allowCustom
           />

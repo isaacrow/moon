@@ -111,7 +111,10 @@ export function LocPlaceSearch({ property, value, onChange, language = 'en' }: L
               <div className="flex items-center gap-3">
                 <MapPin className="h-4 w-4 text-purple-600" />
                 <div>
-                  <div className="font-medium text-sm">{result.aLabel || result.suggestLabel}</div>
+                  <div className="font-medium text-sm flex items-center gap-1.5" dir="auto">
+                    <span className={`shrink-0 rounded-full px-1.5 py-px text-[10px] font-bold ${result.source === 'Moon' ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-700'}`}>{result.source === 'Moon' ? 'Moon' : result.source && result.source !== 'LOC' ? result.source : 'LC'}</span>
+                    {result.aLabel || result.suggestLabel}
+                  </div>
                   {result.uri && (
                     <div className="text-xs text-gray-500 font-mono truncate max-w-md">
                       {result.uri}

@@ -212,6 +212,75 @@ export function authorityReport(records: { id: string; title: string; document: 
   return { headings: list.length, counts, rows: list };
 }
 
+// ---------------------------------------------------------------------------
+// Headings already linked outside (Phase 10, step 4). A name or subject picked from LC, VIAF or Wikidata keeps
+// that address in the record, as LC's own records do (MARC export writes it as $0/$1). Moon's entity store
+// still gets an entity for it, linked to that address, so the person, place or subject exists in Moon too:
+// with its uses counted, its OPAC page, and one entity however many records and spellings point to it.
+
+/** The outside authority files Moon's entities link to (the same list the server accepts as sameAs). */
+const OUTSIDE_AUTHORITY = /^https?:\/\/(id\.loc\.gov\/(authorities|rwo)\/|viaf\.org\/viaf\/|(www\.)?wikidata\.org\/(wiki|entity)\/Q\d+$|id\.worldcat\.org\/fast\/|isni\.org\/isni\/|orcid\.org\/)/;
+
+/** Names, subjects, publishers and places whose address is an LC, VIAF, Wikidata, FAST, ISNI or ORCID link. */
+export function findOutsideLinked(document: any): LinkTarget[] {
+  const graph: any[] = Array.isArray(document?.["@graph"]) ? document["@graph"] : [];
+  const targets: LinkTarget[] = [];
+  const visit = (parent: any, prop: string, kindOf: (n: any) => LinkKind, where: string) => {
+    for (const key of [`bf:${prop}`, prop]) {
+      if (parent?.[key] === undefined) continue;
+      for (const node of all(parent[key])) {
+        if (!node || typeof node !== "object") continue;
+        const id = String(node["@id"] ?? node.uri ?? "").trim();
+        if (!OUTSIDE_AUTHORITY.test(id)) continue;
+        const labels = labelsOf(node);
+        if (!labels.length) continue;
+        const kind = kindOf(node);
+        const label = labels.find((l) => ARABIC.test(l)) || labels[0];
+        const sameAs = [...new Set([id, ...sameAsOf(node)])].filter((u) => OUTSIDE_AUTHORITY.test(u));
+        targets.push({ node, kind, label, variants: labels.filter((l) => l !== label), where, sameAs, data: dataOf(node, kind, where) });
+      }
+      return; // the bf: key wins over a bare copy of the same property
+    }
+  };
+  for (const work of graph.filter((n) => isA(n, "Work"))) {
+    for (const c of all(get(work, "contribution"))) if (c && typeof c === "object") visit(c, "agent", () => "agent", "contributor");
+    visit(work, "subject", (n) => (isA(n, "Place") || isA(n, "GeographicCoverage") ? "place" : typesOf(n).some((t) => AGENT_TYPES.test(t)) ? "agent" : "topic"), "subject");
+  }
+  for (const instance of graph.filter((n) => isA(n, "Instance"))) {
+    for (const p of all(get(instance, "provisionActivity"))) {
+      if (!p || typeof p !== "object") continue;
+      visit(p, "agent", () => "agent", "publisher");
+      visit(p, "place", () => "place", "place of publication");
+    }
+  }
+  return targets;
+}
+
+/**
+ * Makes sure every outside-linked heading has its Moon entity (found by that link, else by name, else made).
+ * The record is not changed. Returns how many headings were looked up; never throws.
+ */
+export async function mirrorOutsideLinked(
+  document: any,
+  add: (input: { kind: LinkKind; label: string; variants: string[]; sameAs: string[]; data: Record<string, unknown> }) => Promise<unknown>,
+  max = 40,
+): Promise<number> {
+  const seen = new Set<string>();
+  let n = 0;
+  for (const t of findOutsideLinked(document).slice(0, max)) {
+    const key = `${t.kind}|${t.sameAs[0]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    try {
+      await add({ kind: t.kind, label: t.label, variants: t.variants, sameAs: t.sameAs, data: t.data });
+      n++;
+    } catch {
+      // One heading that cannot be stored never stops the save.
+    }
+  }
+  return n;
+}
+
 /** Links every unlinked name and subject; returns how many were linked. Never throws. */
 export async function linkAuthorities(
   document: any,
