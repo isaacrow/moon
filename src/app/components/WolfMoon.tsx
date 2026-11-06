@@ -1983,9 +1983,10 @@ export default function WolfMoon({
               /></React.Suspense>
             ) : (
             <>
-            {/* Field Display Mode Selector: Category Cards (Img 2) vs Standard MARC (Img 1) */}
-            <div 
-              className="flex items-center justify-between px-5 py-3 rounded-2xl mb-6 flex-wrap gap-3"
+            {/* How to catalogue: BIBFRAME forms, or MARC 21 converted to BIBFRAME as you type. The MARC 21
+                editor used to be a fourth layout chip here and was easy to miss; it is now the first choice. */}
+            <div
+              className="px-5 py-4 rounded-2xl mb-6 space-y-3"
               style={{
                 borderRadius: '20px',
                 background: 'rgba(255, 255, 255, 0.22)',
@@ -1995,68 +1996,91 @@ export default function WolfMoon({
                 boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.2), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5), inset 0 0 12px rgba(255, 255, 255, 0.25), 0 8px 32px rgba(0, 0, 0, 0.15)',
               }}
             >
-              <div className="flex items-center gap-2.5">
-                <Sliders className="h-4 w-4 text-sky-400" />
-                <span className="text-xs font-bold text-white tracking-wide">
-                  {language === "ar" ? "نوع ونمط عرض الحقول:" : "Field Layout Style:"}
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <span className="text-sm font-bold text-white tracking-wide">
+                  {language === "ar" ? "طريقة الفهرسة:" : "Catalogue in:"}
                 </span>
+                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-black/25 border border-white/10 w-full sm:w-auto" role="tablist" aria-label={language === "ar" ? "طريقة الفهرسة" : "How to catalogue"}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={fieldViewMode !== 'marc'}
+                    onClick={() => { if (fieldViewMode === 'marc') setFieldViewMode('categories'); }}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      fieldViewMode !== 'marc' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/75 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <Layers className="h-4 w-4" />
+                    <span>{language === "ar" ? "حقول BIBFRAME" : "BIBFRAME fields"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={fieldViewMode === 'marc'}
+                    onClick={() => setFieldViewMode('marc')}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      fieldViewMode === 'marc' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/75 hover:text-white hover:bg-white/10'
+                    }`}
+                    title={language === "ar" ? "فهرسة بمارك 21 مع تحويل فوري إلى BIBFRAME" : "Catalogue in MARC 21, converted to BIBFRAME as you type"}
+                  >
+                    <Code className="h-4 w-4" />
+                    <span>{language === "ar" ? "مارك 21 ← BIBFRAME فوراً" : "MARC 21 → BIBFRAME live"}</span>
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/25 border border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setFieldViewMode('categories')}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    fieldViewMode === 'categories'
-                      ? 'bg-blue-600 text-white shadow-lg scale-105'
-                      : 'text-white/70 hover:text-white hover:bg-white/10'
-                  }`}
-                  title="عرض تسجيلات الحقول المصنفة"
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                  <span>{language === "ar" ? "أقسام التسجيلات" : "Category Cards"}</span>
-                </button>
 
-                <button
-                  type="button"
-                  onClick={() => setFieldViewMode('standard')}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    fieldViewMode === 'standard'
-                      ? 'bg-blue-600 text-white shadow-lg scale-105'
-                      : 'text-white/70 hover:text-white hover:bg-white/10'
-                  }`}
-                  title="عرض الحقول المعيارية مع رموز مارك"
-                >
-                  <List className="h-3.5 w-3.5" />
-                  <span>{language === "ar" ? "حقول مارك المعيارية" : "Standard MARC Fields"}</span>
-                </button>
+              {fieldViewMode !== 'marc' && (
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <Sliders className="h-4 w-4 text-sky-400" />
+                    <span className="text-xs font-bold text-white/80 tracking-wide">
+                      {language === "ar" ? "نمط عرض الحقول:" : "Field layout:"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/25 border border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setFieldViewMode('categories')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        fieldViewMode === 'categories'
+                          ? 'bg-blue-600 text-white shadow-lg scale-105'
+                          : 'text-white/70 hover:text-white hover:bg-white/10'
+                      }`}
+                      title="عرض تسجيلات الحقول المصنفة"
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                      <span>{language === "ar" ? "أقسام التسجيلات" : "Category Cards"}</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => setFieldViewMode('both')}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    fieldViewMode === 'both'
-                      ? 'bg-blue-600 text-white shadow-lg scale-105'
-                      : 'text-white/70 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  <span>{language === "ar" ? "عرض الكل" : "Show Both"}</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => setFieldViewMode('standard')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        fieldViewMode === 'standard'
+                          ? 'bg-blue-600 text-white shadow-lg scale-105'
+                          : 'text-white/70 hover:text-white hover:bg-white/10'
+                      }`}
+                      title="عرض الحقول المعيارية مع رموز مارك"
+                    >
+                      <List className="h-3.5 w-3.5" />
+                      <span>{language === "ar" ? "حقول مارك المعيارية" : "Standard MARC Fields"}</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => setFieldViewMode('marc')}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    fieldViewMode === 'marc'
-                      ? 'bg-blue-600 text-white shadow-lg scale-105'
-                      : 'text-white/70 hover:text-white hover:bg-white/10'
-                  }`}
-                  title={language === "ar" ? "فهرسة بمارك 21 مع تحويل فوري إلى BIBFRAME" : "Catalogue in MARC 21, converted to BIBFRAME as you type"}
-                >
-                  <Code className="h-3.5 w-3.5" />
-                  <span>MARC 21</span>
-                </button>
-              </div>
+                    <button
+                      type="button"
+                      onClick={() => setFieldViewMode('both')}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        fieldViewMode === 'both'
+                          ? 'bg-blue-600 text-white shadow-lg scale-105'
+                          : 'text-white/70 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      <span>{language === "ar" ? "عرض الكل" : "Show Both"}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {fieldViewMode === 'marc' && (
@@ -2217,7 +2241,19 @@ export default function WolfMoon({
 
         {/* ===== MARC 21 VIEWER ===== */}
         {activeTab === "marc21-viewer" && (
-          <React.Suspense fallback={<LazyPanelFallback />}><Marc21Viewer workData={workData} instanceData={instanceData} theme={BM} isLegacy={isLegacy} w3cJsonLd={w3cJsonLd} recordId={recordId} /></React.Suspense>
+          <>
+            {/* This tab shows the record as MARC; cataloguing in MARC happens in the editor's MARC 21 mode. */}
+            <div className="flex justify-end mb-3">
+              <button
+                type="button"
+                onClick={() => { setFieldViewMode('marc'); setActiveTab("editor"); }}
+                className="flex items-center gap-2 px-4 py-2 rounded-full bg-blue-600 text-white text-sm font-bold hover:bg-blue-700"
+              >
+                <Code className="h-4 w-4" /> {language === "ar" ? "حرّر بمارك 21" : "Edit in MARC 21"}
+              </button>
+            </div>
+            <React.Suspense fallback={<LazyPanelFallback />}><Marc21Viewer workData={workData} instanceData={instanceData} theme={BM} isLegacy={isLegacy} w3cJsonLd={w3cJsonLd} recordId={recordId} /></React.Suspense>
+          </>
         )}
 
         {/* ===== TRIPLES ===== */}

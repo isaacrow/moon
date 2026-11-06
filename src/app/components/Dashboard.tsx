@@ -28,7 +28,7 @@ import {
   Zap,
   Search,
   Library,
-  Moon, Undo2, Download, Users} from 'lucide-react';
+  Moon, Undo2, Download, Users, Code2} from 'lucide-react';
 import moonLogoWhite from '../../assets/white.png';
 import '../../styles/glassmorphism.css';
 
@@ -321,6 +321,17 @@ Each is a real edition from Open Library; its author is linked to Wikidata, LC a
       gradient: 'from-emerald-500 via-teal-600 to-cyan-700',
       iconBg: 'from-emerald-400 to-teal-600'
     },
+    {
+      id: 'wolf-moon-marc',
+      label: 'MARC 21 → BIBFRAME',
+      description: isAr
+        ? 'فهرِس بمارك 21 (حقول أو نص) ويُبنى BIBFRAME فوراً وأنت تكتب'
+        : 'Catalogue in MARC 21 (fields or text); BIBFRAME is built as you type',
+      icon: Code2,
+      action: 'wolf-moon-marc',
+      gradient: 'from-indigo-600 via-blue-600 to-sky-700',
+      iconBg: 'from-indigo-400 to-sky-600'
+    },
   ];
 
   const formatTimestamp = (date: Date) => {
@@ -542,7 +553,15 @@ Each is a real edition from Open Library; its author is linked to Wikidata, LC a
               return (
                 <button
                   key={action.id}
-                  onClick={() => onNavigate?.(action.action)}
+                  onClick={() => {
+                    // The MARC 21 card opens the editor in its MARC 21 mode (the layout the editor remembers).
+                    if (action.action === 'wolf-moon-marc') {
+                      try { localStorage.setItem('moon-field-view-mode', 'marc'); } catch {}
+                      onNavigate?.('wolf-moon');
+                      return;
+                    }
+                    onNavigate?.(action.action);
+                  }}
                   className="group relative overflow-hidden transition-all duration-700 hover:scale-[1.02] active:scale-[0.98] focus:outline-none cursor-pointer flex flex-col justify-between"
                   style={{
                     animationName: 'fadeInUp',
