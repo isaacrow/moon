@@ -90,7 +90,7 @@ export function findUnlinked(document: any): LinkTarget[] {
 // and subjects reach an international authority (LC, VIAF, Wikidata, FAST, ISNI, ORCID), how many only
 // Moon's own entry, and which ones to link next.
 
-const MOON_AUTHORITY = /^https?:\/\/mooon\.site\/resource\/(agent|place|topic|hub)\/([^/?#.]+)$/;
+const MOON_AUTHORITY = /^https?:\/\/mooon\.site\/resource\/(agent|place|topic|hub|genre|period)\/([^/?#.]+)$/;
 
 export interface Heading { kind: LinkKind; label: string; uri: string | null; where: string }
 

@@ -10,6 +10,7 @@ import jsonld from "npm:jsonld@8.3.3";
 import { Parser, Writer } from "npm:n3@1.17.4";
 import { toBoundedRdfXml } from "./rdfXml.tsx";
 import { withLcAdminMetadata, type AdminFacts } from "./lcAdminMetadata.tsx";
+import { entityNodes } from "./entityDocument.tsx";
 import { withLcLabels } from "./lcLabels.tsx";
 
 export const BASE_URI = (Deno.env.get("MOON_URI_BASE") || "https://mooon.site/resource").replace(/\/+$/, "");
@@ -106,38 +107,13 @@ const AUTHORITY_CONTEXT: Record<string, string> = {
 };
 
 /**
- * A local authority entry as linked data: the thing itself (bf:Person, bf:Organization, bf:Place or
- * bf:Topic) with its preferred and variant names, owl:sameAs links to LC / VIAF / Wikidata, and dates.
+ * A Moon entity as linked data, in LC's two parts: the thing itself (bf:Person … bf:Temporal) and its MADS
+ * authority data at <uri>#authority (see entityDocument.tsx).
  */
 export function authorityDocument(a: {
   id: string; kind: string; label: string; variants: string[]; sameAs: string[]; note?: string | null; data?: any;
 }, expressions: string[] = []): any {
-  const uri = `${BASE_URI}/${a.kind}/${a.id}`;
-  const agentType = String(a.data?.agentType || "").toLowerCase();
-  const type = a.kind === "hub" ? "bf:Hub" : a.kind === "place" ? "bf:Place" : a.kind === "topic" ? "bf:Topic"
-    : agentType === "organization" ? "bf:Organization" : agentType === "family" ? "bf:Family" : "bf:Person";
-  const node: any = { "@id": uri, "@type": [type], "rdfs:label": a.label, "skos:prefLabel": a.label };
-  if (a.variants.length) node["skos:altLabel"] = a.variants;
-  if (a.sameAs.length) node["owl:sameAs"] = a.sameAs.map((s) => ({ "@id": s }));
-  if (a.note) node["skos:note"] = a.note;
-  if (a.data?.birthDate) node["madsrdf:birthDate"] = String(a.data.birthDate);
-  if (a.data?.deathDate) node["madsrdf:deathDate"] = String(a.data.deathDate);
-  if (a.kind === "hub") {
-    // A hub's name is its authorized access point; its title and creator as LC's hubs give them.
-    node["bflc:aap"] = a.label;
-    const title = String(a.data?.title || "").trim();
-    if (title) node["bf:title"] = { "@type": "bf:Title", "bf:mainTitle": title };
-    const creator = String(a.data?.creator || "").trim();
-    const creatorUri = String(a.data?.creatorUri || "").trim();
-    if (creator || /^https?:\/\//.test(creatorUri)) {
-      const agent: any = /^https?:\/\//.test(creatorUri) ? { "@id": creatorUri } : { "@type": "bf:Agent" };
-      if (creator) agent["rdfs:label"] = creator;
-      node["bf:contribution"] = { "@type": "bf:PrimaryContribution", "bf:agent": agent };
-    }
-    if (a.data?.language) node["bf:language"] = String(a.data.language);
-    if (expressions.length) node["bf:hasExpression"] = expressions.map((id) => ({ "@id": id }));
-  }
-  return { "@context": AUTHORITY_CONTEXT, "@graph": [node] };
+  return { "@context": AUTHORITY_CONTEXT, "@graph": entityNodes(a, BASE_URI, expressions) };
 }
 
 export async function authorityNTriples(doc: any): Promise<string> {
