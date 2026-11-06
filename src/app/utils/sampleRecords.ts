@@ -27,6 +27,14 @@ export interface SampleBook {
   genre: string;
   subjects: string[];
   summary?: string;
+  /** The author's real links (Wikidata, VIAF, LC, ISNI), Arabic name and dates, as Wikidata records them. */
+  authorFacts?: { links: string[]; arabicName?: string; birthDate?: string; deathDate?: string };
+  /** Where the edition data comes from (Open Library work and edition pages). */
+  openLibrary?: { work?: string; edition?: string };
+  lccn?: string;
+  oclc?: string[];
+  lcc?: { classificationPortion: string; itemPortion?: string };
+  ddc?: string;
 }
 
 export const SAMPLE_BOOKS: SampleBook[] = [
@@ -105,9 +113,18 @@ export function sampleRecord(b: SampleBook, cataloger: string): BIBFRAMERecord {
   const role = (en: string, arLabel: string, code: string) => ({
     '@id': `http://id.loc.gov/vocabulary/relators/${code}`, '@type': 'bf:Role', 'rdfs:label': `${en} (${arLabel})`,
   });
+  // The author, with the links Wikidata gives (saving makes them a Moon entity that keeps these links).
+  const facts = b.authorFacts;
+  const authorNode = (): any => ({
+    '@type': 'bf:Person',
+    'rdfs:label': ar && facts?.arabicName && facts.arabicName !== b.author ? [facts.arabicName, b.author] : b.author,
+    ...(facts?.links?.length ? { 'owl:sameAs': facts.links.map((u) => ({ '@id': u })) } : {}),
+    ...(facts?.birthDate ? { 'madsrdf:birthDate': facts.birthDate } : {}),
+    ...(facts?.deathDate ? { 'madsrdf:deathDate': facts.deathDate } : {}),
+  });
   const contribution: any[] = [{
     '@type': ['bf:Contribution', 'bf:PrimaryContribution'],
-    'bf:agent': { '@type': 'bf:Person', 'rdfs:label': b.author },
+    'bf:agent': authorNode(),
     'bf:role': role('Author', 'مؤلف', 'aut'),
   }];
   if (b.translator) {
@@ -129,6 +146,18 @@ export function sampleRecord(b: SampleBook, cataloger: string): BIBFRAMERecord {
     'bf:genreForm': { '@type': 'bf:GenreForm', 'rdfs:label': b.genre },
     'bf:subject': b.subjects.map((s) => ({ '@type': 'bf:Topic', 'rdfs:label': s })),
     ...(b.summary ? { 'bf:summary': { '@type': 'bf:Summary', 'rdfs:label': b.summary } } : {}),
+    // The work this edition expresses: a Hub (author + title), shared by every edition and translation.
+    'bf:expressionOf': {
+      '@type': 'bf:Hub',
+      'bflc:aap': `${(ar && facts?.arabicName) || b.author}. ${b.title}`,
+      'bf:title': { '@type': 'bf:Title', 'bf:mainTitle': b.title },
+      'bf:contribution': { '@type': ['bf:Contribution', 'bf:PrimaryContribution'], 'bf:agent': authorNode() },
+    },
+    ...(b.lcc || b.ddc ? { 'bf:classification': [
+      ...(b.lcc ? [{ '@type': 'bf:ClassificationLcc', 'bf:classificationPortion': b.lcc.classificationPortion, ...(b.lcc.itemPortion ? { 'bf:itemPortion': b.lcc.itemPortion } : {}),
+        'bf:source': { '@id': 'http://id.loc.gov/vocabulary/classSchemes/lcc' } }] : []),
+      ...(b.ddc ? [{ '@type': 'bf:ClassificationDdc', 'bf:classificationPortion': b.ddc }] : []),
+    ] } : {}),
     'bf:hasInstance': { '@id': uris.instance },
   };
   const instance = {
@@ -146,7 +175,12 @@ export function sampleRecord(b: SampleBook, cataloger: string): BIBFRAMERecord {
     },
     'bf:provisionActivityStatement': [b.place, b.publisher].filter(Boolean).join(' : ') + `, ${b.date}`,
     ...(b.extent ? { 'bf:extent': { '@type': 'bf:Extent', 'rdfs:label': b.extent } } : {}),
-    'bf:identifiedBy': [{ '@type': 'bf:Isbn', 'rdf:value': b.isbn }],
+    'bf:identifiedBy': [
+      { '@type': 'bf:Isbn', 'rdf:value': b.isbn },
+      ...(b.lccn ? [{ '@type': 'bf:Lccn', 'rdf:value': b.lccn }] : []),
+      // OCLC numbers as LC's converter writes them (035 $a (OCoLC)…): a local identifier assigned by OCLC.
+      ...(b.oclc || []).map((n) => ({ '@type': 'bf:Local', 'rdf:value': n, 'bf:assigner': { '@id': 'http://id.loc.gov/vocabulary/organizations/ocolc', '@type': 'bf:Agent' } })),
+    ],
     'bf:media': lc('mediaTypes/n', ar ? 'غير وسيط' : 'unmediated'),
     'bf:carrier': lc('carriers/nc', ar ? 'مجلد' : 'volume'),
     'bf:issuance': lc('issuance/mono', ar ? 'مفرد' : 'single unit'),
@@ -156,7 +190,7 @@ export function sampleRecord(b: SampleBook, cataloger: string): BIBFRAMERecord {
     '@type': 'bf:AdminMetadata',
     'bf:descriptionConventions': lc('descriptionConventions/rda', 'RDA'),
     'bf:descriptionLanguage': lc(`languages/${b.lang}`, ar ? 'العربية' : 'English'),
-    'bf:note': { '@type': 'bf:Note', 'rdfs:label': 'Sample record; edition data from Open Library.' },
+    'bf:note': { '@type': 'bf:Note', 'rdfs:label': `Sample record; edition data from Open Library${b.openLibrary?.edition ? ` (${b.openLibrary.edition})` : ''}${facts?.links?.length ? '; author links from Wikidata' : ''}.` },
   };
   return {
     '@context': { bf: 'http://id.loc.gov/ontologies/bibframe/', rdfs: 'http://www.w3.org/2000/01/rdf-schema#', rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#' },
@@ -223,16 +257,18 @@ export interface SampleImportResult {
 
 /** How many books one click of "Add sample books" adds. */
 export const SAMPLE_BATCH = 10;
+/** The most one click can add. */
+export const SAMPLE_MAX = 100;
 
 /** The books for one click: the built-in ones Moon does not have yet, then new real books the server finds
  *  on Open Library whose ISBN no record in Moon has. So every click adds books Moon did not have. */
-async function nextSampleBooks(): Promise<SampleBook[]> {
+async function nextSampleBooks(count = SAMPLE_BATCH): Promise<SampleBook[]> {
   const missing: SampleBook[] = [];
   for (const b of SAMPLE_BOOKS) {
-    if (missing.length >= SAMPLE_BATCH) break;
+    if (missing.length >= count) break;
     if (!(await getRecordById(sampleStorageId(b)).catch(() => null))) missing.push(b);
   }
-  const want = SAMPLE_BATCH - missing.length;
+  const want = count - missing.length;
   if (want <= 0) return missing;
   const res = await moonFetch<{ books?: SampleBook[]; error?: string }>(`/samples/books?count=${want}`);
   if (!res.ok) {
@@ -243,12 +279,17 @@ async function nextSampleBooks(): Promise<SampleBook[]> {
 }
 
 /** Saves the next batch of sample books (each one Moon does not have yet) and gives each a cover. */
-export async function importSampleRecords(cataloger: string, onProgress?: (done: number, total: number) => void): Promise<SampleImportResult> {
+export async function importSampleRecords(cataloger: string, onProgress?: (done: number, total: number) => void, count = SAMPLE_BATCH): Promise<SampleImportResult> {
   const result: SampleImportResult = { saved: 0, skipped: 0, covers: 0, failed: [] };
   let done = 0;
-  const books = await nextSampleBooks();
-  onProgress?.(0, books.length);
-  for (const b of books) {
+  const total = Math.min(Math.max(Math.round(count), 1), SAMPLE_MAX);
+  onProgress?.(0, total);
+  // Ten at a time: each batch is found (with its authors' Wikidata links) and saved before the next.
+  for (let added = 0; added < total;) {
+    const books = await nextSampleBooks(Math.min(SAMPLE_BATCH, total - added));
+    if (!books.length) break;
+    added += books.length;
+    for (const b of books) {
     const id = sampleStorageId(b);
     try {
       const existing = await getRecordById(id).catch(() => null);
@@ -271,7 +312,8 @@ export async function importSampleRecords(cataloger: string, onProgress?: (done:
     } catch (e) {
       result.failed.push(`${b.title}: ${e instanceof Error ? e.message : String(e)}`);
     }
-    onProgress?.(++done, books.length);
+    onProgress?.(++done, Math.max(total, done));
+    }
   }
   return result;
 }

@@ -10,8 +10,13 @@
  * without a database.
  */
 
-export type LinkKind = "agent" | "place" | "topic";
-export interface LinkTarget { node: any; kind: LinkKind; label: string; variants: string[]; where: string }
+export type LinkKind = "agent" | "place" | "topic" | "hub";
+/** A name, subject or hub to link. sameAs: the outside links the record already gives it (Wikidata, VIAF,
+ *  LC …), which its Moon entity keeps; data: what the entity should know (an agent's type, a hub's title). */
+export interface LinkTarget {
+  node: any; kind: LinkKind; label: string; variants: string[]; where: string;
+  sameAs: string[]; data: Record<string, unknown>;
+}
 
 const PLACEHOLDER = /^https?:\/\/(moonlib\.org\/authority\/|(www\.)?example\.(org|com)\/)/;
 const AGENT_TYPES = /(Person|Organization|Family|Meeting|Jurisdiction|Agent)$/;
@@ -35,6 +40,43 @@ function labelsOf(v: any): string[] {
 }
 
 /** Has a real address (LC, VIAF, Wikidata, a vocabulary, or Moon's own authority file). */
+/** owl:sameAs (and MADS's exact external authority) links on a node. */
+function sameAsOf(node: any): string[] {
+  const out: string[] = [];
+  for (const key of ["owl:sameAs", "sameAs", "madsrdf:hasExactExternalAuthority"]) {
+    for (const x of all(node?.[key])) {
+      const u = typeof x === "string" ? x : x?.["@id"];
+      if (typeof u === "string" && /^https?:\/\/\S+$/.test(u) && !PLACEHOLDER.test(u)) out.push(u);
+    }
+  }
+  return [...new Set(out)];
+}
+
+/** What an entity for this node should know: an agent's LC type and dates, a hub's title and creator. */
+function dataOf(node: any, kind: LinkKind, where: string): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  if (kind === "agent") {
+    const t = typesOf(node).join(" ");
+    data.agentType = /Organization|Corporate/.test(t) ? "organization" : /Family/.test(t) ? "family"
+      : /Meeting|Conference/.test(t) ? "meeting" : /Jurisdiction/.test(t) ? "jurisdiction"
+      : /Person/.test(t) ? "person" : where === "publisher" ? "organization" : "person";
+    for (const [from, to] of [["madsrdf:birthDate", "birthDate"], ["madsrdf:deathDate", "deathDate"]]) {
+      const v = labelsOf(node?.[from])[0];
+      if (v) data[to] = v;
+    }
+  }
+  if (kind === "hub") {
+    const title = all(get(node, "title")).map((t) => (typeof t === "string" ? t : labelsOf(get(t, "mainTitle"))[0])).find(Boolean);
+    if (title) data.title = title;
+    for (const c of all(get(node, "contribution"))) {
+      const agent = get(c, "agent");
+      const name = labelsOf(agent)[0];
+      if (name) { data.creator = name; if (typeof agent?.["@id"] === "string") data.creatorUri = agent["@id"]; break; }
+    }
+  }
+  return data;
+}
+
 function isLinked(node: any): boolean {
   const id = typeof node?.["@id"] === "string" ? node["@id"] : typeof node?.uri === "string" ? node.uri : "";
   return /^https?:\/\//.test(id.trim()) && !PLACEHOLDER.test(id.trim());
@@ -62,17 +104,21 @@ export function findUnlinked(document: any): LinkTarget[] {
       all(parent[key]).forEach((_v, i) => {
         const node = nodeAt(parent, key, list ? i : null);
         if (isLinked(node)) return;
-        const labels = labelsOf(node);
+        const kind = kindOf(node);
+        // A hub's name is its authorized access point (bflc:aap), as LC and Moon's MARC import write it.
+        const labels = kind === 'hub' && labelsOf(node['bflc:aap'] ?? node.aap).length ? labelsOf(node['bflc:aap'] ?? node.aap) : labelsOf(node);
         if (!labels.length) return;
         // Arabic script first as the heading, the other spellings as variants.
         const label = labels.find((l) => ARABIC.test(l)) || labels[0];
-        targets.push({ node, kind: kindOf(node), label, variants: labels.filter((l) => l !== label), where });
+        targets.push({ node, kind, label, variants: labels.filter((l) => l !== label), where, sameAs: sameAsOf(node), data: dataOf(node, kind, where) });
       });
       return; // the bf: key wins over a bare copy of the same property
     }
   };
   for (const work of graph.filter((n) => isA(n, "Work"))) {
     for (const c of all(get(work, "contribution"))) if (c && typeof c === "object") consider(c, "agent", () => "agent", "contributor");
+    // The work it expresses (a Hub, LC's "work group"): one Moon hub per access point, shared by every edition.
+    consider(work, "expressionOf", () => "hub", "work group");
     consider(work, "subject", (n) => (isA(n, "Place") || isA(n, "GeographicCoverage") ? "place" : typesOf(n).some((t) => AGENT_TYPES.test(t)) ? "agent" : "topic"), "subject");
   }
   for (const instance of graph.filter((n) => isA(n, "Instance"))) {
@@ -169,7 +215,7 @@ export function authorityReport(records: { id: string; title: string; document: 
 /** Links every unlinked name and subject; returns how many were linked. Never throws. */
 export async function linkAuthorities(
   document: any,
-  add: (input: { kind: LinkKind; label: string; variants: string[] }) => Promise<{ authority: { id: string; kind: string } }>,
+  add: (input: { kind: LinkKind; label: string; variants: string[]; sameAs: string[]; data: Record<string, unknown> }) => Promise<{ authority: { id: string; kind: string } }>,
   uriOf: (authority: { id: string; kind: string }) => string,
   max = 60,
 ): Promise<number> {
@@ -179,7 +225,7 @@ export async function linkAuthorities(
   for (const t of findUnlinked(document).slice(0, max)) {
     const key = `${t.kind}|${t.label}`;
     if (!seen.has(key)) {
-      seen.set(key, add({ kind: t.kind, label: t.label, variants: t.variants }).then((r) => uriOf(r.authority)).catch(() => null));
+      seen.set(key, add({ kind: t.kind, label: t.label, variants: t.variants, sameAs: t.sameAs, data: t.data }).then((r) => uriOf(r.authority)).catch(() => null));
     }
     const uri = await seen.get(key)!;
     if (!uri) continue;
