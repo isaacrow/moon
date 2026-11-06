@@ -76,6 +76,7 @@ import {
 
 // ===== APP UTILS =====
 import { saveRecord, getAllRecordsLocal, getRecordById, RecordConflictError, toServerDocument, checkDuplicates } from "../utils/recordStorageBackend";
+import { deriveRecord } from "../../services/deriveRecord";
 import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils/recordEditing";
 import { EditingWarning } from "./EditingWarning";
 import { RecordCoverPanel } from "./RecordCoverPanel";
@@ -176,6 +177,8 @@ interface WolfMoonProps {
   onRestoreDraft?: (draft: BIBFRAMERecord) => void;
   // Reopens the editor on the saved record as the server now has it (after a revert).
   onReloadRecord?: (record: BIBFRAMERecord) => void;
+  /** Opens a new record derived from this one (a new edition or a translation of the same Work). */
+  onDerive?: (derived: { work: any; instance: any }) => void;
 }
 
 
@@ -214,7 +217,7 @@ const LC_TEMPLATE_DEFAULTS = Object.fromEntries(
 // ============================== MAIN COMPONENT ==============================
 
 export default function WolfMoon({
-  onBack, initialWork, initialInstance, initialRecord, onRecordSaved, onRestoreDraft, onReloadRecord
+  onBack, initialWork, initialInstance, initialRecord, onRecordSaved, onRestoreDraft, onReloadRecord, onDerive
 }: WolfMoonProps) {
   const { t, i18n } = useTranslation();
   const { username, user } = useAuth();
@@ -429,6 +432,7 @@ export default function WolfMoon({
   // ===== DIALOGS =====
   const [showAuthoritySearch, setShowAuthoritySearch] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showDeriveMenu, setShowDeriveMenu] = useState(false);
   const [showIraqiAuthorityModal, setShowIraqiAuthorityModal] = useState(false);
 
   const handleInsertIraqiAuthor = (author: any, targetType: 'author' | 'contributor' | 'subject' = 'author') => {
@@ -1692,6 +1696,44 @@ export default function WolfMoon({
             <RefreshCw className="h-3 w-3 text-rose-400" />
             <span>{t("reset") || "Reset"}</span>
           </button>
+
+          {/* Copy and derive: a new edition or a translation of this Work (Libris / Marva) */}
+          {onDerive && (
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowDeriveMenu((s) => !s)}
+                aria-expanded={showDeriveMenu}
+                title={language === "ar" ? "ابدأ تسجيلة جديدة من هذا العمل" : "Start a new record from this Work"}
+                className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-2.5 py-1 text-xs font-bold cursor-pointer text-white"
+              >
+                <Copy className="h-3 w-3 text-amber-300" />
+                <span>{language === "ar" ? "اشتقاق" : "Derive"}</span>
+              </button>
+              {showDeriveMenu && (
+                <div className="absolute z-50 mt-1 min-w-[220px] rounded-xl bg-slate-900/95 p-1 text-xs text-white shadow-2xl ring-1 ring-white/10" style={{ insetInlineStart: 0 }}>
+                  {([
+                    ["edition", language === "ar" ? "طبعة جديدة من هذا العمل" : "New edition of this work", language === "ar" ? "العمل نفسه؛ الناشر والتاريخ والردمك جديدة" : "Same Work; new publisher, date, ISBN"],
+                    ["translation", language === "ar" ? "ترجمة لهذا العمل" : "Translation of this work", language === "ar" ? "عمل جديد مرتبط بالأصل (bf:translationOf)" : "New Work linked to the original (bf:translationOf)"],
+                  ] as const).map(([kind, label, hint]) => (
+                    <button key={kind} type="button" className="block w-full rounded-lg px-3 py-2 text-start hover:bg-white/10"
+                      onClick={() => {
+                        setShowDeriveMenu(false);
+                        if (saveStatus === "unsaved" && !window.confirm(language === "ar" ? "في هذه التسجيلة تغييرات غير محفوظة. المتابعة دون حفظ؟" : "This record has unsaved changes. Continue without saving?")) return;
+                        const fresh = mintUriSet(generateRecordId());
+                        onDerive(deriveRecord({ work: { ...workData, "@id": uriSet.work }, instance: { ...instanceData, "@id": uriSet.instance } }, kind, { work: fresh.work, instance: fresh.instance }));
+                        toast.success(kind === "edition"
+                          ? (language === "ar" ? "طبعة جديدة: أكمل بيانات النشر والردمك" : "New edition: fill in the publication details and ISBN")
+                          : (language === "ar" ? "ترجمة جديدة: أضف العنوان المترجم واللغة والمترجم" : "New translation: add the translated title, language and translator"));
+                      }}>
+                      <div className="font-bold">{label}</div>
+                      <div className="text-white/60">{hint}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Import Button */}
           <button
