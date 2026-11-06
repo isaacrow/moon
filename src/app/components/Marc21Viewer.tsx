@@ -15,8 +15,9 @@ import { toast } from "sonner";
 import {
   Database, Copy, Download, Search, ChevronDown, ChevronRight,
   BookOpen, Hash, User, Tag, Globe, FileText, Layers, 
-  Maximize2, Minimize2, BarChart3, Zap, List, LayoutGrid, AlignLeft
+  Maximize2, Minimize2, BarChart3, Zap, List, LayoutGrid, AlignLeft, Send
 } from "lucide-react";
+import { FolioSendDialog } from "./FolioSendDialog";
 import { generateMARC } from "../services/marcGenerator";
 import { bibframeToMarc } from "../../services/marc/bibframeToMarc";
 import { toIso2709, toMarcXml, toMrk } from "../../services/marc/marcRecord";
@@ -134,6 +135,7 @@ export function Marc21Viewer({ workData, instanceData, theme: BM, isLegacy, w3cJ
   const isRtl = i18n.language === "ar";
 
   const [viewMode, setViewMode] = useState<ViewMode>("tagged");
+  const [folioOpen, setFolioOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(MARC_CATEGORIES.map(c => c.id)));
   const [showFieldLabels, setShowFieldLabels] = useState(true);
@@ -337,6 +339,18 @@ export function Marc21Viewer({ workData, instanceData, theme: BM, isLegacy, w3cJ
               style={{ background: "rgba(59,130,246,0.12)", border: `1px solid ${BM.accentBorder}`, color: BM.accentDim }}>
               <Download className="h-3.5 w-3.5" /> .mrk
             </button>
+            {recordId && (
+              <button onClick={() => setFolioOpen(true)}
+                title={isRtl ? "أرسل التسجيلة المنشورة إلى FOLIO" : "Send the published record to FOLIO"}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:shadow-md"
+                style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", color: BM.success }}>
+                <Send className="h-3.5 w-3.5" /> FOLIO
+              </button>
+            )}
+            {folioOpen && recordId && (
+              <FolioSendDialog recordId={recordId} rtl={isRtl} onClose={() => setFolioOpen(false)}
+                onDownloadMarc={marcRecord ? () => downloadFile(toIso2709(marcRecord), `${fileBase}-folio.mrc`, "application/marc") : undefined} />
+            )}
             <button onClick={() => setIsFullscreen(!isFullscreen)}
               className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:shadow-md"
               style={{ background: "rgba(59,130,246,0.12)", border: `1px solid ${BM.accentBorder}`, color: BM.accentDim }}>
