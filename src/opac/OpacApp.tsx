@@ -28,6 +28,7 @@ import {
 } from './facets';
 import { MOON_API, moonHeaders } from '../app/utils/moonApi';
 import { t, opacLang, setOpacLang, type OpacLang } from './i18n';
+import { IiifViewer } from './IiifViewer';
 import './opac.css';
 
 type View =
@@ -1002,6 +1003,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
             </section>
           )}
 
+          <IiifViewer urls={copies.map(c => c.accessUrl).filter((u): u is string => !!u)} />
           <section className="panel glass rise" aria-labelledby="h-where-t" id="h-where">
             <h2 id="h-where-t">{t('أين تجده', 'Where to find it')}</h2>
             {copies.length === 0 ? (
