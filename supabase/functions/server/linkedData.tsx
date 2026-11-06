@@ -8,7 +8,7 @@
  */
 import jsonld from "npm:jsonld@8.3.3";
 import { Parser, Writer } from "npm:n3@1.17.4";
-import { toRdfXml } from "./rdfXml.tsx";
+import { toBoundedRdfXml } from "./rdfXml.tsx";
 
 export const BASE_URI = (Deno.env.get("MOON_URI_BASE") || "https://mooon.site/resource").replace(/\/+$/, "");
 
@@ -78,9 +78,9 @@ export async function toTurtle(document: any): Promise<string> {
     writer.end((err: Error | null, out: string) => (err ? reject(err) : resolve(out))));
 }
 
-/** N-Triples text → RDF/XML. */
+/** N-Triples text → RDF/XML, in the bounded-description shape LC's Marva and bibframe2marc read. */
 export function nTriplesToRdfXml(nt: string, prefixes: Record<string, string> = CONTEXT): string {
-  return toRdfXml(new Parser({ format: "N-Triples" }).parse(nt) as any, prefixes);
+  return toBoundedRdfXml(new Parser({ format: "N-Triples" }).parse(nt) as any, prefixes);
 }
 
 export async function toRdfXmlText(document: any): Promise<string> {
