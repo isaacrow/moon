@@ -1842,14 +1842,18 @@ export default function WolfMoon({
         <EditingWarning editors={otherEditors} language={language} />
 
         {activeTab === "editor" && (
-          <div className="mb-4">
-            <RecordCoverPanel recordId={storageId} coverUrl={coverUrl} isbn={findIsbn(instanceData)} language={language} onChange={setCoverUrl}
-              pendingCover={pendingCover} onPendingCoverChange={setPendingCover} />
-            <div className="mt-3">
+          // Cover, copies and romanization side by side (one column on narrow screens), so they take one row.
+          <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-3 items-stretch [&>*]:min-w-0 [&>*>*]:h-full">
+            <div>
+              <RecordCoverPanel recordId={storageId} coverUrl={coverUrl} isbn={findIsbn(instanceData)} language={language} onChange={setCoverUrl}
+                pendingCover={pendingCover} onPendingCoverChange={setPendingCover} />
+            </div>
+            {/* With copies listed (four fields each), the copies take the whole row below. */}
+            <div className={copies.length ? "lg:col-span-3 lg:order-last" : ""}>
               <CopiesPanel copies={copies} instanceId={uriSet.instance} language={language}
                 onChange={(next) => { setCopies(next); setSaveStatus("unsaved"); }} />
             </div>
-            <div className="mt-3">
+            <div>
               <RomanizePanel work={workData} instance={instanceData} language={language}
                 onApply={(w, inst) => { setWorkData(w); setInstanceData(inst); setSaveStatus("unsaved"); }} />
             </div>

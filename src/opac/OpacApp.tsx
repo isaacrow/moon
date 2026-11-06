@@ -130,11 +130,27 @@ function withTransition(update: () => void) {
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const run = () => {
     flushSync(update);
+    uniqueTransitionNames();
     window.scrollTo({ top: 0 });
   };
   const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
   if (reduce || !doc.startViewTransition) { run(); return; }
+  uniqueTransitionNames();
   doc.startViewTransition(run);
+}
+
+/**
+ * A view-transition-name used twice on a page makes the browser skip the whole transition (no glide at
+ * all). The same book can sit on two shelves of the home page, so only the first of each name keeps it.
+ */
+function uniqueTransitionNames() {
+  const seen = new Set<string>();
+  document.querySelectorAll<HTMLElement>('[style*="view-transition-name"]').forEach((el) => {
+    const name = el.style.viewTransitionName;
+    if (!name || name === 'none') return;
+    if (seen.has(name)) el.style.viewTransitionName = 'none';
+    else seen.add(name);
+  });
 }
 
 /** Pages render as one keyed block so the fallback fade and the card stagger replay on each visit. */
@@ -1130,6 +1146,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
               <button className="inline-link" onClick={() => downloadMarc(work, 'mrc', ctx.say)}>MARC 21 (ISO 2709)</button>
               <button className="inline-link" onClick={() => downloadMarc(work, 'xml', ctx.say)}>MARCXML</button>
               <button className="inline-link" onClick={() => downloadMarc(work, 'mrk', ctx.say)}>MarcEdit (.mrk)</button>
+              <button className="inline-link" onClick={() => download(`${work.id}.bib`, wolfMoonOpacService.generateCitations(work).bibtex + '\n', 'application/x-bibtex')}>BibTeX (.bib)</button>
             </div>
             <p className="muted">
               {t('كل ما في هذه الصفحة بيانات BIBFRAME مترابطة: لكل عمل وطبعة ونسخة وشخص وموضوع عنوان دائم على mooon.site، ويمكن الاستعلام عنها عبر', 'Everything on this page is linked BIBFRAME data: every work, edition, copy, person and subject has a permanent address on mooon.site, and can be queried with')}
@@ -1173,6 +1190,12 @@ function CiteDialog({ work, ctx, onClose }: { work: OpacWorkEntity; ctx: Ctx; on
                 <button className="icon-btn" aria-label={t(`انسخ ${k}`, `Copy ${k}`)} onClick={() => { navigator.clipboard?.writeText(v); setCopied(k); ctx.say(t(`نُسخ استشهاد ${k}`, `${k} citation copied`)); }}>
                   {copied === k ? <Check size={18} /> : <Copy size={18} />}
                 </button>
+                {k === 'BibTeX' && (
+                  <button className="icon-btn" aria-label={t('نزّل ملف ‎.bib', 'Download the .bib file')} title=".bib"
+                    onClick={() => { download(`${work.id}.bib`, v + '\n', 'application/x-bibtex'); ctx.say(t('نُزّل ملف ‎.bib', '.bib file downloaded')); }}>
+                    <Download size={18} />
+                  </button>
+                )}
               </div>
             </div>
           ))}

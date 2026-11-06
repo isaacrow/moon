@@ -1393,6 +1393,8 @@ app.get("/make-server-49c0e13c/records", async (c) => {
         version: record.version,
         publishedVersion: record.publishedVersion,
         assignedTo: record.assignedTo,
+        // The uploaded (or Open Library / Google Books) cover: the OPAC and the records list show it.
+        coverUrl: record.coverUrl,
         nodeCount: record.document?.['@graph']?.length || 0,
       }));
 
