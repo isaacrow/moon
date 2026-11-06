@@ -676,6 +676,10 @@ function buildAdminNode(data: any, recordAdmin: any, uriSet: any): W3CJsonLdNode
       "@type": "bf:GenerationProcess",
       "rdfs:label": data["bf:generationProcess"] || "Moon BIBFRAME Template v2.0"
     }],
+    // A copy-catalogued record says which description it was derived from (e.g. a Blue Core work).
+    ...(typeof (fromRecord["bf:derivedFrom"]?.["@id"] ?? fromRecord["bf:derivedFrom"]) === "string"
+      ? { "bf:derivedFrom": [{ "@id": fromRecord["bf:derivedFrom"]?.["@id"] ?? fromRecord["bf:derivedFrom"] }] }
+      : {}),
     ...(data["bf:catalogerId"] || data["bflc:catalogerId"]
       ? { "bflc:catalogerId": [{ "@value": String(data["bf:catalogerId"] || data["bflc:catalogerId"]) }] }
       : {})
