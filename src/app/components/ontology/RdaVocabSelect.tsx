@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { OntologyProperty } from '../../services/bibframeOntologyEngine';
+import { OntologyProperty } from '../../../services/standardFields';
 import { getRdaContentTypes, getRdaMediaTypes, getRdaCarrierTypes } from '../../services/locService';
 
 interface RdaVocabSelectProps {

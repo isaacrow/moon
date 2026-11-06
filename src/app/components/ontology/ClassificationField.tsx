@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { OntologyProperty } from '../../services/bibframeOntologyEngine';
+import { OntologyProperty } from '../../../services/standardFields';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';

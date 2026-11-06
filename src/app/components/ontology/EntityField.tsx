@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react';
-import { OntologyProperty } from '../../services/bibframeOntologyEngine';
+import { OntologyProperty } from '../../../services/standardFields';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Search, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
