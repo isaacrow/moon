@@ -2,6 +2,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { OpacApp } from './opac/OpacApp';
 import { ErrorBoundary } from './app/components/ErrorBoundary';
+import { installStaleChunkReload } from './app/utils/staleChunkReload';
+
+installStaleChunkReload();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
