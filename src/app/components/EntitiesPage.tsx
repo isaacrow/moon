@@ -6,9 +6,11 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X } from 'lucide-react';
+import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2 } from 'lucide-react';
 import { moonFetch, moonHeaders, MOON_API } from '../utils/moonApi';
 import { romanizeAll } from '../../services/romanize';
+import { searchLOCAuthorities, searchWikidata, searchVIAF, type AuthorityResult } from '../../services/authoritySearch';
+import { outsideRef, fetchOutsideEntity, formFromDraft, mergeDraftIntoForm, type OutsideSource } from '../../services/entityImport';
 import {
   ENTITY_KINDS, AGENT_TYPES, KIND_LABELS, AGENT_LABELS, detailFields, emptyForm, formFrom, formProblems, payloadFrom, hasArabic,
   type EntityKind, type EntityForm, type StoredEntity, type AgentType,
@@ -59,6 +61,14 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
   const [history, setHistory] = useState<Version[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [romanizing, setRomanizing] = useState(false);
+  // Copy from outside (step 3): the search panel, and what the last copy brought that the form does not show.
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyQuery, setCopyQuery] = useState('');
+  const [copyResults, setCopyResults] = useState<AuthorityResult[]>([]);
+  const [copySearching, setCopySearching] = useState(false);
+  const [copying, setCopying] = useState<string | null>(null);
+  const [draftData, setDraftData] = useState<Record<string, unknown>>({});
+  const [copiedFrom, setCopiedFrom] = useState<OutsideSource[]>([]);
 
   // Search as you type (a short pause first), in the chosen kind.
   useEffect(() => {
@@ -94,6 +104,65 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
     setForm(emptyForm(kind === 'all' ? 'agent' : kind));
     setUsage(null);
     setHistory(null);
+    setDraftData({});
+    setCopiedFrom([]);
+  };
+
+  // Search LC, Wikidata and VIAF as you type (LC's name, subject or genre file by the chosen kind; LC cannot
+  // match Arabic script, so Arabic queries are answered by Wikidata and VIAF). A pasted link is copied as is.
+  useEffect(() => {
+    if (!copyOpen) return;
+    const q = copyQuery.trim();
+    if (q.length < 2 || outsideRef(q)) { setCopyResults([]); return; }
+    let live = true;
+    const timer = setTimeout(async () => {
+      setCopySearching(true);
+      const lcFile = kind === 'topic' || kind === 'period' ? 'subjects' : kind === 'genre' ? 'genreForms' : 'names';
+      const lists = await Promise.all([
+        searchLOCAuthorities(q, lcFile).catch(() => []),
+        ...(kind === 'all' ? [searchLOCAuthorities(q, 'subjects').catch(() => [])] : []),
+        searchWikidata(q).catch(() => []),
+        ...(kind === 'all' || kind === 'agent' ? [searchVIAF(q).catch(() => [])] : []),
+      ]);
+      if (!live) return;
+      setCopySearching(false);
+      const seen = new Set<string>();
+      setCopyResults(lists.flat().filter((r) => r.uri && outsideRef(r.uri) && !seen.has(r.uri) && seen.add(r.uri)).slice(0, 30));
+    }, 350);
+    return () => { live = false; clearTimeout(timer); };
+  }, [copyOpen, copyQuery, kind]);
+
+  // Copies the outside record into the form. If Moon already has an entity with one of its links, that entity
+  // opens with what LC / Wikidata add (nothing of Moon's is overwritten); otherwise a new entity form opens.
+  // Nothing is saved until the cataloguer presses the save button.
+  const copyFrom = async (link: string, label?: string) => {
+    setCopying(link);
+    try {
+      const draft = await fetchOutsideEntity(link, { lang: isAr() ? 'ar' : 'en', fallbackLabel: label });
+      const params = new URLSearchParams({ kind: draft.kind });
+      draft.sameAs.forEach((u) => params.append('uri', u));
+      const found = await moonFetch<{ authority?: Entity | null }>(`/authorities/by-link?${params}`).catch(() => null);
+      const existing = found?.ok ? found.data.authority : null;
+      if (existing) {
+        await open(existing);
+        setForm(mergeDraftIntoForm(formFrom(existing), draft));
+        toast.message(t('لدى Moon هذا الكيان من قبل؛ فُتح مع ما يضيفه المصدر الخارجي. راجِعه ثم احفظ.', 'Moon already has this entity: it is open with what the outside record adds. Review it, then save.'));
+      } else {
+        setSelected(null);
+        setUsage(null);
+        setHistory(null);
+        setForm(formFromDraft(draft));
+        toast.success(t('نُسخ؛ راجِع الحقول ثم اضغط «أنشئ الكيان».', 'Copied. Review the fields, then press "Create entity".'));
+      }
+      setDraftData(draft.data);
+      setCopiedFrom(draft.sources);
+      setCopyOpen(false);
+      setCopyQuery('');
+    } catch (error) {
+      toast.error(t('تعذّر النسخ', 'Could not copy'), { description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setCopying(null);
+    }
   };
 
   const loadHistory = async () => {
@@ -109,7 +178,8 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
   const save = async () => {
     if (!form || problems.length) return;
     setSaving(true);
-    const body = payloadFrom(form, (selected?.data as Record<string, unknown>) || {});
+    // A copy's extras (a place's coordinates …) fill in, without replacing what the entity already holds.
+    const body = payloadFrom(form, { ...draftData, ...((selected?.data as Record<string, unknown>) || {}) });
     const res = selected
       ? await moonFetch<any>(`/authorities/${encodeURIComponent(selected.id)}`, { method: 'PUT', body: { ...body, version: selected.version } }).catch(() => null)
       : await moonFetch<any>('/authorities', { body }).catch(() => null);
@@ -127,8 +197,14 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
     }
     if (!res.ok) { toast.error(t('تعذّر الحفظ', 'Could not save'), { description: res.data?.error }); return; }
     const saved: Entity = res.data.authority;
-    if (!selected && res.data.existing) toast.message(t('هذا الكيان موجود من قبل؛ فُتح الموجود.', 'This entity already exists; the existing one is open.'));
-    else toast.success(t('حُفظ', 'Saved'));
+    if (!selected && res.data.existing) {
+      // The existing entity keeps its own fields; the outside links the new form carried are added to it.
+      const missing = body.sameAs.filter((u) => !(saved.sameAs || []).includes(u));
+      for (const uri of missing) await moonFetch<any>(`/authorities/${encodeURIComponent(saved.id)}/same-as`, { body: { uri } }).catch(() => null);
+      toast.message(t('هذا الكيان موجود من قبل؛ فُتح الموجود وأضيفت إليه الروابط الخارجية.', 'This entity already exists; the existing one is open, with the outside links added.'));
+    } else toast.success(t('حُفظ', 'Saved'));
+    setDraftData({});
+    setCopiedFrom([]);
     setList((l) => [saved, ...l.filter((x) => x.id !== saved.id)]);
     await open(saved);
   };
@@ -164,10 +240,80 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
           </button>
           <h1 className="text-2xl font-black text-slate-900">{t('الكيانات', 'Entities')}</h1>
           <span className="text-sm text-slate-500">{t('كل كيان يُفهرس مرة واحدة وله عنوان دائم، وتشير إليه التسجيلات.', 'Each entity is catalogued once, has a permanent address, and records point to it.')}</span>
-          <button onClick={startNew} className="ms-auto flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm font-bold hover:bg-slate-800">
+          <button
+            onClick={() => setCopyOpen((o) => !o)}
+            aria-expanded={copyOpen}
+            className="ms-auto flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-white text-sm font-bold text-slate-800 hover:bg-white"
+          >
+            <Download className="h-4 w-4" /> {t('انسخ من LC أو VIAF أو ويكي بيانات', 'Copy from LC, VIAF or Wikidata')}
+          </button>
+          <button onClick={startNew} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm font-bold hover:bg-slate-800">
             <Plus className="h-4 w-4" /> {t('كيان جديد', 'New entity')}
           </button>
         </div>
+
+        {copyOpen && (
+          <div className="p-4 space-y-3" style={GLASS}>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="h-4 w-4 absolute top-1/2 -translate-y-1/2 start-3 text-slate-400" />
+                <input
+                  autoFocus
+                  className={`${INPUT} ps-9`}
+                  dir="auto"
+                  value={copyQuery}
+                  onChange={(e) => setCopyQuery(e.target.value)}
+                  placeholder={t('اسم أو موضوع أو مكان، أو الصق رابطاً من LC أو VIAF أو ويكي بيانات', 'A name, subject or place, or paste an LC, VIAF or Wikidata link')}
+                  aria-label={t('بحث خارجي', 'Search outside')}
+                />
+              </div>
+              <button onClick={() => setCopyOpen(false)} className="p-1.5 rounded-full hover:bg-white/70" aria-label={t('إغلاق', 'Close')}>
+                <X className="h-4 w-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="text-xs text-slate-500">
+              {kind === 'all'
+                ? t('يبحث في أسماء مكتبة الكونغرس وموضوعاتها وفي ويكي بيانات وVIAF. اختر نوعاً لتضييق البحث.', 'Searches LC names and subjects, Wikidata and VIAF. Pick a kind above to narrow it.')
+                : t(`يبحث عن: ${L(KIND_LABELS[kind])}`, `Searching for: ${L(KIND_LABELS[kind])}`)}
+              {' · '}{t('النسخ يملأ النموذج ولا يُحفظ شيء قبل أن تضغط حفظ.', 'Copying fills the form; nothing is saved until you press save.')}
+            </div>
+            {outsideRef(copyQuery) ? (
+              <button
+                onClick={() => copyFrom(copyQuery.trim())}
+                disabled={!!copying}
+                className="w-full text-start px-3 py-2.5 rounded-xl bg-white/80 hover:bg-white flex items-center gap-2 disabled:opacity-60"
+              >
+                {copying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-sky-700" />}
+                <span className="text-sm font-semibold text-slate-800">{t('انسخ هذا السجل', 'Copy this record')}</span>
+                <span className="text-xs text-slate-500 break-all" dir="ltr">{outsideRef(copyQuery)?.uri}</span>
+              </button>
+            ) : (
+              <ul className="divide-y divide-slate-200/70 max-h-[40vh] overflow-y-auto">
+                {copySearching && <li className="px-3 py-3 text-sm text-slate-500">{t('جارٍ البحث…', 'Searching…')}</li>}
+                {!copySearching && copyQuery.trim().length >= 2 && !copyResults.length && (
+                  <li className="px-3 py-3 text-sm text-slate-500">{t('لا نتائج.', 'Nothing found.')}</li>
+                )}
+                {copyResults.map((r) => (
+                  <li key={r.uri}>
+                    <button
+                      onClick={() => copyFrom(r.uri, r.label)}
+                      disabled={!!copying}
+                      className="w-full text-start px-3 py-2.5 rounded-xl hover:bg-white/70 flex items-start gap-3 disabled:opacity-60"
+                    >
+                      <span className="mt-0.5 shrink-0 rounded-full bg-slate-900/80 text-white text-[10px] font-bold px-2 py-0.5">{r.source === 'LOC' ? 'LC' : r.source}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-semibold text-slate-900" dir="auto">{r.label}</span>
+                        {r.description && <span className="block text-xs text-slate-500 truncate" dir="auto">{r.description}</span>}
+                        <span className="block text-[11px] text-slate-400 break-all" dir="ltr">{r.uri}</span>
+                      </span>
+                      {copying === r.uri && <Loader2 className="h-4 w-4 animate-spin text-sky-700 shrink-0" />}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2" role="tablist" aria-label={t('نوع الكيان', 'Kind of entity')}>
           {(['all', ...ENTITY_KINDS] as const).map((k) => (
@@ -202,7 +348,7 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
               {list.map((e) => (
                 <li key={e.id}>
                   <button
-                    onClick={() => open(e)}
+                    onClick={() => { setDraftData({}); setCopiedFrom([]); open(e); }}
                     className={`w-full text-start px-3 py-2.5 rounded-xl hover:bg-white/70 ${selected?.id === e.id ? 'bg-white' : ''}`}
                   >
                     <div className="text-sm font-semibold text-slate-900" dir="auto">{e.label}</div>
@@ -229,6 +375,12 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
                 <div className="flex items-start gap-3">
                   <div className="flex-1">
                     <div className="text-xs font-semibold text-slate-500">{selected ? t('تعديل كيان', 'Edit entity') : t('كيان جديد', 'New entity')}</div>
+                    {copiedFrom.length > 0 && (
+                      <div className="text-xs text-emerald-700 font-semibold">
+                        {t('منسوخ من', 'Copied from')} {copiedFrom.map((s) => (s === 'lc' ? t('مكتبة الكونغرس', 'LC') : s === 'viaf' ? 'VIAF' : t('ويكي بيانات', 'Wikidata'))).join(' + ')}
+                        {' · '}{t('لم يُحفظ بعد', 'not saved yet')}
+                      </div>
+                    )}
                     {selected && (
                       <a href={selected.uri} target="_blank" rel="noreferrer" dir="ltr" className="text-xs text-sky-700 hover:underline break-all inline-flex items-center gap-1">
                         {selected.uri} <ExternalLink className="h-3 w-3" />
