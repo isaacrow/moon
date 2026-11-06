@@ -5,8 +5,11 @@
  * Work and Instance at once; otherwise "Apply to the record" does.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X, Wand2, Rows3, FileCode2, AlertTriangle, CheckCircle2, Zap } from 'lucide-react';
+import { Plus, X, Wand2, Rows3, FileCode2, AlertTriangle, CheckCircle2, Zap, SlidersHorizontal, Search } from 'lucide-react';
 import { parseMarcText, marcToText, marcTextToBibframe, BOOK_TEMPLATE, fieldName, tagBlock, type MarcRecord, type DataField } from '../../../services/marc/marcEditing';
+import { fieldDef, searchFields, subfieldName } from '../../../services/marc/marcDictionary';
+import { LEADER_POSITIONS, f008Positions, new008 } from '../../../services/marc/marcFixedFields';
+import { MarcFixedFieldForm } from './MarcFixedFieldForm';
 import { isControl } from '../../../services/marc/marcRecord';
 import { bibframeToMarc } from '../../../services/marc/bibframeToMarc';
 import { buildW3CJsonLd } from '../../../services/w3cJsonLdBuilder';
@@ -76,6 +79,30 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
   };
   const lineIssues = (i: number) => result.issues.filter((x) => x.line && x.line === parsed.lineOf[i]);
 
+  // The guided Leader / 008 form that is open ('LDR', or the index of a 008), and the add-a-field search.
+  const [guided, setGuided] = useState<string | null>(null);
+  const [addQuery, setAddQuery] = useState('');
+  const matches = useMemo(() => searchFields(addQuery, 10), [addQuery]);
+  /** Adds a field with the indicators MARC 21 gives it and its first subfield, in tag order. */
+  const addField = (tag: string) => {
+    const d = fieldDef(tag);
+    edit((r) => {
+      if (/^00\d$/.test(tag)) r.fields.push({ tag, data: tag === '008' ? new008() : '' });
+      else {
+        const first = Object.keys(d?.subfields || {}).find((c) => /[a-z]/.test(c)) || 'a';
+        r.fields.push({ tag, ind1: d?.ind1 ?? ' ', ind2: d?.ind2 ?? ' ', subfields: [[first, '']] });
+      }
+      r.fields.sort((a, b) => a.tag.localeCompare(b.tag));
+    });
+    setAddQuery('');
+  };
+  const guideButton = (key: string, label: string) => (
+    <button type="button" onClick={() => setGuided(guided === key ? null : key)} title={label} aria-label={label} aria-expanded={guided === key}
+      className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] ${guided === key ? 'bg-sky-600 text-white' : 'text-sky-300 hover:bg-white/10'}`}>
+      <SlidersHorizontal className="h-3.5 w-3.5" />{t('موجَّه', 'Guided')}
+    </button>
+  );
+
   const summary = useMemo(() => {
     const g: any[] = (graph as any)?.['@graph'] || [];
     const lab = (v: any): string => (v === undefined || v === null ? ''
@@ -128,7 +155,12 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
             <div className="flex items-center gap-2">
               <span className="w-12 text-center text-[11px] font-bold rounded py-1" style={{ background: BLOCK_COLORS.LDR, color: '#0f172a' }}>LDR</span>
               <input value={rec.leader.replace(/ /g, '\\')} onChange={(e) => edit((r) => { r.leader = e.target.value.replace(/\\/g, ' ').padEnd(24, ' ').slice(0, 24); })} className={`${mono} flex-1`} dir="ltr" aria-label={t('الفاتح', 'Leader')} />
+              {guideButton('LDR', t('الفاتح خانة بخانة', 'Leader position by position'))}
             </div>
+            {guided === 'LDR' && (
+              <MarcFixedFieldForm value={rec.leader} total={24} positions={LEADER_POSITIONS} ar={ar}
+                onChange={(next) => edit((r) => { r.leader = next; })} />
+            )}
             {rec.fields.map((f, i) => {
               const color = BLOCK_COLORS[tagBlock(f.tag)] || '#64748b';
               const issues = lineIssues(i);
@@ -141,7 +173,11 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
                       onBlur={(e) => { if (!/^\d{3}$/.test(e.target.value)) e.target.value = f.tag; }}
                       className="w-12 text-center font-mono text-[12px] font-bold rounded py-1 focus:outline-none" style={{ background: color, color: '#0f172a' }} aria-label={t('رمز الحقل', 'Tag')} dir="ltr" />
                     {isControl(f) ? (
-                      <input value={f.data.replace(/ /g, '\\')} onChange={(e) => edit((r) => { (r.fields[i] as any).data = e.target.value.replace(/\\/g, ' '); })} className={`${mono} flex-1 min-w-[200px]`} dir="ltr" aria-label={`${f.tag}`} />
+                      <>
+                        <input value={f.data.replace(/ /g, '\\')} onChange={(e) => edit((r) => { (r.fields[i] as any).data = e.target.value.replace(/\\/g, ' '); })} className={`${mono} flex-1 min-w-[200px]`} dir="ltr" aria-label={`${f.tag}`} />
+                        {f.tag === '008' && <span className={`text-[11px] font-mono ${f.data.length === 40 ? 'text-white/40' : 'text-amber-300'}`} dir="ltr">{f.data.length}/40</span>}
+                        {f.tag === '008' && guideButton(`008-${i}`, t('008 خانة بخانة', '008 position by position'))}
+                      </>
                     ) : (
                       <>
                         {(['ind1', 'ind2'] as const).map((k) => (
@@ -152,26 +188,61 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
                         {(f as DataField).subfields.map(([code, value], j) => (
                           <span key={j} className="inline-flex items-center gap-0.5">
                             <input value={code} maxLength={1} onChange={(e) => { const v = e.target.value.toLowerCase(); if (/^[a-z0-9]$/.test(v)) edit((r) => { (r.fields[i] as DataField).subfields[j][0] = v; }); }}
-                              className="w-6 text-center font-mono text-[12px] font-bold text-sky-300 bg-transparent focus:outline-none" dir="ltr" aria-label={t('رمز الحقل الفرعي', 'Subfield code')} />
+                              title={subfieldName(f.tag, code) || t('حقل فرعي غير معرّف لهذا الحقل', 'Not a subfield of this field')}
+                              className={`w-6 text-center font-mono text-[12px] font-bold bg-transparent focus:outline-none ${subfieldName(f.tag, code) || !fieldDef(f.tag) ? 'text-sky-300' : 'text-amber-300'}`} dir="ltr" aria-label={t('رمز الحقل الفرعي', 'Subfield code')} />
                             <input value={value} onChange={(e) => edit((r) => { (r.fields[i] as DataField).subfields[j][1] = e.target.value; })} dir="auto"
-                              className={`${mono}`} style={{ width: `${Math.min(40, Math.max(6, value.length + 2))}ch` }} aria-label={`${f.tag} $${code}`} />
+                              title={subfieldName(f.tag, code)} placeholder={subfieldName(f.tag, code)}
+                              className={`${mono}`} style={{ width: `${Math.min(40, Math.max(6, value.length + 2))}ch` }} aria-label={`${f.tag} $${code} ${subfieldName(f.tag, code)}`} />
                             <button type="button" onClick={() => edit((r) => { (r.fields[i] as DataField).subfields.splice(j, 1); })} className="opacity-0 group-hover:opacity-100 text-white/40 hover:text-rose-400" aria-label={t('احذف الحقل الفرعي', 'Remove subfield')}><X className="h-3 w-3" /></button>
                           </span>
                         ))}
-                        <button type="button" onClick={() => edit((r) => { (r.fields[i] as DataField).subfields.push(['a', '']); })} className="text-xs text-sky-300 hover:text-sky-200" aria-label={t('أضف حقلاً فرعياً', 'Add subfield')}>+$</button>
+                        {/* Add a subfield: the field's own subfields by name, or any code. */}
+                        <select value="" onChange={(e) => { const v = e.target.value; if (v) edit((r) => { (r.fields[i] as DataField).subfields.push([v, '']); }); }}
+                          className="w-12 rounded bg-transparent text-xs font-bold text-sky-300 hover:bg-white/10 focus:outline-none cursor-pointer" aria-label={t('أضف حقلاً فرعياً', 'Add subfield')} title={t('أضف حقلاً فرعياً', 'Add subfield')}>
+                          <option value="">+$</option>
+                          {Object.entries(fieldDef(f.tag)?.subfields || {}).map(([sc, name]) => <option key={sc} value={sc}>${sc} — {name}</option>)}
+                          {!fieldDef(f.tag) && 'abcdefghijklmnopqrstuvwxyz0123456789'.split('').map((sc) => <option key={sc} value={sc}>${sc}</option>)}
+                        </select>
                       </>
                     )}
                     <span className="ms-auto text-[11px] text-white/40" dir="auto">{fieldName(f.tag, ar)}</span>
                     <button type="button" onClick={() => edit((r) => { r.fields.splice(i, 1); })} className="opacity-0 group-hover:opacity-100 text-white/40 hover:text-rose-400" aria-label={t('احذف الحقل', 'Remove field')}><X className="h-3.5 w-3.5" /></button>
                   </div>
+                  {isControl(f) && f.tag === '008' && guided === `008-${i}` && (
+                    <MarcFixedFieldForm value={f.data} total={40} positions={f008Positions(rec.leader)} ar={ar}
+                      onChange={(next) => edit((r) => { (r.fields[i] as any).data = next; })} />
+                  )}
                   {issues.map((x, k) => <div key={k} className={`ps-14 text-[11px] ${x.level === 'error' ? 'text-rose-300' : 'text-amber-200'}`}>{ar ? x.ar : x.en}</div>)}
                 </div>
               );
             })}
+            {/* Add any MARC 21 field: by tag ("505") or by name ("contents", "ملاحظة"). */}
+            <div className="relative pt-2">
+              <div className="flex items-center gap-2 rounded-lg bg-black/30 border border-white/10 px-2 focus-within:border-sky-400">
+                <Search className="h-3.5 w-3.5 text-white/50" />
+                <input value={addQuery} onChange={(e) => setAddQuery(e.target.value)} dir="auto"
+                  onKeyDown={(e) => { if (e.key === 'Enter' && matches[0]) { e.preventDefault(); addField(matches[0].tag); } if (e.key === 'Escape') setAddQuery(''); }}
+                  placeholder={t('أضف حقلاً: اكتب الرقم أو الاسم (505، ملاحظة، series…)', 'Add a field: type its tag or name (505, contents, series…)')}
+                  className="flex-1 bg-transparent py-1.5 text-xs text-white placeholder:text-white/40 focus:outline-none" aria-label={t('أضف حقلاً', 'Add a field')} />
+              </div>
+              {matches.length > 0 && (
+                <ul className="absolute z-20 mt-1 w-full max-h-72 overflow-auto rounded-lg border border-white/10 bg-slate-900/95 p-1 shadow-xl" role="listbox">
+                  {matches.map((d) => (
+                    <li key={d.tag}>
+                      <button type="button" onClick={() => addField(d.tag)} className="flex w-full items-center gap-2 rounded px-2 py-1 text-start text-xs text-white hover:bg-white/10">
+                        <span className="w-9 shrink-0 rounded text-center font-mono font-bold" style={{ background: BLOCK_COLORS[tagBlock(d.tag)], color: '#0f172a' }}>{d.tag}</span>
+                        <span dir="auto" className="flex-1">{ar ? d.ar : d.en}</span>
+                        {!d.repeatable && rec.fields.some((x) => x.tag === d.tag) && <span className="text-[10px] text-amber-300">{t('موجود ولا يتكرر', 'already here, not repeatable')}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {['020', '041', '082', '100', '246', '250', '490', '500', '520', '600', '650', '651', '700'].map((tag) => (
+              {['008', '020', '041', '082', '100', '246', '250', '490', '500', '504', '505', '520', '546', '600', '650', '651', '700', '856'].map((tag) => (
                 <button key={tag} type="button" title={fieldName(tag, ar)}
-                  onClick={() => edit((r) => { r.fields.push({ tag, ind1: ' ', ind2: tag.startsWith('6') ? '0' : ' ', subfields: [['a', '']] }); r.fields.sort((a, b) => a.tag.localeCompare(b.tag)); })}
+                  onClick={() => addField(tag)}
                   className="inline-flex items-center gap-0.5 rounded-md px-2 py-0.5 font-mono text-[11px] text-white/80 hover:bg-white/10" style={{ border: `1px solid ${BLOCK_COLORS[tagBlock(tag)]}66` }}>
                   <Plus className="h-3 w-3" />{tag}
                 </button>

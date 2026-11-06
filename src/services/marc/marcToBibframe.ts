@@ -177,8 +177,18 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
   if (parts.length) work['bf:hasPart'] = parts;
 
   // ---- Language, content, media, carrier, issuance ----
+  // The 008 language first, then every text language in 041 $a/$d (each code three letters; old records
+  // run several together in one $a: "araeng").
+  const langs: string[] = [];
   const lang = f008.slice(35, 38).trim();
-  if (/^[a-z]{3}$/.test(lang) && !['und', 'zxx', 'mul'].includes(lang)) work['bf:language'] = { '@id': `${VOCAB}/languages/${lang}` };
+  if (/^[a-z]{3}$/.test(lang) && !['und', 'zxx', 'mul'].includes(lang)) langs.push(lang);
+  for (const f of data(r, '041')) {
+    for (const v of [...subs(f, 'a'), ...subs(f, 'd')]) for (const code of v.trim().toLowerCase().match(/[a-z]{3}/g) || []) if (!langs.includes(code) && !['und', 'zxx', 'mul'].includes(code)) langs.push(code);
+  }
+  if (langs.length) work['bf:language'] = langs.length === 1 ? { '@id': `${VOCAB}/languages/${langs[0]}` } : langs.map((l) => ({ '@id': `${VOCAB}/languages/${l}` }));
+  // Geographic area codes (043 $a "a-iq---") as the Work's geographic coverage.
+  const areas = data(r, '043').flatMap((f) => subs(f, 'a')).map((v) => v.trim().replace(/-+$/, '')).filter((v) => /^[a-z]{1,3}(-[a-z]{2,3})?$/.test(v));
+  if (areas.length) work['bf:geographicCoverage'] = areas.map((a) => ({ '@id': `${VOCAB}/geographicAreas/${a}` }));
   const rdaNode = (tag: string, vocab: string) => {
     const f = data(r, tag)[0];
     const code = sub(f, 'b');
@@ -197,6 +207,22 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
   for (const f of data(r, '010')) if (sub(f, 'a')) identifiers.push({ '@type': 'bf:Lccn', 'rdf:value': sub(f, 'a').trim() });
   for (const f of data(r, '020')) if (number(sub(f, 'a'))) identifiers.push({ '@type': 'bf:Isbn', 'rdf:value': number(sub(f, 'a')) });
   for (const f of data(r, '022')) if (sub(f, 'a')) identifiers.push({ '@type': 'bf:Issn', 'rdf:value': sub(f, 'a').trim() });
+  // Other standard numbers (024), by first indicator; 7 names its scheme in $2 (doi, hdl, uri …).
+  const STANDARD: Record<string, string> = { '0': 'bf:Isrc', '1': 'bf:Upc', '2': 'bf:Ismn', '3': 'bf:Ean', '4': 'bf:Sici' };
+  const SCHEME: Record<string, string> = { doi: 'bf:Doi', hdl: 'bf:Hdl', isni: 'bf:Isni', orcid: 'bf:Identifier', uri: 'bf:Identifier' };
+  for (const f of data(r, '024')) {
+    const value = sub(f, 'a').trim();
+    if (!value) continue;
+    const scheme = sub(f, '2').trim().toLowerCase();
+    const type = STANDARD[f.ind1] || SCHEME[scheme] || 'bf:Identifier';
+    identifiers.push({ '@type': type, 'rdf:value': value, ...(type === 'bf:Identifier' && scheme ? { 'bf:source': { '@type': 'bf:Source', 'rdfs:label': scheme } } : {}) });
+  }
+  // System control numbers (035 "(OCoLC)12345"): local identifiers, with the agency in the parentheses.
+  for (const f of data(r, '035')) {
+    const m = sub(f, 'a').trim().match(/^\(([^)]+)\)\s*(.+)$/);
+    const value = m ? m[2] : sub(f, 'a').trim();
+    if (value) identifiers.push({ '@type': 'bf:Local', 'rdf:value': value, ...(m ? { 'bf:assigner': { '@type': 'bf:Organization', 'rdfs:label': m[1] } } : {}) });
+  }
   if (identifiers.length) instance['bf:identifiedBy'] = identifiers;
 
   // ---- Classification ----
@@ -234,6 +260,36 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
   if (notes.length) work['bf:note'] = notes;
   const summaries = data(r, '520').map((f) => sub(f, 'a')).filter(Boolean);
   if (summaries.length) work['bf:summary'] = summaries;
+  // Notes with their own BIBFRAME homes, as LC's marc2bibframe2 places them.
+  const label = (tag: string, codes = 'a') => data(r, tag).map((f) => f.subfields.filter(([c]) => codes.includes(c)).map(([, v]) => v.trim()).filter(Boolean).join(' ')).filter(Boolean);
+  const dissertations = data(r, '502').map((f) => {
+    const d: any = { '@type': 'bf:Dissertation' };
+    if (sub(f, 'a')) d['rdfs:label'] = clean(sub(f, 'a'));
+    if (sub(f, 'b')) d['bf:degree'] = clean(sub(f, 'b'));
+    if (sub(f, 'c')) d['bf:grantingInstitution'] = { '@type': 'bf:Organization', 'rdfs:label': clean(sub(f, 'c')) };
+    if (sub(f, 'd')) d['bf:date'] = clean(sub(f, 'd'));
+    return Object.keys(d).length > 1 ? d : null;
+  }).filter(Boolean);
+  if (dissertations.length) work['bf:dissertation'] = dissertations;
+  const bibliographies = label('504');
+  if (bibliographies.length) instance['bf:supplementaryContent'] = bibliographies.map((v) => ({
+    '@type': 'bf:SupplementaryContent', '@id': `${VOCAB}/msupplcont/bibliography`, 'rdfs:label': 'bibliography', 'bf:note': { '@type': 'bf:Note', 'rdfs:label': v },
+  }));
+  const contents = label('505', 'agrt');
+  if (contents.length) work['bf:tableOfContents'] = contents.map((v) => ({ '@type': 'bf:TableOfContents', 'rdfs:label': v }));
+  const audiences = label('521');
+  if (audiences.length) work['bf:intendedAudience'] = audiences.map((v) => ({ '@type': 'bf:IntendedAudience', 'rdfs:label': v }));
+  const policies = [
+    ...label('506').map((v) => ({ '@type': 'bf:AccessPolicy', 'rdfs:label': v })),
+    ...label('540').map((v) => ({ '@type': 'bf:UsePolicy', 'rdfs:label': v })),
+  ];
+  if (policies.length) instance['bf:usageAndAccessPolicy'] = policies;
+  const typedNotes = [
+    ...label('546', 'ab').map((v) => ({ '@type': 'bf:Note', 'bf:noteType': 'language', 'rdfs:label': v })),
+    ...label('588').map((v) => ({ '@type': 'bf:Note', 'bf:noteType': 'description source', 'rdfs:label': v })),
+    ...label('586').map((v) => ({ '@type': 'bf:Note', 'bf:noteType': 'awards', 'rdfs:label': v })),
+  ];
+  if (typedNotes.length) instance['bf:note'] = typedNotes;
 
   // ---- Subjects and genre ----
   const SUBJECT_TYPE: Record<string, string> = { '600': 'bf:Person', '610': 'bf:Organization', '611': 'bf:Meeting', '630': 'bf:Hub', '650': 'bf:Topic', '651': 'bf:Place' };
@@ -250,6 +306,14 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
     if (link(f)) node['@id'] = link(f);
     return heading ? node : null;
   }).filter(Boolean);
+  // Chronological terms (648) and uncontrolled index terms (653).
+  for (const f of data(r, '648')) {
+    const heading = f.subfields.filter(([c]) => /[axyzv]/.test(c)).map(([, v]) => clean(v)).filter(Boolean).join('--');
+    if (heading) subjects.push({ '@type': 'bf:Temporal', 'rdfs:label': heading, ...(link(f) ? { '@id': link(f) } : {}) });
+  }
+  for (const f of data(r, '653')) for (const v of subs(f, 'a').map(clean).filter(Boolean)) {
+    subjects.push({ '@type': 'bf:Topic', 'rdfs:label': v, 'bf:source': { '@type': 'bf:Source', 'rdfs:label': 'uncontrolled' } });
+  }
   if (subjects.length) work['bf:subject'] = subjects;
   const genres = data(r, '655').map((f) => {
     const node: any = { '@type': 'bf:GenreForm', 'rdfs:label': clean(sub(f, 'a')) };

@@ -135,7 +135,18 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     if (isA(ident, 'bf:Lccn')) push(field('010', ' ', ' ', [sf('a', value)]));
     else if (isA(ident, 'bf:Isbn')) push(field('020', ' ', ' ', [sf('a', value)]));
     else if (isA(ident, 'bf:Issn')) push(field('022', ' ', ' ', [sf('a', value)]));
+    else if (isA(ident, 'bf:Local')) {
+      const agency = text(get(ident, 'assigner'));
+      push(field('035', ' ', ' ', [sf('a', agency ? `(${agency})${value}` : value)]));
+    } else {
+      const ind1 = { 'bf:Isrc': '0', 'bf:Upc': '1', 'bf:Ismn': '2', 'bf:Ean': '3', 'bf:Sici': '4' }[types(ident).find((t) => /^bf:(Isrc|Upc|Ismn|Ean|Sici)$/.test(t)) || ''] || '7';
+      const scheme = isA(ident, 'bf:Doi') ? 'doi' : isA(ident, 'bf:Hdl') ? 'hdl' : isA(ident, 'bf:Isni') ? 'isni' : text(get(ident, 'source'));
+      if (value && (ind1 !== '7' || scheme)) push(field('024', ind1, ' ', [sf('a', value), ind1 === '7' ? sf('2', scheme) : null]));
+    }
   }
+  // More than one language: all of them in 041 (the 008 holds the first).
+  const languages = all(get(work, 'language')).map((l) => codeIn(l, 'languages')).filter(Boolean);
+  if (languages.length > 1) push(field('041', '0', ' ', languages.map((l) => sf('a', l))));
   push(field('040', ' ', ' ', [sf('b', codeIn(get(admin, 'descriptionLanguage'), 'languages')), sf('e', codeIn(get(admin, 'descriptionConventions'), 'descriptionConventions'))]));
   // Geographic area codes (MARC 043, padded to seven characters: "a-iq---"), from the Work's coverage.
   const areas = [...new Set(all(get(work, 'geographicCoverage')).map((g) => codeIn(g, 'geographicAreas')).filter(Boolean))];
@@ -176,6 +187,17 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     ps('p', get(title, 'partName')),
     ps('c', get(instance, 'responsibilityStatement')),
   ]);
+  // Variant and parallel titles (246), the second indicator from the variant's type.
+  const VARTYPE_IND2: Record<string, string> = { por: '0', dis: '2', cov: '4', atp: '5', cap: '6', run: '7', spi: '8' };
+  for (const v of all(get(instance, 'title')).filter((x) => isA(x, 'bf:VariantTitle') || isA(x, 'bf:ParallelTitle'))) {
+    const vt = types(v).map((t) => (t.match(/vartitletype\/(\w+)$/) || [])[1]).find(Boolean) || '';
+    const ind2 = isA(v, 'bf:ParallelTitle') ? '1' : VARTYPE_IND2[vt] ?? ' ';
+    const kind = text(get(v, 'variantType'));
+    pfield('246', ind2 === ' ' && kind ? '1' : '3', ind2, [
+      kind && ind2 === ' ' ? (['i', `${kind}:`] as PSub) : null,
+      ps('a', get(v, 'mainTitle')), ps('b', get(v, 'subtitle')), ps('n', get(v, 'partNumber')), ps('p', get(v, 'partName')),
+    ]);
+  }
   pfield('250', ' ', ' ', [ps('a', get(instance, 'editionStatement'))]);
   for (const p of provisions) {
     const ind2 = PROVISION_IND2[types(p).find((t) => PROVISION_IND2[t] !== undefined) || 'bf:Publication'];
@@ -198,7 +220,19 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
   else for (const s of texts(series)) push(field('490', '0', ' ', [sf('a', s)]));
 
   // ---- Notes ----
-  for (const n of [...all(get(work, 'note')), ...all(get(instance, 'note'))]) push(field('500', ' ', ' ', [sf('a', text(n))]));
+  // Typed notes go to their own fields (546 language, 588 source of description, 586 awards); the rest are 500.
+  const NOTE_TAG: Record<string, string> = { language: '546', 'description source': '588', awards: '586' };
+  for (const n of [...all(get(work, 'note')), ...all(get(instance, 'note'))]) {
+    const noteType = text(get(n, 'noteType')).toLowerCase();
+    push(field(NOTE_TAG[noteType] || '500', ' ', ' ', [sf('a', text(n))]));
+  }
+  for (const d of all(get(work, 'dissertation'))) {
+    push(field('502', ' ', ' ', [sf('a', text(d['rdfs:label'])), sf('b', text(get(d, 'degree'))), sf('c', text(get(d, 'grantingInstitution'))), sf('d', text(get(d, 'date')))]));
+  }
+  for (const s of all(get(instance, 'supplementaryContent'))) {
+    if (/bibliograph/i.test(`${uri(s)} ${text(s['rdfs:label'])}`)) push(field('504', ' ', ' ', [sf('a', text(get(s, 'note')) || text(s))]));
+  }
+  for (const p of all(get(instance, 'usageAndAccessPolicy'))) push(field(isA(p, 'bf:UsePolicy') ? '540' : '506', ' ', ' ', [sf('a', text(p))]));
   for (const s of all(get(work, 'summary'))) push(field('520', ' ', ' ', [sf('a', text(s))]));
   // Contents and audience, as LC's bibframe2marc writes them.
   for (const t of [...all(get(work, 'tableOfContents')), ...all(get(instance, 'tableOfContents'))]) push(field('505', '0', ' ', [sf('a', text(t))]));
@@ -209,6 +243,8 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     const node = resolve(s, graph);
     const link = uri(node);
     const lcsh = /id\.loc\.gov\/authorities\/(subjects|names)\//.test(link);
+    if (/^uncontrolled$/i.test(text(get(node, 'source')))) { push(field('653', ' ', ' ', [sf('a', text(node))])); continue; }
+    if (isA(node, 'bf:Temporal')) { push(field('648', ' ', lcsh ? '0' : '4', [sf('a', text(node)), sf('0', link)])); continue; }
     const tag = isA(node, 'bf:Place') ? '651' : isA(node, 'bf:Person') ? '600' : isA(node, 'bf:Organization') ? '610' : '650';
     push(field(tag, tag === '600' ? '1' : tag === '610' ? '2' : ' ', lcsh ? '0' : '4', [sf('a', text(node)), sf('0', link)]));
   }
@@ -217,6 +253,14 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     const link = uri(node);
     const lcgft = /authorities\/genreForms\//.test(link);
     push(field('655', ' ', lcgft ? '7' : '4', [sf('a', text(node)), lcgft ? sf('2', 'lcgft') : null, sf('0', link)]));
+  }
+
+  // Series the Work belongs to (830), from its series relations, with the volume ($v) and the series' URI.
+  for (const rel of all(get(work, 'relation'))) {
+    if (!/relationship\/series$|^series$/.test(uri(get(rel, 'relationship')) || text(get(rel, 'relationship')))) continue;
+    const hub = resolve(get(rel, 'associatedResource'), graph);
+    const name = text(get(get(hub, 'title'), 'mainTitle')) || text(hub?.['bflc:aap']);
+    push(field('830', ' ', '0', [sf('a', name), sf('v', text(get(rel, 'seriesEnumeration'))), sf('1', uri(hub))]));
   }
 
   // The Work this Instance is an instance of, by its URI (758), as LC's bibframe2marc writes it.
