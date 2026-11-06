@@ -34,6 +34,7 @@ import * as sparqlStore from "./sparqlEndpoint.tsx";
 import { missingForPublish, shapesFromProfile } from "./publishGate.tsx";
 import { PROFILES } from "./profiles.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
+import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
 import { reconcile, manifest } from "./reconcile.tsx";
 import { linkAuthorities } from "./authorityLinking.tsx";
@@ -975,6 +976,21 @@ async function reconcileEndpoint(c: any) {
 }
 app.get("/make-server-49c0e13c/resource/reconcile", reconcileEndpoint);
 app.post("/make-server-49c0e13c/resource/reconcile", reconcileEndpoint);
+
+// ISNI name search for the editor (ISNI does not allow calls from other sites' browsers).
+app.get("/make-server-49c0e13c/isni/search", async (c) => {
+  try {
+    if (!(await getSession(c))) return c.json({ error: 'Sign in to search ISNI' }, 401);
+    const q = (c.req.query('q') || '').trim();
+    if (q.length < 2) return c.json({ names: [] });
+    const res = await fetch(isniSearchUrl(q), { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return c.json({ error: `ISNI answered ${res.status}` }, 502);
+    return c.json({ names: parseIsni(await res.text()) });
+  } catch (error) {
+    console.error('ISNI search error:', error);
+    return c.json({ error: 'ISNI could not be reached' }, 502);
+  }
+});
 
 app.get("/make-server-49c0e13c/resource/oai", oaiEndpoint);
 app.post("/make-server-49c0e13c/resource/oai", oaiEndpoint);

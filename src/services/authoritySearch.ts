@@ -3,6 +3,7 @@
  * Integrates with LOC, VIAF, and Wikidata APIs
  * Provides unified authority search for cataloging
  */
+import { searchFAST, searchORCID, searchISNI } from './moreAuthorities';
 import { lookupIsbnEverywhere, normalizeIsbn, IsbnInfo, IsbnRecord, IsbnSource } from './isbnLookup';
 import { searchMoonAuthorities } from './moonAuthorities';
 
@@ -10,7 +11,7 @@ export interface AuthorityResult {
   label: string;
   uri: string;
   /** Moon = Moon's own authority file (https://mooon.site/resource/agent|place|topic/…). */
-  source: 'LOC' | 'VIAF' | 'Wikidata' | 'Local' | 'Moon';
+  source: 'LOC' | 'VIAF' | 'Wikidata' | 'Local' | 'Moon' | 'FAST' | 'ORCID' | 'ISNI';
   type?: string;
   description?: string;
 }
@@ -162,6 +163,8 @@ export async function searchAllAuthorities(
         searches.push(searchLOCAuthorities(query, 'names'));
         searches.push(searchVIAF(query));
         searches.push(searchWikidata(query, 'item'));
+        searches.push(searchISNI(query));
+        if (context === 'person') searches.push(searchORCID(query));
         break;
 
       case 'holder':
@@ -175,6 +178,7 @@ export async function searchAllAuthorities(
       case 'subject':
         searches.push(searchMoonAuthorities(query, 'topic'));
         searches.push(searchLOCAuthorities(query, 'subjects'));
+        searches.push(searchFAST(query, 'topic'));
         searches.push(searchWikidata(query, 'item'));
         break;
 
@@ -187,6 +191,7 @@ export async function searchAllAuthorities(
         searches.push(searchMoonAuthorities(query, 'place'));
         searches.push(searchLOCAuthorities(query, 'countries'));
         searches.push(searchLOCAuthorities(query, 'geographicAreas'));
+        searches.push(searchFAST(query, 'place'));
         searches.push(searchWikidata(query, 'item'));
         break;
 
