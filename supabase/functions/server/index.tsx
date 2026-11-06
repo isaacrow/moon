@@ -14,6 +14,7 @@ import * as ontologyEngine from "./bibframeOntologyEngine.tsx";
 import * as graphBuilder from "./graphBuilder.tsx";
 import * as moonRecords from "./moonRecords.tsx";
 import * as authorities from "./authorities.tsx";
+import { ENTITY_KINDS, AGENT_TYPES, isEntityKind, entityPageParams } from "./entityDocument.tsx";
 import * as tripleStore from "./tripleStore.tsx";
 import * as versioning from "./versioning.tsx";
 import * as discovery from "./discovery.tsx";
@@ -1168,8 +1169,8 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
   const uri = `${linkedData.BASE_URI}/${kind}/${id}`;
   const format = fromExtension ?? linkedData.negotiate(c.req.header('Accept'));
   try {
-    // Moon's own authority entries: /resource/agent|place|topic|hub/<id>. A merged entry forwards (301).
-    if (kind === 'agent' || kind === 'place' || kind === 'topic' || kind === 'hub') {
+    // Moon's own entities: /resource/agent|place|topic|hub|genre|period/<id>. A merged entry forwards (301).
+    if (isEntityKind(kind)) {
       const entry = await recordStore.getAuthority(id);
       if (!entry || entry.kind !== kind) return c.json({ error: 'No authority entry has this URI', uri }, 404);
       const base = { Vary: 'Accept', 'Cache-Control': 'public, max-age=300', 'Access-Control-Allow-Origin': '*' };
@@ -1180,10 +1181,7 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
       if (format === 'html') {
         // Straight to the entity's own OPAC page (person, subject, place or hub), not a search.
         const page = new URL('/opac.html', linkedData.BASE_URI);
-        if (kind === 'agent') page.searchParams.set('person', entry.label);
-        else if (kind === 'topic') page.searchParams.set('subject', entry.label);
-        else if (kind === 'place') page.searchParams.set('place', entry.label);
-        else page.searchParams.set('hub', uri);
+        page.searchParams.set(...entityPageParams(kind, entry.label, uri));
         return c.body(null, 303, { ...base, Location: page.toString() });
       }
       // A hub lists the published works that are its expressions (bf:hasExpression).
@@ -1236,14 +1234,26 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
 // 🪪 Local authority file: Moon's own people, organizations, places and topics, each with a permanent
 // https://mooon.site/resource/<kind>/<id> address. Search is public (the entries are public data);
 // adding needs a signed-in account; merging two entries for one person needs an admin.
-const AUTHORITY_KINDS = ['agent', 'place', 'topic', 'hub'];
+const AUTHORITY_KINDS: string[] = [...ENTITY_KINDS];
+const KINDS_ERROR = `kind must be one of: ${ENTITY_KINDS.join(', ')}`;
+const entityStrings = (v: unknown, max: number): string[] => (Array.isArray(v) ? v : [])
+  .filter((s) => typeof s === 'string' && s.trim()).map((s: string) => s.trim().slice(0, 300)).slice(0, max);
+/** An entity's details (dates, agent type …): a plain object under 50 KB; an agent's type must be LC's. */
+function entityDetails(kind: string, raw: unknown): { data?: Record<string, unknown>; error?: string } {
+  const data = raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
+  if (JSON.stringify(data).length > 50_000) return { error: 'Details are too large' };
+  if (kind === 'agent' && data.agentType !== undefined && !(AGENT_TYPES as readonly string[]).includes(String(data.agentType))) {
+    return { error: `agentType must be one of: ${AGENT_TYPES.join(', ')}` };
+  }
+  return { data };
+}
 const withUri = (a: any) => ({ ...a, uri: `${linkedData.BASE_URI}/${a.kind}/${a.id}` });
 
 app.get("/make-server-49c0e13c/authorities", async (c) => {
   try {
     const q = (c.req.query('q') || '').trim().slice(0, 200);
     const kind = c.req.query('kind') || null;
-    if (kind && !AUTHORITY_KINDS.includes(kind)) return c.json({ error: 'kind must be agent, place, topic or hub' }, 400);
+    if (kind && !AUTHORITY_KINDS.includes(kind)) return c.json({ error: KINDS_ERROR }, 400);
     const limit = Math.min(Math.max(Number(c.req.query('limit')) || 20, 1), 100);
     const found = await recordStore.searchAuthorities(q, kind as any, limit);
     return c.json({ authorities: found.map(withUri) }, 200, { 'Access-Control-Allow-Origin': '*' });
@@ -1259,14 +1269,12 @@ app.post("/make-server-49c0e13c/authorities", async (c) => {
     if (!session) return c.json({ error: 'Sign in to add authority entries' }, 401);
     const body = await c.req.json().catch(() => ({}));
     const label = typeof body.label === 'string' ? body.label.trim() : '';
-    if (!AUTHORITY_KINDS.includes(body.kind)) return c.json({ error: 'kind must be agent, place, topic or hub' }, 400);
+    if (!AUTHORITY_KINDS.includes(body.kind)) return c.json({ error: KINDS_ERROR }, 400);
     if (!label || label.length > 300) return c.json({ error: 'A name (label) of up to 300 characters is required' }, 400);
-    const strings = (v: unknown, max: number): string[] => (Array.isArray(v) ? v : [])
-      .filter((s) => typeof s === 'string' && s.trim()).map((s: string) => s.trim().slice(0, 300)).slice(0, max);
-    const data = body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? body.data : {};
-    if (JSON.stringify(data).length > 50_000) return c.json({ error: 'Details are too large' }, 413);
+    const { data, error: detailsError } = entityDetails(body.kind, body.data);
+    if (!data) return c.json({ error: detailsError }, 400);
     const result = await recordStore.addAuthority({
-      kind: body.kind, label, variants: strings(body.variants, 50), sameAs: strings(body.sameAs, 20),
+      kind: body.kind, label, variants: entityStrings(body.variants, 50), sameAs: entityStrings(body.sameAs, 20),
       note: typeof body.note === 'string' ? body.note.slice(0, 2000) : undefined, data,
     }, session.username);
     return c.json({ existing: result.existing, authority: withUri(result.authority) }, result.existing ? 200 : 201);
@@ -1332,6 +1340,65 @@ app.post("/make-server-49c0e13c/authorities/report", async (c) => {
   } catch (error) {
     console.error('Authority report error:', error);
     return c.json({ error: 'Failed to build the authority report' }, 500);
+  }
+});
+
+// 🧩 One entity (Phase 10): the entry, its address, and how many records use it (public, like search).
+app.get("/make-server-49c0e13c/authorities/:id", async (c) => {
+  try {
+    const entry = await recordStore.getAuthority(c.req.param('id'));
+    if (!entry) return c.json({ error: 'No entity with this id' }, 404);
+    const withAddress = withUri(entry);
+    const usage = await recordStore.authorityUsage(withAddress.uri);
+    return c.json({ authority: withAddress, usage }, 200, { 'Access-Control-Allow-Origin': '*' });
+  } catch (error) {
+    console.error('Entity read error:', error);
+    return c.json({ error: 'Failed to read the entity' }, 500);
+  }
+});
+
+// Edits an entity (signed in). Body: { label, variants, sameAs, note, data, version }; version is the one
+// the editor loaded, and if someone saved since, 409 with the current entry. Every edit keeps the old state.
+app.put("/make-server-49c0e13c/authorities/:id", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to edit entities' }, 401);
+    const id = c.req.param('id');
+    const current = await recordStore.getAuthority(id);
+    if (!current || current.mergedInto) return c.json({ error: 'No entity with this id (or it was merged)' }, 404);
+    const body = await c.req.json().catch(() => ({}));
+    const label = typeof body.label === 'string' ? body.label.trim() : '';
+    if (!label || label.length > 300) return c.json({ error: 'A name (label) of up to 300 characters is required' }, 400);
+    const sameAs = entityStrings(body.sameAs, 20);
+    const badLink = sameAs.find((u) => !SAME_AS_HOSTS.test(u));
+    if (badLink) return c.json({ error: `Not an LC, VIAF, Wikidata, FAST, ISNI or ORCID link: ${badLink}` }, 400);
+    const { data, error: detailsError } = entityDetails(current.kind, body.data);
+    if (!data) return c.json({ error: detailsError }, 400);
+    const result = await recordStore.updateAuthority(id, {
+      label, variants: entityStrings(body.variants, 50).filter((v) => v !== label), sameAs,
+      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : null, data,
+    }, session.username, Number.isInteger(body.version) ? body.version : undefined);
+    if (result.status === 'conflict') return c.json({ error: 'Someone saved this entity since you opened it', authority: result.authority && withUri(result.authority) }, 409);
+    if (result.status === 'duplicate') return c.json({ error: 'Another entity of this kind already has this name', other: result.other && withUri(result.other) }, 409);
+    if (result.status !== 'ok' || !result.authority) return c.json({ error: 'No entity with this id (or it was merged)' }, 404);
+    return c.json({ authority: withUri(result.authority) });
+  } catch (error) {
+    console.error('Entity edit error:', error);
+    return c.json({ error: 'Failed to save the entity' }, 500);
+  }
+});
+
+// Earlier states of an entity, newest first (public: the entity is public data; who changed it is shown
+// to signed-in users only).
+app.get("/make-server-49c0e13c/authorities/:id/history", async (c) => {
+  try {
+    const signedIn = !!(await getSession(c));
+    const history = (await recordStore.authorityHistory(c.req.param('id')))
+      .map((h: any) => (signedIn ? h : { ...h, changedBy: undefined }));
+    return c.json({ history });
+  } catch (error) {
+    console.error('Entity history error:', error);
+    return c.json({ error: 'Failed to read the history' }, 500);
   }
 });
 

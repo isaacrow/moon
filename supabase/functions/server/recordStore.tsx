@@ -449,7 +449,7 @@ export async function findDuplicates(id: string | null, document: any): Promise<
 
 // ── Local authority file: Moon's own people, organizations, places and topics ─────────────────────
 
-export type AuthorityKind = "agent" | "place" | "topic" | "hub";
+export type AuthorityKind = "agent" | "place" | "topic" | "hub" | "genre" | "period";
 
 export interface Authority {
   id: string;
@@ -463,6 +463,8 @@ export interface Authority {
   createdAt: string;
   updatedAt: string;
   mergedInto?: string | null;
+  /** Goes up by one with every edit; an edit names the version it started from. */
+  version?: number;
 }
 
 /** A readable, permanent id: the name's Latin letters (if any) plus a random tail, e.g. ali-al-wardi-3f9a1c2e. */
@@ -515,6 +517,34 @@ export async function mergeAuthority(from: string, into: string): Promise<boolea
   const { data, error } = await sb().rpc("moon_merge_authority", { p_from: from, p_into: into });
   if (error) throw new Error(`[authorities] merge ${from} → ${into} failed: ${error.message}`);
   return data === true;
+}
+
+/** Changes an entry's name, other names, links, note and details. The old state is kept in its history.
+ *  "conflict" when someone saved it since `expectedVersion`; "duplicate" when another entry of the same kind
+ *  already has the new name; "missing" when it does not exist or was merged. */
+export async function updateAuthority(id: string, input: {
+  label: string; variants: string[]; sameAs: string[]; note?: string | null; data: Record<string, unknown>;
+}, by: string, expectedVersion?: number): Promise<{ status: "ok" | "conflict" | "duplicate" | "missing"; authority?: Authority; other?: Authority }> {
+  const { data, error } = await sb().rpc("moon_update_authority", {
+    p_id: id, p_label: input.label, p_variants: input.variants, p_same_as: input.sameAs, p_note: input.note ?? null,
+    p_data: input.data, p_by: by, p_expected_version: expectedVersion ?? null,
+  });
+  if (error) throw new Error(`[authorities] update ${id} failed: ${error.message}`);
+  return data;
+}
+
+/** Earlier states of an entry, newest first: { version, label, …, changedBy, changedAt }. */
+export async function authorityHistory(id: string): Promise<any[]> {
+  const { data, error } = await sb().rpc("moon_authority_history", { p_id: id });
+  if (error) throw new Error(`[authorities] history ${id} failed: ${error.message}`);
+  return data || [];
+}
+
+/** How many records (not deleted) point to this address, and a few of them. */
+export async function authorityUsage(uri: string): Promise<{ count: number; records: Array<{ id: string; title: string }> }> {
+  const { data, error } = await sb().rpc("moon_authority_usage", { p_uri: uri });
+  if (error) throw new Error(`[authorities] usage failed: ${error.message}`);
+  return data || { count: 0, records: [] };
 }
 
 // ── Record covers: one picture per record in the public Storage bucket "covers" ───────────────────
