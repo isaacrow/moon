@@ -38,6 +38,7 @@ import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
 import { reconcile, manifest } from "./reconcile.tsx";
 import { linkAuthorities } from "./authorityLinking.tsx";
+import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceHash, type FolioConfig, type FolioRef, type FolioLink } from "./folio.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
@@ -989,6 +990,104 @@ app.get("/make-server-49c0e13c/isni/search", async (c) => {
   } catch (error) {
     console.error('ISNI search error:', error);
     return c.json({ error: 'ISNI could not be reached' }, 502);
+  }
+});
+
+// 📚 Send to FOLIO (Phase 5, route 1: Inventory API). The library's FOLIO is set by secrets, never in the
+// browser: MOON_FOLIO_URL (Okapi or Kong gateway), MOON_FOLIO_TENANT, MOON_FOLIO_USERNAME, MOON_FOLIO_PASSWORD.
+// Moon keeps the FOLIO Instance id per record (KV moon:folio:link:<id>), so a second send updates it.
+function folioConfig(): FolioConfig | null {
+  const url = (Deno.env.get('MOON_FOLIO_URL') || '').trim();
+  const tenant = (Deno.env.get('MOON_FOLIO_TENANT') || '').trim();
+  const username = (Deno.env.get('MOON_FOLIO_USERNAME') || '').trim();
+  const password = Deno.env.get('MOON_FOLIO_PASSWORD') || '';
+  return url && tenant && username && password ? { url, tenant, username, password } : null;
+}
+let folioRefCache: { at: number; key: string; ref: FolioRef } | null = null;
+async function folioConnect() {
+  const cfg = folioConfig();
+  if (!cfg) throw new Error('FOLIO is not set up on this Moon (MOON_FOLIO_URL, MOON_FOLIO_TENANT, MOON_FOLIO_USERNAME, MOON_FOLIO_PASSWORD).');
+  const timed = ((input: any, init?: any) => fetch(input, { ...init, signal: AbortSignal.timeout(20_000) })) as typeof fetch;
+  const api = await folioClient(cfg, timed);
+  const key = `${cfg.url}|${cfg.tenant}`;
+  if (!folioRefCache || folioRefCache.key !== key || Date.now() - folioRefCache.at > 3_600_000) {
+    folioRefCache = { at: Date.now(), key, ref: await loadReference(api) };
+  }
+  return { cfg, api, ref: folioRefCache.ref };
+}
+const folioLinkKey = (id: string) => `moon:folio:link:${id}`;
+async function readFolioLink(id: string): Promise<FolioLink | null> {
+  const raw = await kv.get(folioLinkKey(id));
+  if (!raw) return null;
+  try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return null; }
+}
+const folioRecordUrl = (cfg: FolioConfig | null, instanceId: string) =>
+  (Deno.env.get('MOON_FOLIO_UI_URL') || '').trim() ? `${Deno.env.get('MOON_FOLIO_UI_URL')!.replace(/\/+$/, '')}/inventory/view/${instanceId}` : undefined;
+
+app.get("/make-server-49c0e13c/folio/status", async (c) => {
+  if (!(await getSession(c))) return c.json({ error: 'Sign in to use FOLIO' }, 401);
+  const cfg = folioConfig();
+  if (!cfg) return c.json({ configured: false });
+  try {
+    const { ref } = await folioConnect();
+    const missing = [
+      !ref.instanceTypes.txt && 'instance type "txt" (text)',
+      !ref.identifierTypes.ISBN && 'identifier type ISBN',
+      !ref.contributorNameTypes.personal && 'contributor name type "Personal name"',
+      !ref.generalNoteTypeId && 'note type "General note"',
+    ].filter(Boolean);
+    return c.json({ configured: true, ok: true, url: cfg.url, tenant: cfg.tenant, missingReference: missing });
+  } catch (error) {
+    return c.json({ configured: true, ok: false, url: cfg.url, tenant: cfg.tenant, error: String((error as Error).message || error) });
+  }
+});
+
+// What the record becomes in FOLIO (nothing is sent), and whether it changed since it was last sent.
+app.get("/make-server-49c0e13c/folio/record/:id", async (c) => {
+  if (!(await getSession(c))) return c.json({ error: 'Sign in to use FOLIO' }, 401);
+  const id = c.req.param('id');
+  // FOLIO gets the published version (an edit still waiting for review is not sent).
+  const record = await recordStore.getPublishedRecord(id);
+  const link = await readFolioLink(id);
+  if (!record) return c.json({ published: false, link });
+  if (!folioConfig()) return c.json({ configured: false, link });
+  try {
+    const { cfg, ref } = await folioConnect();
+    const { instance, warnings } = buildFolioInstance(record.document, ref);
+    return c.json({
+      configured: true, published: true, link, instance, warnings,
+      changed: !!(link && instance && instanceHash(instance) !== link.hash),
+      ...(link ? { folioUrl: folioRecordUrl(cfg, link.instanceId) } : {}),
+    });
+  } catch (error) {
+    return c.json({ configured: true, link, error: String((error as Error).message || error) }, 502);
+  }
+});
+
+// Send: create the FOLIO Instance, or update the one already linked. Body: { linkTo?, createAnyway? }.
+app.post("/make-server-49c0e13c/folio/send/:id", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: 'Sign in to send records to FOLIO' }, 401);
+  const id = c.req.param('id');
+  const record = await recordStore.getPublishedRecord(id);
+  if (!record) return c.json({ status: 'error', message: 'Publish the record first; only published records go to FOLIO.', warnings: [] }, 409);
+  const body = await c.req.json().catch(() => ({}));
+  const linkTo = typeof body?.linkTo === 'string' && /^[0-9a-f-]{36}$/i.test(body.linkTo) ? body.linkTo : undefined;
+  try {
+    const { cfg, api, ref } = await folioConnect();
+    const { instance, warnings } = buildFolioInstance(record.document, ref);
+    if (!instance) return c.json({ status: 'error', message: warnings.join(' '), warnings }, 422);
+    const link = await readFolioLink(id);
+    const result = await sendInstance(api, instance, link, { linkTo, createAnyway: body?.createAnyway === true, warnings });
+    if (result.status === 'created' || result.status === 'updated') {
+      const saved: FolioLink = { instanceId: result.instanceId, hrid: result.hrid ?? link?.hrid, sentAt: new Date().toISOString(), hash: instanceHash(instance) };
+      await kv.set(folioLinkKey(id), JSON.stringify({ ...saved, sentBy: session.username }));
+      return c.json({ ...result, link: saved, folioUrl: folioRecordUrl(cfg, result.instanceId) });
+    }
+    return c.json(result, result.status === 'error' ? 502 : 200);
+  } catch (error) {
+    console.error('FOLIO send error:', id, error);
+    return c.json({ status: 'error', message: String((error as Error).message || error), warnings: [] }, 502);
   }
 });
 
