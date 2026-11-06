@@ -33,6 +33,7 @@ import * as linkedData from "./linkedData.tsx";
 import * as sparqlStore from "./sparqlEndpoint.tsx";
 import { missingForPublish, shapesFromProfile } from "./publishGate.tsx";
 import { PROFILES } from "./profiles.tsx";
+import { oaiResponse } from "./oaiPmh.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
@@ -881,6 +882,31 @@ app.get("/make-server-49c0e13c/resource/sitemap.xml", async (c) => {
     return c.json({ error: 'Failed to build the sitemap' }, 500);
   }
 });
+
+// OAI-PMH 2.0 for harvesters (union catalogues, WorldCat, BASE): https://mooon.site/resource/oai?verb=Identify
+async function oaiEndpoint(c: any) {
+  try {
+    const params: Record<string, string> = {};
+    const url = new URL(c.req.url);
+    url.searchParams.forEach((v, k) => { params[k] = v; });
+    if (c.req.method === 'POST') {
+      const form = new URLSearchParams(await c.req.text());
+      form.forEach((v, k) => { params[k] = v; });
+    }
+    const records = (await recordStore.listPublishedRecords()).map((r: any) => ({ id: r.id, title: r.title, document: r.document, saved: r.saved }));
+    const xml = oaiResponse(params, records, {
+      baseUrl: linkedData.BASE_URI,
+      repositoryName: 'Moon BIBFRAME catalogue',
+      adminEmail: Deno.env.get('MOON_OAI_ADMIN_EMAIL') || 'catalogue@mooon.site',
+    });
+    return c.body(xml, 200, { 'Content-Type': 'text/xml; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+  } catch (error) {
+    console.error('OAI-PMH error:', error);
+    return c.text('OAI-PMH failed', 500);
+  }
+}
+app.get("/make-server-49c0e13c/resource/oai", oaiEndpoint);
+app.post("/make-server-49c0e13c/resource/oai", oaiEndpoint);
 
 app.get("/make-server-49c0e13c/resource/dump.jsonld", (c) => resourceDump(c, 'jsonld'));
 app.get("/make-server-49c0e13c/resource/dump.nt", (c) => resourceDump(c, 'nt'));
