@@ -10,6 +10,8 @@
 import type { MarcRecord, MarcField, DataField, Subfield } from './marcRecord';
 import { isControl } from './marcRecord';
 import { marcToBibframe, type ImportedMarcRecord } from './marcToBibframe';
+import { MARC_FIELDS, fieldDef } from './marcDictionary';
+import { check008 } from './marcFixedFields';
 
 export interface MarcLineIssue { line: number; tag?: string; level: 'error' | 'warning'; en: string; ar: string }
 
@@ -71,7 +73,8 @@ export function marcToText(record: MarcRecord): string {
 /** A value with words in it (ISBD punctuation alone, as in a template, is not one). */
 const hasText = (v: string) => /[\p{L}\p{N}]/u.test(v);
 
-const NON_REPEATABLE = new Set(['001', '003', '005', '008', '010', '040', '100', '110', '111', '130', '240', '245', '250', '254', '256', '263', '300']);
+/** Fields MARC 21 lets appear only once (from the field dictionary). */
+const NON_REPEATABLE = new Set(Object.values(MARC_FIELDS).filter((d) => !d.repeatable).map((d) => d.tag));
 const ONE_MAIN_ENTRY = ['100', '110', '111', '130'];
 
 /** What to fix before the record is good MARC (and good BIBFRAME). */
@@ -82,6 +85,10 @@ export function checkMarc(record: MarcRecord, lineOf: number[] = []): MarcLineIs
   record.fields.forEach((f, i) => {
     count.set(f.tag, (count.get(f.tag) || 0) + 1);
     if (count.get(f.tag) === 2 && NON_REPEATABLE.has(f.tag)) issues.push({ line: at(i), tag: f.tag, level: 'error', en: `${f.tag} may appear only once.`, ar: `الحقل ${f.tag} لا يتكرر.` });
+    if (!fieldDef(f.tag) && f.tag !== '880') issues.push({ line: at(i), tag: f.tag, level: 'warning', en: `${f.tag} is not a MARC 21 bibliographic field.`, ar: `${f.tag} ليس حقلاً في مارك 21 الببليوغرافي.` });
+    if (f.tag === '008' && isControl(f)) {
+      for (const x of check008(f.data, record.leader)) issues.push({ line: at(i), tag: '008', level: 'warning', ...x });
+    }
     if (!isControl(f)) {
       for (const [n, c] of [['first', f.ind1], ['second', f.ind2]] as const) {
         if (!/^[0-9 ]$/.test(c)) issues.push({ line: at(i), tag: f.tag, level: 'error', en: `${f.tag}: the ${n} indicator must be a digit or blank (#).`, ar: `${f.tag}: المؤشر ${n === 'first' ? 'الأول' : 'الثاني'} رقم أو فراغ (#).` });
@@ -152,9 +159,12 @@ export const FIELD_NAMES: Record<string, [string, string]> = {
   '856': ['Electronic location and access', 'الموقع الإلكتروني'], '880': ['Alternate graphic representation', 'التمثيل بخط آخر'],
 };
 
+/** A field's name, from the full MARC 21 dictionary (the short names above win where they are given). */
 export function fieldName(tag: string, ar: boolean): string {
   const n = FIELD_NAMES[tag];
-  return n ? n[ar ? 1 : 0] : '';
+  if (n) return n[ar ? 1 : 0];
+  const d = fieldDef(tag);
+  return d ? (ar ? d.ar : d.en) : '';
 }
 
 /** Re-export for the editor (fields as structured rows). */
