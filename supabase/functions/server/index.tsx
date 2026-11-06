@@ -34,6 +34,7 @@ import * as sparqlStore from "./sparqlEndpoint.tsx";
 import { missingForPublish, shapesFromProfile } from "./publishGate.tsx";
 import { PROFILES } from "./profiles.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
+import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
 import { reconcile, manifest } from "./reconcile.tsx";
 import { linkAuthorities } from "./authorityLinking.tsx";
 import * as aiEngine from "./aiEngine.tsx";
@@ -919,6 +920,29 @@ async function oaiEndpoint(c: any) {
     return c.text('OAI-PMH failed', 500);
   }
 }
+// SRU copy cataloguing: the catalogues a cataloger can search, and a search in one of them (MARCXML back).
+app.get("/make-server-49c0e13c/sru/targets", async (c) => {
+  if (!(await getSession(c))) return c.json({ error: 'Sign in to search other catalogues' }, 401);
+  return c.json({ targets: sruTargets(Deno.env.get('MOON_SRU_TARGETS')).map(({ id, name }) => ({ id, name })) });
+});
+app.get("/make-server-49c0e13c/sru/search", async (c) => {
+  try {
+    if (!(await getSession(c))) return c.json({ error: 'Sign in to search other catalogues' }, 401);
+    const target = sruTargets(Deno.env.get('MOON_SRU_TARGETS')).find((t) => t.id === c.req.query('target'));
+    if (!target) return c.json({ error: 'Unknown catalogue' }, 400);
+    const index = (['keyword', 'title', 'author', 'isbn', 'lccn'] as const).find((i) => i === c.req.query('index')) || 'keyword';
+    const q = (c.req.query('q') || '').trim();
+    if (!q) return c.json({ error: 'Type something to search for' }, 400);
+    const res = await fetch(sruUrl(target, index, q, Number(c.req.query('start')) || 1), { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) return c.json({ error: `${target.name} answered ${res.status}` }, 502);
+    const xml = await res.text();
+    if (xml.length > 3_000_000) return c.json({ error: 'The answer was too large' }, 502);
+    return c.json({ target: target.id, ...sruSummary(xml), xml });
+  } catch (error) {
+    console.error('SRU search error:', error);
+    return c.json({ error: 'The catalogue could not be reached' }, 502);
+  }
+});
 // W3C Reconciliation API for OpenRefine: https://mooon.site/resource/reconcile
 // GET with no queries gives the service manifest; queries come as ?queries={...} or a form / JSON POST.
 async function reconcileEndpoint(c: any) {

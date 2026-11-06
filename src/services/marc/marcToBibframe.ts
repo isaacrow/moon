@@ -18,7 +18,8 @@ const link = (f: DataField) => subs(f, '0').find((v) => /^https?:\/\//.test(v)) 
 export function clean(value: string): string {
   let v = value.trim().replace(/\s*[\/:;,=]+$/, '').trim();
   // A final period ends the field in ISBD; keep it after an initial or an abbreviation ("J.", "ed.", "p.").
-  if (/\.$/.test(v) && !/(\b\p{L}|\bed|\bp|\bcm|\bca|\bvol|\bno)\.$/iu.test(v)) v = v.slice(0, -1);
+  // (Unicode-aware: \b only knows ASCII letters, so "Qabasāt." would look like the initial "t.")
+  if (/\.$/.test(v) && !/(?<![\p{L}\p{M}])(\p{L}|ed|p|cm|ca|vol|no)\.$/iu.test(v)) v = v.slice(0, -1);
   return v.trim();
 }
 
