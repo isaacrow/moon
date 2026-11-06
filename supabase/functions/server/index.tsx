@@ -786,7 +786,7 @@ li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:n
 // application/sparql-query body or a form field "query". Without a query, browsers get a query page.
 const loadPublishedNTriples = async () => {
   const records = (await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  return await linkedData.dumpNTriples(records.map((r) => r.document));
+  return await linkedData.dumpNTriples(records.map((r) => linkedData.publishedDocument(r)));
 };
 
 const SPARQL_EXAMPLE = `PREFIX bf: <http://id.loc.gov/ontologies/bibframe/>
@@ -862,7 +862,7 @@ app.post("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
 async function resourceDump(c: any, format: 'jsonld' | 'nt') {
   try {
     const records = (await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
-    const documents = records.map((r) => r.document);
+    const documents = records.map((r) => linkedData.publishedDocument(r));
     const headers = {
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'public, max-age=3600',
@@ -1140,10 +1140,13 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
         : await linkedData.authorityNTriples(doc);
       return c.body(text, 200, { ...base, 'Content-Type': `${linkedData.MEDIA_TYPES[format]}; charset=utf-8` });
     }
-    const record = await recordStore.findPublishedByUri(uri);
-    if (!record) {
+    const found = await recordStore.findPublishedByUri(uri);
+    if (!found) {
       return c.json({ error: 'No published record has this URI', uri }, 404);
     }
+    // Who created and approved it, for the admin metadata LC writes (falls back to what the lookup gave).
+    const full = await recordStore.getPublishedRecord(found.id).catch(() => null);
+    const record = { ...found, document: linkedData.publishedDocument({ ...(full || {}), ...found, id: found.id, document: found.document }) };
     const alternates = (['jsonld', 'ttl', 'nt', 'rdf'] as const)
       .map((f) => `<${uri}.${f}>; rel="alternate"; type="${linkedData.MEDIA_TYPES[f]}"`)
       .join(', ');

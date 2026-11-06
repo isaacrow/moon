@@ -9,6 +9,7 @@
 import jsonld from "npm:jsonld@8.3.3";
 import { Parser, Writer } from "npm:n3@1.17.4";
 import { toBoundedRdfXml } from "./rdfXml.tsx";
+import { withLcAdminMetadata, type AdminFacts } from "./lcAdminMetadata.tsx";
 
 export const BASE_URI = (Deno.env.get("MOON_URI_BASE") || "https://mooon.site/resource").replace(/\/+$/, "");
 
@@ -59,6 +60,15 @@ export function negotiate(accept: string | null | undefined): Format {
     if (type === "application/rdf+xml") return "rdf";
   }
   return "html";
+}
+
+/**
+ * A published record as it is served as linked data: its stored document with admin metadata the way LC
+ * writes it (history events, BIBFRAME version, cataloguing language, local record number).
+ */
+export function publishedDocument(record: { id: string; document: any; cataloger?: string; createdAt?: string; saved?: string; approvedBy?: string }): any {
+  const facts: AdminFacts = { id: record.id, cataloger: record.cataloger, createdAt: record.createdAt, saved: record.saved, approvedBy: record.approvedBy };
+  return withLcAdminMetadata(record.document, facts, BASE_URI);
 }
 
 /** The stored document with a full @context, ready for any JSON-LD processor. */
