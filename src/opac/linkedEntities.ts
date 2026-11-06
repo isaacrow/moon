@@ -101,6 +101,72 @@ export function parseInfoCard(json: any, qid: string, lang: 'ar' | 'en', kind?: 
   };
 }
 
+/** Title or name folded for matching: Arabic normalized, no diacritics, punctuation or subtitle. */
+function fold(s: string | undefined): string {
+  return normalizeArabic(String(s || ''))
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .split(/\s[:;=/]\s|\s?:\s/)[0]
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/^(the|a|an|al) /, '')
+    .trim();
+}
+
+/** A creator's name folded, without titles such as "د." or "Dr." that some records carry and others not. */
+const foldName = (s: string | undefined) =>
+  fold(String(s || '').replace(/^\s*(د\.|الدكتور|الشيخ|السيد|dr\.?|prof\.?)\s*/i, ''));
+
+export interface WorkCluster { key: string; lead: OpacWorkEntity; members: OpacWorkEntity[] }
+
+/**
+ * Libris-style Work-first results: records that describe the same Work — the same hub (bf:Hub), a
+ * translation or other BIBFRAME link between them, or the same title by the same creator — become one
+ * result. The order is kept: a cluster sits where its best-placed record was, and that record leads it.
+ * Records with no creator join only through a hub or a link, never on a title alone.
+ */
+export function clusterWorks(works: OpacWorkEntity[]): WorkCluster[] {
+  const parent = new Map<string, string>();
+  const findRoot = (id: string): string => {
+    let r = id;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    parent.set(id, r);
+    return r;
+  };
+  const join = (a: string, b: string) => {
+    const ra = findRoot(a), rb = findRoot(b);
+    if (ra !== rb) parent.set(rb, ra);
+  };
+  works.forEach(w => parent.set(w.id, w.id));
+
+  const firstWith = new Map<string, string>();
+  const byKey = (key: string, id: string) => {
+    if (firstWith.has(key)) join(firstWith.get(key)!, id);
+    else firstWith.set(key, id);
+  };
+  for (const w of works) {
+    if (w.expressionOfHub?.uri) byKey(`hub:${w.expressionOfHub.uri}`, w.id);
+    const who = foldName(w.primaryCreator?.nameArabic || w.primaryCreator?.name);
+    const title = fold(w.title);
+    if (who && title) byKey(`tc:${title}|${who}`, w.id);
+    // English name of the same creator, so "Al-Wardi" and "الوردي" records of one title meet too.
+    const whoEn = foldName(w.primaryCreator?.nameEnglish);
+    if (whoEn && title) byKey(`tc:${title}|${whoEn}`, w.id);
+  }
+  for (const w of works) {
+    for (const r of relationsOf(w, works).outgoing) {
+      if (r.workId && /translation|expressionOf|hasExpression|originalVersion/i.test(r.predicate)) join(w.id, r.workId);
+    }
+  }
+
+  const clusters = new Map<string, WorkCluster>();
+  for (const w of works) {
+    const root = findRoot(w.id);
+    if (!clusters.has(root)) clusters.set(root, { key: root, lead: w, members: [] });
+    clusters.get(root)!.members.push(w);
+  }
+  return [...clusters.values()];
+}
+
 export interface ResolvedRelation extends OpacBibframeRelation { workId?: string }
 
 /**

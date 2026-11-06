@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { placeName, placesOf, worksAtPlace, wikidataQid, parseInfoCard, relationsOf } from '../src/opac/linkedEntities';
+import { placeName, placesOf, worksAtPlace, wikidataQid, parseInfoCard, relationsOf, clusterWorks } from '../src/opac/linkedEntities';
 
 const fixture = (q: string) => JSON.parse(readFileSync(new URL(`./fixtures/wikidata/${q}.json`, import.meta.url), 'utf8'));
 const work = (id: string, title: string, places: string[], extra: any = {}): any =>
@@ -72,4 +72,25 @@ test('related Works: resolved by URI or title, and shown on the other Work too',
   assert.equal(cm[0].workId, 'orig');
   assert.equal(cm[1].workId, undefined, 'a Work not in the catalogue stays plain text');
   assert.deepEqual(relationsOf(original, all).incoming.map(x => x.work.id).sort(), ['cm', 'tr']);
+});
+
+test('Work-first results: editions, hubs and translations become one result, order kept', () => {
+  const wardi = { name: 'علي الوردي', nameEnglish: 'Ali al-Wardi' };
+  const all = [
+    work('e2', 'مهزلة العقل البشري', [], { primaryCreator: wardi }),
+    work('x', 'شظايا ورماد', [], { primaryCreator: { name: 'نازك الملائكة' } }),
+    work('e1', 'مُهزلة العقل البشريّ : دراسة', [], { primaryCreator: { name: 'د. علي الوردي' } }),
+    work('en', 'The Mockery of the Human Mind', [], {
+      primaryCreator: { name: 'Ali al-Wardi' },
+      relatedWorks: [{ predicate: 'bf:translationOf', predicateLabel: 'Translation of', targetTitle: '', targetUri: 'https://mooon.site/resource/work/e2' }],
+    }),
+    work('h1', 'ألف ليلة وليلة', [], { expressionOfHub: { uri: 'https://mooon.site/resource/hub/1001', label: 'Alf layla' } }),
+    work('h2', 'The Thousand and One Nights', [], { expressionOfHub: { uri: 'https://mooon.site/resource/hub/1001', label: 'Alf layla' } }),
+    work('q1', 'ديوان', []),
+    work('q2', 'ديوان', []),
+  ];
+  const c = clusterWorks(all);
+  assert.deepEqual(c.map(g => g.members.map(w => w.id)), [['e2', 'e1', 'en'], ['x'], ['h1', 'h2'], ['q1'], ['q2']]);
+  assert.equal(c[0].lead.id, 'e2', 'the best-placed record leads');
+  assert.deepEqual(clusterWorks([]), []);
 });
