@@ -29,6 +29,7 @@ import {
 import { MOON_API, moonHeaders } from '../app/utils/moonApi';
 import { t, opacLang, setOpacLang, type OpacLang } from './i18n';
 import { IiifViewer } from './IiifViewer';
+import { findPersonQid, splitHeading, type PersonClues } from './personPhoto';
 import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, clusterWorks, type InfoCard as InfoCardData } from './linkedEntities';
 import './opac.css';
 
@@ -349,9 +350,40 @@ function BookCard({ work, ctx, i }: { work: OpacWorkEntity; ctx: Ctx; i?: number
   );
 }
 
+/** What the catalogue knows about a person, for finding their Wikidata item. */
+function personClues(p: OpacPersonEntity): PersonClues {
+  const headings = [p.name, p.nameArabic, p.nameEnglish, ...(p.otherNames || [])].filter((x): x is string => !!x);
+  const dated = headings.map(splitHeading).find((h) => h.birthYear);
+  const base = splitHeading(personName(p));
+  return {
+    name: base.name,
+    otherNames: headings.map((h) => splitHeading(h).name),
+    wikidata: p.wikidataId,
+    links: p.authorityLinks,
+    birthYear: p.birthDate?.match(/\d{3,4}/)?.[0] || dated?.birthYear,
+    deathYear: p.deathDate?.match(/\d{3,4}/)?.[0] || dated?.deathYear,
+  };
+}
+
+/** The person's Wikidata item as a link (found from their links, or their name and dates), or undefined. */
+function usePersonWikidata(p: OpacPersonEntity | undefined): string | undefined {
+  const clues = p ? personClues(p) : undefined;
+  const key = clues ? JSON.stringify(clues) : '';
+  const [qid, setQid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!clues) { setQid(null); return; }
+    let live = true;
+    findPersonQid(clues).then((q) => { if (live) setQid(q); });
+    return () => { live = false; };
+  }, [key]);
+  return qid ? `https://www.wikidata.org/wiki/${qid}` : undefined;
+}
+
 function Avatar({ p, cls = '', morph, image }: { p: OpacPersonEntity; cls?: string; morph?: boolean; image?: string }) {
   const [broken, setBroken] = useState(false);
-  const src = image || p.avatarUrl;
+  const wikidata = usePersonWikidata(image ? undefined : p);
+  const card = useWikidataCard(wikidata ? [wikidata] : [], 'person');
+  const src = image || card?.image || p.avatarUrl;
   useEffect(() => setBroken(false), [src]);
   return (
     <span className={`avatar ${cls}`} aria-hidden="true" style={morph ? { viewTransitionName: vtName('avatar', p.id) } as React.CSSProperties : undefined}>
@@ -1292,9 +1324,8 @@ function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; no
 function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
   const r = useMemo(() => wolfMoonOpacService.getPersonByNameOrUri(k), [k, ctx.rev]);
   const moon = useMoonAuthority('agent', r ? personName(r.person) : undefined);
-  const wikidataId = r?.person.wikidataId;
-  const wikidata = wikidataId ? (wikidataId.startsWith('http') ? wikidataId : `https://www.wikidata.org/wiki/${wikidataId}`) : undefined;
-  const fromMoon = [wikidata, ...(moon?.sameAs || [])].filter((u): u is string => !!u);
+  const found = usePersonWikidata(r ? { ...r.person, authorityLinks: [...(r.person.authorityLinks || []), ...(moon?.sameAs || [])] } : undefined);
+  const fromMoon = [found, ...(r?.person.authorityLinks || []).filter((u) => !/mooon\.site/.test(u)), ...(moon?.sameAs || [])].filter((u): u is string => !!u);
   // The picture and the VIAF / LC / ISNI links come from the person's Wikidata entry, so they are real.
   const card = useWikidataCard(fromMoon, 'person');
   if (!r) return <NotFound ctx={ctx} what={t('المؤلف', 'author')} back={{ mode: 'authors' }} backLabel={t('كل المؤلفين', 'All authors')} />;

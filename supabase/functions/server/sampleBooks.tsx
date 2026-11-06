@@ -36,6 +36,10 @@ const SOURCES: Array<[string, "ara" | "eng", string, string]> = [
   ['subject:history', "ara", "تاريخ", "History"],
 ];
 const ARABIC = /[؀-ۿ]/;
+/** Authors the library does not want among the sample books. */
+const LEFT_OUT = /طه\s*حسين|حسين،?\s*طه|ta+ha\s+h[uo]s+[ae]?[yi]?n|h[uo]s+[ae]?[yi]?n,?\s+ta+ha/i;
+/** An author's name without accents ("Ṭāhā Ḥusayn" → "Taha Husayn"), for LEFT_OUT. */
+const plain = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "");
 const FIELDS = "title,subtitle,author_name,first_publish_year,publish_year,isbn,publisher,publish_place,number_of_pages_median,subject,cover_i";
 
 /** Up to `want` books whose ISBN is not in `known`, starting from a random subject. */
@@ -57,6 +61,7 @@ export async function findNewSampleBooks(want: number, known: Set<string>): Prom
       if (out.length >= want) break;
       const isbn = (d.isbn || []).find((x: string) => /^97[89]\d{10}$/.test(x));
       if (!isbn || !d.cover_i || !d.author_name?.length || !d.title || seen.has(isbn)) continue;
+      if (d.author_name.some((a: string) => LEFT_OUT.test(plain(a)))) continue;
       const isArabic = ARABIC.test(d.title);
       if (isArabic !== (lang === "ara")) continue;
       seen.add(isbn);
