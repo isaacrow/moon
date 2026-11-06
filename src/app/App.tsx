@@ -22,14 +22,15 @@ const AuthorFinder = React.lazy(() => import('./components/AuthorFinder'));
 const RecordsGallery = React.lazy(() => import('./components/RecordsGallery').then(m => ({ default: m.RecordsGallery })));
 const SearchPage = React.lazy(() => import('./components/SearchPage').then(m => ({ default: m.SearchPage })));
 const ActivityLog = React.lazy(() => import('./components/ActivityLog').then(m => ({ default: m.ActivityLog })));
+const EntitiesPage = React.lazy(() => import('./components/EntitiesPage').then(m => ({ default: m.EntitiesPage })));
 
 // Moon Studio (Wolf Moon) is the one editor. The tools around it: dashboard, author finder, record
 // list, search and audit log. The public OPAC is served by main.tsx / opac.html.
-type ViewMode = 'dashboard' | 'wolf-moon' | 'author-finder' | 'all-records' | 'search' | 'activity-log';
-const VIEW_MODES: ViewMode[] = ['dashboard', 'wolf-moon', 'author-finder', 'all-records', 'search', 'activity-log'];
+type ViewMode = 'dashboard' | 'wolf-moon' | 'author-finder' | 'all-records' | 'search' | 'activity-log' | 'entities';
+const VIEW_MODES: ViewMode[] = ['dashboard', 'wolf-moon', 'author-finder', 'all-records', 'search', 'activity-log', 'entities'];
 
 // Each screen has its own address, so a refresh or a shared link opens the same screen:
-// /dashboard/, /moon/ (Moon Studio), /records/, /search/, /authors/, /activity/.
+// /dashboard/, /moon/ (Moon Studio), /records/, /search/, /authors/, /activity/, /entities/.
 const VIEW_PATHS: Record<ViewMode, string> = {
   'dashboard': 'dashboard',
   'wolf-moon': 'moon',
@@ -37,6 +38,7 @@ const VIEW_PATHS: Record<ViewMode, string> = {
   'search': 'search',
   'author-finder': 'authors',
   'activity-log': 'activity',
+  'entities': 'entities',
 };
 export const ROUTED_PATHS = Object.values(VIEW_PATHS);
 
@@ -294,6 +296,14 @@ function CatalogApp() {
       break;
     case 'activity-log':
       screen = withNav(<ActivityLog onClose={toDashboard} />);
+      break;
+    case 'entities':
+      screen = withNav(
+        <ErrorBoundary fallbackTitle="Entities Error" onReset={toDashboard}>
+          <EntitiesPage onBack={toDashboard} />
+        </ErrorBoundary>,
+        'liquid-glass-spatial-canvas min-h-screen'
+      );
       break;
     default:
       screen = withNav(

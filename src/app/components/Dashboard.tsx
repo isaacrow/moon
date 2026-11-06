@@ -28,7 +28,7 @@ import {
   Zap,
   Search,
   Library,
-  Moon, Undo2, Download} from 'lucide-react';
+  Moon, Undo2, Download, Users} from 'lucide-react';
 import moonLogoWhite from '../../assets/white.png';
 import '../../styles/glassmorphism.css';
 
@@ -411,6 +411,16 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
             >
               <Box className="h-4 w-4" />
               <span>{show3d ? (isAr ? '3D مفعّل' : '3D ON') : (isAr ? '3D معطّل' : '3D OFF')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate?.('entities')}
+              className="hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-5 py-2.5 text-sm font-bold cursor-pointer"
+              style={{ ...LIQUID_GLASS_PURPLE_REPLACEMENT, color: '#0369a1' }}
+              title={isAr ? 'الأشخاص والأماكن والموضوعات والأعمال: يُفهرس كلٌّ مرة واحدة' : 'People, places, topics and works: each catalogued once'}
+            >
+              <Users className="h-4 w-4" />
+              <span>{isAr ? 'الكيانات' : 'Entities'}</span>
             </button>
             {isSuperAdmin && (
               <button
