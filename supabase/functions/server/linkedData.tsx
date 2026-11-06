@@ -22,6 +22,8 @@ export const CONTEXT: Record<string, string> = {
   rdfs: "http://www.w3.org/2000/01/rdf-schema#",
   xsd: "http://www.w3.org/2001/XMLSchema#",
   madsrdf: "http://www.loc.gov/mads/rdf/v1#",
+  // An agent's links to the same person elsewhere (Wikidata, VIAF, LC), kept in the published record.
+  owl: "http://www.w3.org/2002/07/owl#",
   moonext: new URL("/ontology/", BASE_URI).toString(),
 };
 
@@ -103,7 +105,6 @@ export async function toRdfXmlText(document: any): Promise<string> {
 const AUTHORITY_CONTEXT: Record<string, string> = {
   ...CONTEXT,
   skos: "http://www.w3.org/2004/02/skos/core#",
-  owl: "http://www.w3.org/2002/07/owl#",
 };
 
 /**

@@ -7,7 +7,7 @@ import { useThemeSafe } from '../hooks/useThemeSafe';
 import { getThemeGradients } from '../utils/themeGradients';
 import { getAllRecords, SavedRecord, deleteRecord, logActivity, approveRecord, returnRecord, assignRecord } from '../utils/recordStorageBackend';
 import type { BIBFRAMERecord } from '../types/bibframe';
-import { importSampleRecords, SAMPLE_BATCH } from '../utils/sampleRecords';
+import { importSampleRecords, SAMPLE_MAX } from '../utils/sampleRecords';
 import { ActivityLog } from './ActivityLog';
 import { StorageUsageCard } from './StorageUsageCard';
 import { UserAvatar } from './UserAvatar';
@@ -113,14 +113,18 @@ export function Dashboard({ onNavigate, onLoadRecord }: DashboardProps) {
   // The Super Admin adds the sample books (real Arabic and English titles with covers) to the catalogue.
   const [sampleProgress, setSampleProgress] = useState<string | null>(null);
   const addSampleBooks = async () => {
-    const ok = window.confirm(isAr
-      ? `إضافة ${SAMPLE_BATCH} كتب حقيقية جديدة (عربي وإنجليزي) مع أغلفتها إلى الفهرس؟ كل مرة تُضاف كتب ليست في الفهرس.`
-      : `Add ${SAMPLE_BATCH} new real books (Arabic and English) with their covers to the catalogue? Each time adds books the catalogue does not have yet.`);
-    if (!ok) return;
+    const answer = window.prompt(isAr
+      ? `كم كتاباً حقيقياً جديداً تريد إضافته؟ (1 إلى ${SAMPLE_MAX})
+كل كتاب طبعة حقيقية من Open Library، ومؤلفه مربوط بويكي بيانات ومكتبة الكونغرس وVIAF حين يوجد فيها، وله محور عمل وتصنيف.`
+      : `How many new real books? (1 to ${SAMPLE_MAX})
+Each is a real edition from Open Library; its author is linked to Wikidata, LC and VIAF when they have them, with a work hub and classification.`, '10');
+    if (answer === null) return;
+    const count = Math.min(Math.max(parseInt(answer, 10) || 0, 0), SAMPLE_MAX);
+    if (!count) return;
     setSampleProgress('…');
     let r;
     try {
-      r = await importSampleRecords(user?.username || 'isaac', (done, total) => setSampleProgress(`${done}/${total}`));
+      r = await importSampleRecords(user?.username || 'isaac', (done, total) => setSampleProgress(`${done}/${total}`), count);
     } catch (e) {
       setSampleProgress(null);
       toast.error(isAr ? 'تعذر العثور على كتب جديدة' : 'Could not find new books', { description: e instanceof Error ? e.message : String(e) });

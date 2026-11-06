@@ -719,8 +719,7 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     // authority file and linked. Never blocks the save.
     let authoritiesLinked = 0;
     try {
-      authoritiesLinked = await linkAuthorities(document,
-        (input) => recordStore.addAuthority(input, session.username), (a) => withUri(a).uri);
+      authoritiesLinked = await linkAuthorities(document, (input) => addLinkedEntity(input, session.username), (a) => withUri(a).uri);
     } catch (error) {
       console.error('Authority linking failed (record saved without new links):', error);
     }
@@ -1235,6 +1234,15 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
 // https://mooon.site/resource/<kind>/<id> address. Search is public (the entries are public data);
 // adding needs a signed-in account; merging two entries for one person needs an admin.
 const AUTHORITY_KINDS: string[] = [...ENTITY_KINDS];
+/** Adds (or finds) the entity for a name a record links; an existing entity gains the record's outside links
+ *  (LC, VIAF, Wikidata, ISNI, FAST, ORCID only). */
+async function addLinkedEntity(input: { kind: string; label: string; variants: string[]; sameAs: string[]; data: Record<string, unknown> }, by: string) {
+  const sameAs = input.sameAs.filter((u) => SAME_AS_HOSTS.test(u)).slice(0, 20);
+  const result = await recordStore.addAuthority({ kind: input.kind as any, label: input.label, variants: input.variants, sameAs, data: input.data }, by);
+  const missing = sameAs.filter((u) => !(result.authority.sameAs || []).includes(u));
+  if (result.existing && missing.length) await recordStore.addAuthoritySameAs(result.authority.id, missing).catch(() => null);
+  return result;
+}
 const KINDS_ERROR = `kind must be one of: ${ENTITY_KINDS.join(', ')}`;
 const entityStrings = (v: unknown, max: number): string[] => (Array.isArray(v) ? v : [])
   .filter((s) => typeof s === 'string' && s.trim()).map((s: string) => s.trim().slice(0, 300)).slice(0, max);
@@ -1300,7 +1308,7 @@ app.post("/make-server-49c0e13c/authorities/link-records", async (c) => {
     for (const rec of batch as any[]) {
       try {
         const document = JSON.parse(JSON.stringify(rec.document));
-        const n = await linkAuthorities(document, (input) => recordStore.addAuthority(input, admin.username), (a) => withUri(a).uri);
+        const n = await linkAuthorities(document, (input) => addLinkedEntity(input, admin.username), (a) => withUri(a).uri);
         if (!n) continue;
         await recordStore.saveRecord({ ...rec, document, saved: new Date().toISOString() }, admin.username, 'authority links',
           Number.isInteger(rec.version) ? rec.version : undefined);
