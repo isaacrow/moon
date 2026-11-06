@@ -4,7 +4,7 @@
  * Renders a simple text input for literal values (strings, numbers, dates)
  */
 
-import { OntologyProperty } from '../../services/bibframeOntologyEngine';
+import { OntologyProperty } from '../../../services/standardFields';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 

@@ -67,7 +67,7 @@ import {
   } from "../../services/authoritySearch";
 
 // ===== APP SERVICES =====
-import { getPropertiesForDomain } from "../services/bibframeOntologyEngine";
+import { getPropertiesForDomain } from "../../services/standardFields";
 import { buildBibframeGraph } from "../services/graphBuilder";
 import {
   buildW3CJsonLd, validateW3CJsonLd, jsonLdToTurtle, jsonLdToNTriples,

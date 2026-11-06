@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react';
-import { OntologyProperty } from '../../services/bibframeOntologyEngine';
+import { OntologyProperty } from '../../../services/standardFields';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { LocNameSearch } from './LocNameSearch';
