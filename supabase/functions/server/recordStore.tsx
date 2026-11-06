@@ -548,8 +548,8 @@ export async function authorityHistory(id: string): Promise<any[]> {
 }
 
 /** How many records (not deleted) point to this address, and a few of them. */
-export async function authorityUsage(uri: string): Promise<{ count: number; records: Array<{ id: string; title: string }> }> {
-  const { data, error } = await sb().rpc("moon_authority_usage", { p_uri: uri });
+export async function authorityUsage(uri: string, links: string[] = []): Promise<{ count: number; records: Array<{ id: string; title: string }> }> {
+  const { data, error } = await sb().rpc("moon_authority_usage", { p_uri: uri, p_links: links });
   if (error) throw new Error(`[authorities] usage failed: ${error.message}`);
   return data || { count: 0, records: [] };
 }

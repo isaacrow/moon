@@ -14,6 +14,8 @@ export interface AuthorityResult {
   source: 'LOC' | 'VIAF' | 'Wikidata' | 'Local' | 'Moon' | 'FAST' | 'ORCID' | 'ISNI';
   type?: string;
   description?: string;
+  /** A Moon entity's links to the same thing in LC, VIAF, Wikidata … (so those results fold into it). */
+  sameAs?: string[];
 }
 
 export type LOCScheme =
@@ -145,6 +147,10 @@ export async function searchWikidata(query: string, type?: string): Promise<Auth
 /**
  * Combined authority search across all sources
  */
+/** One spelling of a link (no scheme, www or trailing slash; Wikidata /wiki/ as /entity/), as the server compares them. */
+export const linkKey = (u: string) => u.trim().toLowerCase()
+  .replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').replace(/^wikidata\.org\/wiki\//, 'wikidata.org/entity/');
+
 export async function searchAllAuthorities(
   query: string,
   context: 'person' | 'organization' | 'subject' | 'genre' | 'place' | 'language' | 'holder' | 'work'
@@ -169,8 +175,8 @@ export async function searchAllAuthorities(
 
       case 'holder':
         // Holding institutions: MARC organization codes first, then name authorities.
-        searches.push(searchLOCAuthorities(query, 'organizations'));
         searches.push(searchMoonAuthorities(query, 'agent'));
+        searches.push(searchLOCAuthorities(query, 'organizations'));
         searches.push(searchLOCAuthorities(query, 'names'));
         searches.push(searchWikidata(query, 'item'));
         break;
@@ -183,6 +189,7 @@ export async function searchAllAuthorities(
         break;
 
       case 'genre':
+        searches.push(searchMoonAuthorities(query, 'genre'));
         searches.push(searchLOCAuthorities(query, 'genreForms'));
         searches.push(searchWikidata(query, 'item'));
         break;
@@ -200,7 +207,8 @@ export async function searchAllAuthorities(
         break;
 
       case 'work':
-        // Related works and instances: LC's BIBFRAME resources, then Wikidata.
+        // Related works: Moon's works (hubs), LC's BIBFRAME resources, then Wikidata.
+        searches.push(searchMoonAuthorities(query, 'hub'));
         searches.push(searchLOCAuthorities(query, 'works'));
         searches.push(searchWikidata(query, 'item'));
         break;
@@ -209,21 +217,30 @@ export async function searchAllAuthorities(
     const allResults = await Promise.all(searches);
     allResults.forEach(sourceResults => results.push(...sourceResults));
 
-    // Deduplicate by label and by URI (VIAF returns several name forms of one person)
+    return foldMoonTwins(results);
+  } catch (error) {
+    console.error('Authority search error:', error);
+    return [];
+  }
+}
+
+/**
+ * One result per thing: an outside result for something Moon already has (a Moon entity links to it) folds
+ * into the Moon entity, and results repeating a label or a URI are dropped (VIAF returns several name forms).
+ */
+export function foldMoonTwins(results: AuthorityResult[]): AuthorityResult[] {
+    const moonTwins = new Set(results.flatMap((r) => (r.source === 'Moon' ? r.sameAs || [] : [])).map(linkKey));
     const seen = new Set<string>();
     const seenUris = new Set<string>();
     return results.filter(r => {
       if (!r.label) return false;
+      if (r.source !== 'Moon' && r.uri && moonTwins.has(linkKey(r.uri))) return false;
       const labelLower = r.label.toLowerCase();
       if (seen.has(labelLower) || (r.uri && seenUris.has(r.uri))) return false;
       seen.add(labelLower);
       if (r.uri) seenUris.add(r.uri);
       return true;
     });
-  } catch (error) {
-    console.error('Authority search error:', error);
-    return [];
-  }
 }
 
 /**

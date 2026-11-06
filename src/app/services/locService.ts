@@ -9,7 +9,8 @@
  * - Classification schemes
  */
 
-import { searchAllAuthorities } from '../../services/authoritySearch';
+import { searchAllAuthorities, linkKey } from '../../services/authoritySearch';
+import { searchMoonAuthorities, type MoonAuthorityKind } from '../../services/moonAuthorities';
 
 const LOC_BASE_URL = 'https://id.loc.gov';
 
@@ -42,13 +43,26 @@ async function arabicHits(query: string, context: 'person' | 'subject' | 'place'
 }
 
 /**
+ * Moon's own entities first (one permanent address, used by every record), then LC's hits; an LC hit for
+ * something a Moon entity already links to is left out, so one person or place is offered once.
+ */
+async function moonFirst(query: string, kind: MoonAuthorityKind, lcHits: Promise<any[]>): Promise<any[]> {
+  const [moon, lc] = await Promise.all([searchMoonAuthorities(query, kind).catch(() => []), lcHits]);
+  const twins = new Set(moon.flatMap((m) => m.sameAs || []).map(linkKey));
+  return [
+    ...moon.map((m) => ({ uri: m.uri, aLabel: m.label, suggestLabel: m.label, vLabel: m.description, source: 'Moon' })),
+    ...lc.filter((h: any) => !(h?.uri && twins.has(linkKey(h.uri)))),
+  ];
+}
+
+/**
  * Search LOC Name Authority File (NAF)
  * For persons, organizations, families
  */
 export async function searchLocNames(query: string): Promise<any> {
   if (!query || query.trim().length < 2) return { hits: [] };
   if (ARABIC_SCRIPT.test(query)) return { hits: await arabicHits(query, 'person') };
-  return { hits: await locSuggest('authorities/names', query) };
+  return { hits: await moonFirst(query, 'agent', locSuggest('authorities/names', query)) };
 }
 
 /**
@@ -57,7 +71,7 @@ export async function searchLocNames(query: string): Promise<any> {
 export async function searchLocSubjects(query: string): Promise<any> {
   if (!query || query.trim().length < 2) return { hits: [] };
   if (ARABIC_SCRIPT.test(query)) return { hits: await arabicHits(query, 'subject') };
-  return { hits: await locSuggest('authorities/subjects', query) };
+  return { hits: await moonFirst(query, 'topic', locSuggest('authorities/subjects', query)) };
 }
 
 /**
@@ -73,7 +87,7 @@ export async function searchLocPlaces(query: string): Promise<any> {
     locSuggest('authorities/names', query, 'leftanchored')
   ]);
   const geographicNames = names.filter((h: any) => (h.more?.rdftypes || []).some((t: string) => /Geographic/i.test(t)));
-  return { hits: [...countries, ...areas, ...geographicNames] };
+  return { hits: await moonFirst(query, 'place', Promise.resolve([...countries, ...areas, ...geographicNames])) };
 }
 
 /**

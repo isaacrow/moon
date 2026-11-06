@@ -671,6 +671,20 @@ function SinglePropertyRenderer({
     return (q: string) => searchAllAuthorities(q, 'subject');
   };
 
+  // Which kind of Moon entity a name typed here becomes when it is not found (fields that pick from a fixed
+  // list, such as languages or carriers, make none).
+  const entityKindOf = (): { kind: 'agent' | 'topic' | 'genre' | 'hub' | 'place'; agentType?: 'person' | 'organization' } | null => {
+    const name = property.shortName.replace(/^bf:/, '');
+    if (property.controlledVocab === 'genreForms') return { kind: 'genre' };
+    if (property.controlledVocab === 'organizations' || name === 'heldBy') return { kind: 'agent', agentType: 'organization' };
+    if (name === 'agent') return { kind: 'agent', agentType: 'person' };
+    if (RELATED_RESOURCE_FIELDS.has(name)) return { kind: 'hub' };
+    if (name === 'subject') return { kind: 'topic' };
+    if (name === 'originPlace' || name === 'place') return { kind: 'place' };
+    return null;
+  };
+  const newEntity = entityKindOf();
+
   const translateLabel = useTranslatedLabel();
 
   // The links between this record's own Work, Instance and Item are made by Moon itself; editing them here
@@ -703,6 +717,8 @@ function SinglePropertyRenderer({
           placeholder={property.inputHint || `Search ${property.label.toLowerCase()}...`}
           required={property.required}
           allowCustom
+          entityKind={newEntity?.kind}
+          agentType={newEntity?.agentType}
           isLight={isLight}
           note={isPrefilled ? (i18n.language === 'ar' ? 'افتراضي من LC' : 'LC default') : undefined}
           noteTitle={isPrefilled ? (i18n.language === 'ar'
