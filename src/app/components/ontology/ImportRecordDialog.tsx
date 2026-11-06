@@ -9,6 +9,9 @@ import { Upload, FileJson, FileCode, FileText, X } from 'lucide-react';
 import { importBibframe, ImportFormat } from '../../../services/bibframeImport';
 import { readMarcFile } from '../../../services/marc/marcRecord';
 import { marcToBibframe, ImportedMarcRecord } from '../../../services/marc/marcToBibframe';
+import { importMarcBatch, BatchResult } from '../../../services/marc/marcBatch';
+import { saveRecord, checkDuplicates } from '../../utils/recordStorageBackend';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface ImportRecordDialogProps {
   isOpen: boolean;
@@ -24,6 +27,26 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
   const [marcRecords, setMarcRecords] = useState<ImportedMarcRecord[]>([]);
   const [marcIndex, setMarcIndex] = useState(0);
   const [error, setError] = useState<string>('');
+  const { user, username } = useAuth();
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+  const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
+
+  const handleSaveAll = async () => {
+    setBatchResult(null);
+    setBatchProgress({ done: 0, total: marcRecords.length });
+    try {
+      const result = await importMarcBatch(marcRecords, {
+        cataloger: user?.username || username || 'anonymous',
+        fileName: selectedFile?.name || 'MARC file',
+        findDuplicates: (record) => checkDuplicates(record as any),
+        save: (record) => saveRecord(record as any, user?.username || username || undefined),
+        onProgress: (done, total) => setBatchProgress({ done, total }),
+      });
+      setBatchResult(result);
+    } finally {
+      setBatchProgress(null);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -37,6 +60,7 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
     // Determine file type
     const extension = file.name.split('.').pop()?.toLowerCase();
     setMarcRecords([]);
+    setBatchResult(null);
     setMarcIndex(0);
     if (extension === 'mrc' || extension === 'mrk' || extension === 'marc') {
       setFileType('marc');
@@ -212,6 +236,40 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
               >
                 {marcRecords.map((r, i) => <option key={i} value={i}>{i + 1}. {r.title}</option>)}
               </select>
+              {/* A whole Koha export at once: each record is checked for duplicates and saved as its own record. */}
+              {marcRecords.length > 1 && !batchResult && (
+                <button
+                  type="button"
+                  onClick={handleSaveAll}
+                  disabled={batchProgress !== null}
+                  className="mt-3 w-full px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-wait cursor-pointer"
+                >
+                  {batchProgress
+                    ? `Saving ${batchProgress.done} of ${batchProgress.total}…`
+                    : `Save all ${marcRecords.length} records (skipping books already in Moon)`}
+                </button>
+              )}
+            </div>
+          )}
+
+          {batchResult && (
+            <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-xs text-white/90 space-y-1.5" role="status">
+              <div className="font-bold text-emerald-200">
+                Saved {batchResult.saved.length} · already in Moon {batchResult.duplicates.length} · failed {batchResult.failed.length}
+              </div>
+              {batchResult.saved.some((s) => s.status === 'pending-review') && (
+                <div>New records wait for review before they appear in the catalogue.</div>
+              )}
+              {batchResult.duplicates.length > 0 && (
+                <details><summary className="cursor-pointer">Skipped as duplicates</summary>
+                  <ul className="mt-1 list-disc ps-5">{batchResult.duplicates.map((d, i) => <li key={i}>{d.title} (matches “{d.existing}”)</li>)}</ul>
+                </details>
+              )}
+              {batchResult.failed.length > 0 && (
+                <details open><summary className="cursor-pointer text-red-200">Not saved</summary>
+                  <ul className="mt-1 list-disc ps-5">{batchResult.failed.map((f, i) => <li key={i}>{f.title}: {f.error}</li>)}</ul>
+                </details>
+              )}
             </div>
           )}
 

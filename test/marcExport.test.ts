@@ -67,7 +67,9 @@ test('binary .mrc (ISO 2709) is read back by marcjs with the same fields', () =>
 test('008 carries the date entered, the year, the place code and the language', () => {
   const f008 = (record().fields.find((f: any) => f.tag === '008') as any).data as string;
   assert.equal(f008.length, 40);
-  assert.equal(f008.slice(0, 6), '261105');
+  // Date entered = the record's creation date (yymmdd), not the export day.
+  const created = doc()['@graph'].find((n: any) => n['@type'] === 'bf:AdminMetadata')['bf:creationDate'][0]['@value'];
+  assert.equal(f008.slice(0, 6), created.replace(/-/g, '').slice(2, 8));
   assert.equal(f008.slice(6, 11), 's1977');
   assert.equal(f008.slice(15, 18), 'ir ', 'place comes from the record, not a fixed default');
   assert.equal(f008.slice(35, 38), 'ara');
