@@ -33,6 +33,7 @@ import * as linkedData from "./linkedData.tsx";
 import * as sparqlStore from "./sparqlEndpoint.tsx";
 import { missingForPublish, shapesFromProfile } from "./publishGate.tsx";
 import { PROFILES } from "./profiles.tsx";
+import { profileToDctap, dctapToProfile } from "./dctap.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
 import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
@@ -155,6 +156,30 @@ app.get("/make-server-49c0e13c/profiles/:id/shapes.ttl", (c) => {
   const profile = PROFILES[c.req.param("id")];
   if (!profile) return c.json({ error: "No such profile" }, 404);
   return c.body(shapesFromProfile(profile), 200, { "Content-Type": "text/turtle; charset=utf-8" });
+});
+// The same profile as a DCTAP table (CSV), the form LC's profile editor Dancer (bibframe.org/dancer) uses.
+// Registered before /profiles/:id so "dctap" is not read as a profile id.
+app.post("/make-server-49c0e13c/profiles/dctap/convert", async (c) => {
+  // A DCTAP table (edited in Dancer, or LC's own Marva table) → a profile in Marva's JSON form. Nothing is stored.
+  const text = await c.req.text();
+  if (!text.trim()) return c.json({ error: "Send the DCTAP table (CSV) as the request body" }, 400);
+  if (text.length > 5_000_000) return c.json({ error: "The table is larger than 5 MB" }, 413);
+  try {
+    const id = (c.req.query("id") || "moon:Imported").slice(0, 80);
+    const profile = dctapToProfile(text, { id, title: (c.req.query("title") || id).slice(0, 200) });
+    return c.json(profile, 200, { "Access-Control-Allow-Origin": "*" });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+});
+app.get("/make-server-49c0e13c/profiles/:id/dctap.csv", (c) => {
+  const profile = PROFILES[c.req.param("id")];
+  if (!profile) return c.json({ error: "No such profile" }, 404);
+  return c.body(profileToDctap(profile), 200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="moon-${c.req.param("id")}.dctap.csv"`,
+    "Access-Control-Allow-Origin": "*",
+  });
 });
 
 // 🌙 Moon Engine Status Endpoint
