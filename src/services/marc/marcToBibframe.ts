@@ -98,6 +98,24 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
     instance['bf:title'] = { ...title };
     if (sub(t, 'c')) instance['bf:responsibilityStatement'] = pair(t, 'c');
   }
+  // Variant titles (246), typed as LC's marc2bibframe2 types them from the second indicator.
+  const VARIANT_246: Record<string, [string, string?]> = {
+    '0': ['bf:VariantTitle', 'por'], '1': ['bf:ParallelTitle'], '2': ['bf:VariantTitle', 'dis'], '4': ['bf:VariantTitle', 'cov'],
+    '5': ['bf:VariantTitle', 'atp'], '6': ['bf:VariantTitle', 'cap'], '7': ['bf:VariantTitle', 'run'], '8': ['bf:VariantTitle', 'spi'],
+  };
+  const variants = data(r, '246').map((f) => {
+    const main = pair(f, 'a');
+    if (!(Array.isArray(main) ? main.length : main)) return null;
+    const [cls, code] = VARIANT_246[f.ind2] || ['bf:VariantTitle'];
+    const v: any = { '@type': code ? [cls, `http://id.loc.gov/vocabulary/vartitletype/${code}`] : cls, 'bf:mainTitle': main };
+    if (sub(f, 'b')) v['bf:subtitle'] = pair(f, 'b');
+    if (sub(f, 'n')) v['bf:partNumber'] = clean(sub(f, 'n'));
+    if (sub(f, 'p')) v['bf:partName'] = clean(sub(f, 'p'));
+    const kind = clean(sub(f, 'i').replace(/:\s*$/, ''));
+    if (kind) v['bf:variantType'] = kind;
+    return v;
+  }).filter(Boolean);
+  if (variants.length) instance['bf:title'] = [instance['bf:title'], ...variants].filter(Boolean);
   const f250 = data(r, '250')[0];
   if (sub(f250, 'a')) instance['bf:editionStatement'] = pair(f250, 'a');
 
