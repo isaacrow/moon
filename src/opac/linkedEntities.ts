@@ -58,6 +58,8 @@ export interface InfoCard {
   born?: string;
   died?: string;
   coordinates?: { lat: number; lon: number };
+  /** The same person in other authority files, as Wikidata records them (VIAF P214, LC P244, ISNI P213). */
+  sameAs?: string[];
 }
 
 export const wikidataApiUrl = (qid: string) =>
@@ -89,6 +91,12 @@ export function parseInfoCard(json: any, qid: string, lang: 'ar' | 'en', kind?: 
   const pick = (m: any) => m?.[lang]?.value || m?.[lang === 'ar' ? 'en' : 'ar']?.value;
   const file = claim(e, 'P18');
   const coords = claim(e, 'P625');
+  const viaf = claim(e, 'P214'), lc = claim(e, 'P244'), isni = claim(e, 'P213');
+  const sameAs = [
+    typeof viaf === 'string' && /^\d+$/.test(viaf) ? `https://viaf.org/viaf/${viaf}` : '',
+    typeof lc === 'string' && /^n[a-z]?\d+$/.test(lc) ? `http://id.loc.gov/authorities/names/${lc}` : '',
+    typeof isni === 'string' && /^[\d ]{15,19}[\dX]$/.test(isni) ? `https://isni.org/isni/${isni.replace(/ /g, '')}` : '',
+  ].filter(Boolean);
   return {
     qid,
     url: `https://www.wikidata.org/wiki/${qid}`,
@@ -98,6 +106,7 @@ export function parseInfoCard(json: any, qid: string, lang: 'ar' | 'en', kind?: 
     ...(year(claim(e, 'P569')) ? { born: year(claim(e, 'P569')) } : {}),
     ...(year(claim(e, 'P570')) ? { died: year(claim(e, 'P570')) } : {}),
     ...(coords && typeof coords.latitude === 'number' ? { coordinates: { lat: coords.latitude, lon: coords.longitude } } : {}),
+    ...(sameAs.length ? { sameAs } : {}),
   };
 }
 

@@ -349,11 +349,13 @@ function BookCard({ work, ctx, i }: { work: OpacWorkEntity; ctx: Ctx; i?: number
   );
 }
 
-function Avatar({ p, cls = '', morph }: { p: OpacPersonEntity; cls?: string; morph?: boolean }) {
+function Avatar({ p, cls = '', morph, image }: { p: OpacPersonEntity; cls?: string; morph?: boolean; image?: string }) {
   const [broken, setBroken] = useState(false);
+  const src = image || p.avatarUrl;
+  useEffect(() => setBroken(false), [src]);
   return (
     <span className={`avatar ${cls}`} aria-hidden="true" style={morph ? { viewTransitionName: vtName('avatar', p.id) } as React.CSSProperties : undefined}>
-      {p.avatarUrl && !broken ? <img src={p.avatarUrl} alt="" onError={() => setBroken(true)} /> : initial(personName(p))}
+      {src && !broken ? <img src={src} alt="" onError={() => setBroken(true)} /> : initial(personName(p))}
     </span>
   );
 }
@@ -1290,6 +1292,11 @@ function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; no
 function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
   const r = useMemo(() => wolfMoonOpacService.getPersonByNameOrUri(k), [k, ctx.rev]);
   const moon = useMoonAuthority('agent', r ? personName(r.person) : undefined);
+  const wikidataId = r?.person.wikidataId;
+  const wikidata = wikidataId ? (wikidataId.startsWith('http') ? wikidataId : `https://www.wikidata.org/wiki/${wikidataId}`) : undefined;
+  const fromMoon = [wikidata, ...(moon?.sameAs || [])].filter((u): u is string => !!u);
+  // The picture and the VIAF / LC / ISNI links come from the person's Wikidata entry, so they are real.
+  const card = useWikidataCard(fromMoon, 'person');
   if (!r) return <NotFound ctx={ctx} what={t('المؤلف', 'author')} back={{ mode: 'authors' }} backLabel={t('كل المؤلفين', 'All authors')} />;
   const { person: p, works } = r;
   const name = personName(p);
@@ -1303,11 +1310,7 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
   works.forEach(w => { const g = roleIn(w); groups.set(g, [...(groups.get(g) || []), w]); });
   const subjects = [...new Map(works.flatMap(w => w.subjects).filter(s => isReadableLabel(s.label)).map(s => [s.label, s])).values()].slice(0, 10);
   const langs = [...new Set(works.map(w => languageDisplay(languageName(w.languageLabel, w.language))).filter(Boolean))];
-  const sameAs = [
-    p.viafUri, p.locUri, p.isniUri,
-    p.wikidataId ? (p.wikidataId.startsWith('http') ? p.wikidataId : `https://www.wikidata.org/wiki/${p.wikidataId}`) : undefined,
-    ...(moon?.sameAs || []),
-  ].filter((u): u is string => !!u);
+  const sameAs = [...new Set([...fromMoon, ...(card?.sameAs || [])])];
   const variants = (moon?.variants || []).filter(v => v !== name);
   const span = yearSpan(works);
 
@@ -1317,7 +1320,7 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
         <Crumbs ctx={ctx} items={[{ label: t('المؤلفون', 'Authors'), view: { mode: 'authors' } }, { label: name }]} />
       </div>
       <section className="person-hero glass rise">
-        <Avatar p={p} cls="xl" morph />
+        <Avatar p={p} cls="xl" morph image={card?.image} />
         <div>
           <div className="kicker">{t('شخص', 'Person')}</div>
           <h1 className="page-title">{name}</h1>
@@ -1344,7 +1347,7 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
           ))}
         </div>
         <aside className="entity-side">
-          <WikidataCard sameAs={sameAs} kind="person" />
+          <WikidataCard sameAs={fromMoon} kind="person" />
           <LinkedPanel uri={moon?.uri} sameAs={sameAs} note={moon ? undefined : t('لهذا الشخص سجل في ملفات الاستناد العالمية؛ يمكن إضافته إلى ملف مون الاستنادي من محرر مون.', 'This person has a record in international authority files; it can be added to Moon’s authority file from the Moon editor.')} />
           {subjects.length > 0 && (
             <section className="panel glass rise">
@@ -1478,7 +1481,7 @@ function PlacePage({ ctx, k }: { ctx: Ctx; k: string }) {
 
 /** Wikidata info card (as Primo shows): description, picture, dates or map position, with its source. */
 const infoCardCache = new Map<string, InfoCardData | null>();
-function WikidataCard({ sameAs, kind }: { sameAs: (string | undefined)[]; kind: 'person' | 'place' }) {
+function useWikidataCard(sameAs: (string | undefined)[], kind: 'person' | 'place'): InfoCardData | null {
   const qid = wikidataQid(sameAs);
   const lang = opacLang();
   const cacheKey = `${qid}|${lang}|${kind}`;
@@ -1493,6 +1496,11 @@ function WikidataCard({ sameAs, kind }: { sameAs: (string | undefined)[]; kind: 
       .catch(() => {});
     return () => { live = false; };
   }, [qid, cacheKey]);
+  return card;
+}
+
+function WikidataCard({ sameAs, kind }: { sameAs: (string | undefined)[]; kind: 'person' | 'place' }) {
+  const card = useWikidataCard(sameAs, kind);
   if (!card || (!card.description && !card.image)) return null;
   const life = [card.born, card.died].filter(Boolean).join(' – ');
   return (

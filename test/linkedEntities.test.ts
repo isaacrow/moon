@@ -40,6 +40,12 @@ test('info card for a person: Arabic label and description, Commons image, full 
   assert.match(c.image!, /^https:\/\/commons\.wikimedia\.org\/wiki\/Special:FilePath\/.+\?width=320$/);
   assert.equal(c.url, 'https://www.wikidata.org/wiki/Q4121866');
   assert.equal(parseInfoCard(fixture('Q4121866'), 'Q4121866', 'en')!.label, 'Muhammad Mahdi Al-Jawahiri');
+  // The other authority files come from Wikidata itself (VIAF, LC, ISNI), not typed in.
+  assert.deepEqual(c.sameAs, [
+    'https://viaf.org/viaf/117239235',
+    'http://id.loc.gov/authorities/names/n82011019',
+    'https://isni.org/isni/0000000122843672',
+  ]);
 });
 
 test('info card for a place: coordinates, no person dates; a missing item gives nothing', () => {
