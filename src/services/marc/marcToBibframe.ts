@@ -30,6 +30,42 @@ const NAME_TYPE: Record<string, string> = { '00': 'bf:Person', '10': 'bf:Organiz
 
 const vocabNode = (path: string, label: string) => ({ '@id': `${VOCAB}/${path}`, 'rdfs:label': label });
 
+/**
+ * A Hub (bf:Hub) from a MARC title or name-title heading, as LC's marc2bibframe2 builds them (BIBFRAME
+ * primer, Appendix A): Hubs stand for 130 and 1XX + 240 (the uniform title of the record's own work) and
+ * for 6XX/7XX/8XX with $t and 630/730/830 (other works the record is about, relates to or belongs to).
+ * The Hub keeps the heading as its authorized access point (bflc:aap, "Homer. Odyssey. English"), its title
+ * parts, its creator as a primary contribution, and its URI when the field has one ($0/$1).
+ */
+const TITLE_PART_CODES = /[nplskfmor]/;
+function hubOf(titleField: DataField, titleCode: 'a' | 't', nameField?: DataField): any | null {
+  // The name as the heading has it ("Shakespeare, William, 1564-1616"), without its closing punctuation.
+  const name = nameField ? clean([sub(nameField, 'a'), sub(nameField, 'b'), sub(nameField, 'c'), sub(nameField, 'q'), sub(nameField, 'd')].filter(Boolean).map((v) => v.trim()).join(' ')) : '';
+  const main = clean(sub(titleField, titleCode));
+  if (!main) return null;
+  const after = titleField.subfields.slice(titleField.subfields.findIndex(([c]) => c === titleCode) + 1);
+  const parts = after.filter(([c]) => TITLE_PART_CODES.test(c)).map(([c, v]) => [c, clean(v)] as [string, string]).filter(([, v]) => v);
+  const title: any = { '@type': 'bf:Title', 'bf:mainTitle': [main, ...parts.filter(([c]) => !/[np]/.test(c)).map(([, v]) => v)].join('. ') };
+  const partNumber = parts.filter(([c]) => c === 'n').map(([, v]) => v);
+  const partName = parts.filter(([c]) => c === 'p').map(([, v]) => v);
+  if (partNumber.length) title['bf:partNumber'] = partNumber.length === 1 ? partNumber[0] : partNumber;
+  if (partName.length) title['bf:partName'] = partName.length === 1 ? partName[0] : partName;
+  const hub: any = {
+    '@type': 'bf:Hub',
+    'bflc:aap': [name, main, ...parts.map(([, v]) => v)].filter(Boolean).join('. '),
+    'bf:title': title,
+  };
+  const uri = [...subs(titleField, '1'), ...subs(titleField, '0')].find((v) => /^https?:\/\/id\.loc\.gov\/resources\/hubs\//.test(v) || /^https?:\/\//.test(v) && /hub|work/i.test(v));
+  if (uri) hub['@id'] = uri;
+  if (nameField) {
+    const agent: any = { '@type': NAME_TYPE[nameField.tag.slice(1)] || 'bf:Agent', 'rdfs:label': name };
+    const agentUri = nameField === titleField ? '' : link(nameField);
+    if (agentUri) agent['@id'] = agentUri;
+    hub['bf:contribution'] = { '@type': ['bf:Contribution', 'bf:PrimaryContribution'], 'bf:agent': agent };
+  }
+  return hub;
+}
+
 export interface ImportedMarcRecord { work: any; instance: any; item: any; title: string }
 
 export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
@@ -69,6 +105,7 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
   const contributions: any[] = [];
   for (const f of r.fields) {
     if (isControl(f) || !/^[17](00|10|11)$/.test(f.tag)) continue;
+    if (f.tag.startsWith('7') && sub(f, 't')) continue;
     const nameOf = (x: DataField | undefined) => clean([sub(x, 'a'), sub(x, 'b'), sub(x, 'c'), sub(x, 'd')].filter(Boolean).join(' '));
     const name = nameOf(f);
     if (!name) continue;
@@ -82,6 +119,44 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
     });
   }
   if (contributions.length) work['bf:contribution'] = contributions;
+
+  // ---- Hubs: the work this record expresses (130, 1XX + 240), related works (7XX $t, 730) and series (8XX) ----
+  const mainName = r.fields.find((f): f is DataField => !isControl(f) && /^1(00|10|11)$/.test(f.tag));
+  const f130 = data(r, '130')[0];
+  const f240 = data(r, '240')[0];
+  const ownHub = f130 ? hubOf(f130, 'a') : f240 ? hubOf(f240, 'a', mainName) : null;
+  if (ownHub) work['bf:expressionOf'] = ownHub;
+  const relations: any[] = [];
+  const parts: any[] = [];
+  for (const f of r.fields) {
+    if (isControl(f)) continue;
+    const isNameTitle = /^7(00|10|11)$/.test(f.tag) && sub(f, 't');
+    if (!isNameTitle && f.tag !== '730') continue;
+    const hub = isNameTitle ? hubOf(f, 't', f) : hubOf(f, 'a');
+    if (!hub) continue;
+    // Second indicator 2: an analytical entry, a work contained in this one.
+    if (f.ind2 === '2') { parts.push(hub); continue; }
+    const relationship = clean(sub(f, 'i').replace(/:\s*$/, ''));
+    relations.push({
+      '@type': 'bf:Relation',
+      ...(relationship ? { 'bf:relationship': { 'rdfs:label': relationship } } : {}),
+      'bf:associatedResource': hub,
+    });
+  }
+  for (const f of r.fields) {
+    if (isControl(f) || !/^8(00|10|11|30)$/.test(f.tag)) continue;
+    const hub = f.tag === '830' ? hubOf(f, 'a') : hubOf(f, 't', f);
+    if (!hub) continue;
+    const numbering = clean(sub(f, 'v'));
+    relations.push({
+      '@type': 'bf:Relation',
+      'bf:relationship': { '@id': 'http://id.loc.gov/vocabulary/relationship/series', 'rdfs:label': 'series' },
+      'bf:associatedResource': hub,
+      ...(numbering ? { 'bf:seriesEnumeration': numbering } : {}),
+    });
+  }
+  if (relations.length) work['bf:relation'] = relations;
+  if (parts.length) work['bf:hasPart'] = parts;
 
   // ---- Language, content, media, carrier, issuance ----
   const lang = f008.slice(35, 38).trim();
@@ -143,11 +218,17 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
   if (summaries.length) work['bf:summary'] = summaries;
 
   // ---- Subjects and genre ----
-  const SUBJECT_TYPE: Record<string, string> = { '600': 'bf:Person', '610': 'bf:Organization', '611': 'bf:Meeting', '650': 'bf:Topic', '651': 'bf:Place' };
+  const SUBJECT_TYPE: Record<string, string> = { '600': 'bf:Person', '610': 'bf:Organization', '611': 'bf:Meeting', '630': 'bf:Hub', '650': 'bf:Topic', '651': 'bf:Place' };
   const subjects = r.fields.filter((f): f is DataField => !isControl(f) && !!SUBJECT_TYPE[f.tag]).map((f) => {
     // A heading with subdivisions ($x $y $z $v) is one subject, as LC writes it: "Philosophy--History".
+    // A work as subject with no subdivisions is the work's Hub; with subdivisions LC keeps one heading.
+    const subdivided = f.subfields.some(([c]) => /[xyzv]/.test(c));
+    if (!subdivided && (f.tag === '630' || (/^6(00|10|11)$/.test(f.tag) && sub(f, 't')))) {
+      const hub = f.tag === '630' ? hubOf(f, 'a') : hubOf(f, 't', f);
+      if (hub) return hub;
+    }
     const heading = f.subfields.filter(([c]) => /[abcdtxyzv]/.test(c)).map(([, v]) => clean(v)).filter(Boolean).join('--');
-    const node: any = { '@type': SUBJECT_TYPE[f.tag], 'rdfs:label': heading };
+    const node: any = { '@type': SUBJECT_TYPE[f.tag] === 'bf:Hub' || sub(f, 't') ? 'bf:Topic' : SUBJECT_TYPE[f.tag], 'rdfs:label': heading };
     if (link(f)) node['@id'] = link(f);
     return heading ? node : null;
   }).filter(Boolean);

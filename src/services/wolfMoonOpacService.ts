@@ -1857,6 +1857,44 @@ class WolfMoonOpacService {
         }
       }
 
+      // LC's longer form (marc2bibframe2, Moon's MARC import): bf:relation → bf:Relation with its
+      // relationship and the related work (often a bf:Hub) as bf:associatedResource.
+      const nodeOf = (v: any) => (v && typeof v === 'object' && v['@id'] && nodeMap.has(v['@id']) ? nodeMap.get(v['@id']) : deref(v));
+      const textOf = (v: any): string => {
+        const x = Array.isArray(v) ? v[0] : v;
+        return typeof x === 'string' ? x : x && typeof x === 'object' ? String(x['@value'] ?? x['rdfs:label'] ?? x['bf:mainTitle'] ?? '') : '';
+      };
+      const hubLabel = (h: any) => textOf(h?.['bflc:aap']) || textOf(nodeOf(h?.['bf:title'])?.['bf:mainTitle']) || textOf(h?.['rdfs:label']);
+      for (const rel of ([] as any[]).concat(workNode['bf:relation'] || workNode['relation'] || [])) {
+        const relNode = nodeOf(rel);
+        const target = nodeOf(relNode?.['bf:associatedResource']);
+        if (!target) continue;
+        const rLabel = hubLabel(target);
+        const kind = nodeOf(relNode?.['bf:relationship']);
+        const kindId = String(kind?.['@id'] || '');
+        const kindLabel = textOf(kind?.['rdfs:label']);
+        const isSeries = /\/relationship\/series$/.test(kindId) || /^series$/i.test(kindLabel);
+        const num = textOf(relNode?.['bf:seriesEnumeration']);
+        if (!rLabel && !target['@id']) continue;
+        relatedWorks.push({
+          predicate: isSeries ? 'bf:hasSeries' : 'bf:relation',
+          predicateLabel: isSeries ? 'السلسلة (Series)' : kindLabel ? `${kindLabel}` : 'عمل مرتبط (Related Work)',
+          targetTitle: rLabel + (num ? ` ؛ ${num}` : ''),
+          targetUri: typeof target['@id'] === 'string' && !target['@id'].startsWith('_:') ? target['@id'] : undefined,
+          targetType: [].concat(target['@type'] || []).map(String).some((t: string) => t.endsWith('Hub')) ? 'bf:Hub' : 'bf:Work',
+        });
+      }
+
+      // The Hub this Work expresses (bf:expressionOf): groups editions and translations, and has its own page.
+      const ownHubNode = nodeOf(workNode['bf:expressionOf'] || workNode['expressionOf']);
+      const ownHubLabel = ownHubNode && typeof ownHubNode === 'object' ? hubLabel(ownHubNode) : '';
+      const ownHubId = ownHubNode && typeof ownHubNode === 'object' && typeof ownHubNode['@id'] === 'string' && !ownHubNode['@id'].startsWith('_:')
+        ? ownHubNode['@id'] : typeof ownHubNode === 'string' && /^https?:/.test(ownHubNode) ? ownHubNode : '';
+      // A Hub with no URI (from MARC without $0) is still a group: keyed by its access point.
+      const expressionOfHub = ownHubId || ownHubLabel
+        ? { uri: ownHubId || `hub:${normalizeArabic(ownHubLabel).toLowerCase().replace(/\s+/g, ' ').trim()}`, label: ownHubLabel || titleStr || ownHubId }
+        : undefined;
+
       const derivNode = deref(workNode['bf:hasDerivative'] || workNode['hasDerivative']);
       if (derivNode) {
         const dUri = typeof derivNode === 'object' ? derivNode['@id'] : undefined;
@@ -2022,6 +2060,7 @@ class WolfMoonOpacService {
 
       return {
         id: workId,
+        ...(expressionOfHub ? { expressionOfHub } : {}),
         // The cover stored for the record (uploaded, or from Open Library / Google Books), if any.
         ...(typeof recordObj.coverUrl === 'string' && recordObj.coverUrl ? { coverUrl: recordObj.coverUrl } : {}),
         uri: getEntityIri('work', workId),
