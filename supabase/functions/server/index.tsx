@@ -1020,8 +1020,12 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
         return c.body(null, 301, { ...base, Location: `${linkedData.BASE_URI}/${kind}/${entry.mergedInto}${ext}` });
       }
       if (format === 'html') {
+        // Straight to the entity's own OPAC page (person, subject, place or hub), not a search.
         const page = new URL('/opac.html', linkedData.BASE_URI);
-        page.searchParams.set('q', entry.label);
+        if (kind === 'agent') page.searchParams.set('person', entry.label);
+        else if (kind === 'topic') page.searchParams.set('subject', entry.label);
+        else if (kind === 'place') page.searchParams.set('place', entry.label);
+        else page.searchParams.set('hub', uri);
         return c.body(null, 303, { ...base, Location: page.toString() });
       }
       // A hub lists the published works that are its expressions (bf:hasExpression).
@@ -1032,14 +1036,16 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
       if (format === 'jsonld') {
         return c.body(JSON.stringify(doc, null, 2), 200, { ...base, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
       }
-      const text = format === 'ttl' ? await linkedData.authorityTurtle(doc) : await linkedData.authorityNTriples(doc);
+      const text = format === 'ttl' ? await linkedData.authorityTurtle(doc)
+        : format === 'rdf' ? linkedData.nTriplesToRdfXml(await linkedData.authorityNTriples(doc))
+        : await linkedData.authorityNTriples(doc);
       return c.body(text, 200, { ...base, 'Content-Type': `${linkedData.MEDIA_TYPES[format]}; charset=utf-8` });
     }
     const record = await recordStore.findPublishedByUri(uri);
     if (!record) {
       return c.json({ error: 'No published record has this URI', uri }, 404);
     }
-    const alternates = (['jsonld', 'ttl', 'nt'] as const)
+    const alternates = (['jsonld', 'ttl', 'nt', 'rdf'] as const)
       .map((f) => `<${uri}.${f}>; rel="alternate"; type="${linkedData.MEDIA_TYPES[f]}"`)
       .join(', ');
     const headers: Record<string, string> = {
@@ -1056,7 +1062,9 @@ app.get("/make-server-49c0e13c/resource/:kind/:id", async (c) => {
     if (format === 'jsonld') {
       return c.body(JSON.stringify(linkedData.toJsonLd(record.document), null, 2), 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
     }
-    const body = format === 'ttl' ? await linkedData.toTurtle(record.document) : await linkedData.toNTriples(record.document);
+    const body = format === 'ttl' ? await linkedData.toTurtle(record.document)
+      : format === 'rdf' ? await linkedData.toRdfXmlText(record.document)
+      : await linkedData.toNTriples(record.document);
     return c.body(body, 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES[format]}; charset=utf-8` });
   } catch (error) {
     console.error('Resolve URI error:', uri, error);

@@ -8,6 +8,7 @@
  */
 import jsonld from "npm:jsonld@8.3.3";
 import { Parser, Writer } from "npm:n3@1.17.4";
+import { toRdfXml } from "./rdfXml.tsx";
 
 export const BASE_URI = (Deno.env.get("MOON_URI_BASE") || "https://mooon.site/resource").replace(/\/+$/, "");
 
@@ -21,15 +22,16 @@ export const CONTEXT: Record<string, string> = {
   moonext: new URL("/ontology/", BASE_URI).toString(),
 };
 
-export type Format = "jsonld" | "nt" | "ttl" | "html";
+export type Format = "jsonld" | "nt" | "ttl" | "rdf" | "html";
 
 export const MEDIA_TYPES: Record<Exclude<Format, "html">, string> = {
   jsonld: "application/ld+json",
   nt: "application/n-triples",
   ttl: "text/turtle",
+  rdf: "application/rdf+xml",
 };
 
-const EXTENSIONS: Record<string, Format> = { jsonld: "jsonld", json: "jsonld", nt: "nt", ttl: "ttl", html: "html" };
+const EXTENSIONS: Record<string, Format> = { jsonld: "jsonld", json: "jsonld", nt: "nt", ttl: "ttl", rdf: "rdf", html: "html" };
 
 /** Splits "abc123.ttl" into the id and the format its extension asks for. */
 export function splitExtension(id: string): { id: string; format?: Format } {
@@ -54,6 +56,7 @@ export function negotiate(accept: string | null | undefined): Format {
     if (type === "application/ld+json" || type === "application/json") return "jsonld";
     if (type === "text/turtle" || type === "application/x-turtle") return "ttl";
     if (type === "application/n-triples" || type === "text/plain") return "nt";
+    if (type === "application/rdf+xml") return "rdf";
   }
   return "html";
 }
@@ -73,6 +76,15 @@ export async function toTurtle(document: any): Promise<string> {
   writer.addQuads(quads);
   return await new Promise<string>((resolve, reject) =>
     writer.end((err: Error | null, out: string) => (err ? reject(err) : resolve(out))));
+}
+
+/** N-Triples text → RDF/XML. */
+export function nTriplesToRdfXml(nt: string, prefixes: Record<string, string> = CONTEXT): string {
+  return toRdfXml(new Parser({ format: "N-Triples" }).parse(nt) as any, prefixes);
+}
+
+export async function toRdfXmlText(document: any): Promise<string> {
+  return nTriplesToRdfXml(await toNTriples(document));
 }
 
 const AUTHORITY_CONTEXT: Record<string, string> = {
