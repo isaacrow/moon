@@ -102,7 +102,8 @@ export function parseIso2709(bytes: Uint8Array): MarcRecord[] {
       let body = rec.subarray(base + off, base + off + len);
       if (body[body.length - 1] === FIELD_END) body = body.subarray(0, body.length - 1);
       if (/^00\d$/.test(tag)) { fields.push({ tag, data: dec.decode(body) }); continue; }
-      const text = dec.decode(body);
+      // Composed characters (ā, not a + macron), as Moon stores and searches text.
+      const text = dec.decode(body).normalize('NFC');
       const [ind, ...parts] = text.split(String.fromCharCode(SUBFIELD));
       fields.push({ tag, ind1: ind[0] || ' ', ind2: ind[1] || ' ', subfields: parts.filter(Boolean).map((s) => [s[0], s.slice(1)] as Subfield) });
     }
@@ -112,7 +113,9 @@ export function parseIso2709(bytes: Uint8Array): MarcRecord[] {
   return records;
 }
 
-const unxml = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, '&');
+const unxml = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+  // LC writes combining marks as hex entities (Qabasa&#x304;t).
+  .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&amp;/g, '&');
 const attr = (tag: string, name: string) => (tag.match(new RegExp(`\\b${name}="([^"]*)"`)) || [])[1] ?? '';
 
 /** MARCXML: a <collection> of <record>s or a single <record>, with or without a "marc:" prefix. */
@@ -124,7 +127,7 @@ export function parseMarcXml(text: string): MarcRecord[] {
     const fields: MarcField[] = [];
     for (const m of body.matchAll(/<controlfield\b([^>]*)>([\s\S]*?)<\/controlfield>|<datafield\b([^>]*)>([\s\S]*?)<\/datafield>/g)) {
       if (m[1] !== undefined) { fields.push({ tag: attr(m[1], 'tag'), data: unxml(m[2]) }); continue; }
-      const subfields = [...m[4].matchAll(/<subfield\b([^>]*)>([\s\S]*?)<\/subfield>/g)].map(([, a, v]) => [attr(a, 'code'), unxml(v)] as Subfield);
+      const subfields = [...m[4].matchAll(/<subfield\b([^>]*)>([\s\S]*?)<\/subfield>/g)].map(([, a, v]) => [attr(a, 'code'), unxml(v).normalize('NFC')] as Subfield);
       fields.push({ tag: attr(m[3], 'tag'), ind1: attr(m[3], 'ind1') || ' ', ind2: attr(m[3], 'ind2') || ' ', subfields });
     }
     records.push({ leader, fields });
@@ -147,7 +150,7 @@ export function parseMrk(text: string): MarcRecord[] {
       else {
         const blank = (c: string) => (c === '\\' ? ' ' : c || ' ');
         fields.push({ tag, ind1: blank(rest[0]), ind2: blank(rest[1]),
-          subfields: rest.slice(2).split('$').filter(Boolean).map((s) => [s[0], s.slice(1)] as Subfield) });
+          subfields: rest.slice(2).normalize('NFC').split('$').filter(Boolean).map((s) => [s[0], s.slice(1)] as Subfield) });
       }
     }
     if (leader || fields.length) records.push({ leader: leader.padEnd(24, ' '), fields });

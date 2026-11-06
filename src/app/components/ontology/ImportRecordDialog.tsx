@@ -11,6 +11,7 @@ import { readMarcFile } from '../../../services/marc/marcRecord';
 import { marcToBibframe, ImportedMarcRecord } from '../../../services/marc/marcToBibframe';
 import { importMarcBatch, BatchResult } from '../../../services/marc/marcBatch';
 import { searchBlueCore, importFromBlueCore, BlueCoreHit } from '../../../services/blueCore';
+import { listSruTargets, searchSru, SruIndex, SruTargetInfo } from '../../../services/sruClient';
 import { saveRecord, checkDuplicates } from '../../utils/recordStorageBackend';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -31,6 +32,26 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
   const { user, username } = useAuth();
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
   const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
+
+  // SRU copy cataloguing (other library catalogues)
+  const [sruTargets, setSruTargets] = useState<SruTargetInfo[]>([{ id: 'lc', name: 'Library of Congress' }]);
+  const [sruTarget, setSruTarget] = useState('lc');
+  const [sruIndex, setSruIndex] = useState<SruIndex>('keyword');
+  const [sruQuery, setSruQuery] = useState('');
+  const [sruBusy, setSruBusy] = useState(false);
+  const [sruResult, setSruResult] = useState<{ total: number; records: ImportedMarcRecord[] } | null>(null);
+  React.useEffect(() => { if (isOpen) listSruTargets().then(setSruTargets).catch(() => {}); }, [isOpen]);
+  const handleSruSearch = async () => {
+    setSruBusy(true);
+    setError('');
+    try {
+      setSruResult(await searchSru(sruTarget, sruIndex, sruQuery.trim()));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The catalogue could not be searched.');
+    } finally {
+      setSruBusy(false);
+    }
+  };
 
   // Blue Core copy cataloguing
   const [bcQuery, setBcQuery] = useState('');
@@ -211,6 +232,42 @@ export function ImportRecordDialog({ isOpen, onClose, onImport }: ImportRecordDi
                       className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 cursor-pointer">
                       Copy
                     </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Copy cataloguing from other library catalogues over SRU (LC, and any configured on the server) */}
+          <div className="p-4 rounded-2xl border border-white/20 space-y-3" style={{ background: 'rgba(255, 255, 255, 0.06)' }}>
+            <label htmlFor="sru-q" className="block text-xs font-semibold text-white/80 uppercase tracking-wider">
+              Copy from another library catalogue (SRU)
+            </label>
+            <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); handleSruSearch(); }}>
+              <select aria-label="Catalogue" value={sruTarget} onChange={(e) => setSruTarget(e.target.value)}
+                className="px-2 py-2 rounded-xl text-xs bg-black/40 border border-white/20 text-white">
+                {sruTargets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <select aria-label="Search by" value={sruIndex} onChange={(e) => setSruIndex(e.target.value as SruIndex)}
+                className="px-2 py-2 rounded-xl text-xs bg-black/40 border border-white/20 text-white">
+                <option value="keyword">Any word</option><option value="title">Title</option><option value="author">Author</option>
+                <option value="isbn">ISBN</option><option value="lccn">LCCN</option>
+              </select>
+              <input id="sru-q" value={sruQuery} onChange={(e) => setSruQuery(e.target.value)} dir="auto"
+                className="flex-1 min-w-[8rem] px-3 py-2 rounded-xl text-sm bg-black/40 border border-white/20 text-white" />
+              <button type="submit" disabled={sruBusy || !sruQuery.trim()}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-sky-600 hover:bg-sky-500 disabled:opacity-50 cursor-pointer">
+                {sruBusy ? 'Searching…' : 'Search'}
+              </button>
+            </form>
+            {sruResult && (
+              <div className="max-h-56 overflow-auto space-y-1.5" role="list">
+                <div className="text-[11px] text-white/60">{sruResult.total} found{sruResult.total > sruResult.records.length ? `, first ${sruResult.records.length} shown` : ''}</div>
+                {sruResult.records.map((r, i) => (
+                  <div key={i} role="listitem" className="flex items-center gap-2 p-2 rounded-xl bg-black/30 border border-white/10">
+                    <div className="flex-1 min-w-0 text-sm text-white truncate" dir="auto" title={r.title}>{r.title}</div>
+                    <button type="button" onClick={() => { onImport(r.work, r.instance, r.item); onClose(); }}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 cursor-pointer">Copy</button>
                   </div>
                 ))}
               </div>

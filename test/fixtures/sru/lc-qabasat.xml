@@ -1,0 +1,328 @@
+<?xml version="1.0"?>
+<zs:searchRetrieveResponse xmlns:zs="http://www.loc.gov/zing/srw/"><zs:version>1.1</zs:version><zs:numberOfRecords>52</zs:numberOfRecords><zs:records><zs:record><zs:recordSchema>marcxml</zs:recordSchema><zs:recordPacking>xml</zs:recordPacking><zs:recordData><record xmlns="http://www.loc.gov/MARC21/slim">
+  <leader>03215cas a2200673 a 4500</leader>
+  <controlfield tag="001">13975981</controlfield>
+  <controlfield tag="005">20260805105145.7</controlfield>
+  <controlfield tag="008">990201u1996uuuuir qr p       0   f0perrc</controlfield>
+  <datafield tag="010" ind1=" " ind2=" ">
+    <subfield code="a">   97933264 </subfield>
+  </datafield>
+  <datafield tag="016" ind1="7" ind2=" ">
+    <subfield code="a">976261359</subfield>
+    <subfield code="2">DE-101</subfield>
+  </datafield>
+  <datafield tag="016" ind1="7" ind2=" ">
+    <subfield code="a">2201551-6</subfield>
+    <subfield code="2">DE-600</subfield>
+  </datafield>
+  <datafield tag="022" ind1=" " ind2=" ">
+    <subfield code="a">1029-4538</subfield>
+  </datafield>
+  <datafield tag="023" ind1="0" ind2=" ">
+    <subfield code="a">1029-4538</subfield>
+  </datafield>
+  <datafield tag="029" ind1="1" ind2=" ">
+    <subfield code="a">AU@</subfield>
+    <subfield code="b">000027175208</subfield>
+  </datafield>
+  <datafield tag="035" ind1=" " ind2=" ">
+    <subfield code="a">(OCoLC)40711884</subfield>
+  </datafield>
+  <datafield tag="040" ind1=" " ind2=" ">
+    <subfield code="a">IXA</subfield>
+    <subfield code="b">eng</subfield>
+    <subfield code="c">IXA</subfield>
+    <subfield code="d">OCL</subfield>
+    <subfield code="d">OCLCQ</subfield>
+    <subfield code="d">DLC</subfield>
+    <subfield code="d">OCL</subfield>
+    <subfield code="d">DLC</subfield>
+    <subfield code="d">IXA</subfield>
+    <subfield code="d">HLS</subfield>
+    <subfield code="d">OCLCQ</subfield>
+    <subfield code="d">GBVCP</subfield>
+    <subfield code="d">OCLCQ</subfield>
+    <subfield code="d">OCLCF</subfield>
+    <subfield code="d">OCLCO</subfield>
+    <subfield code="d">OCLCA</subfield>
+    <subfield code="d">PUL</subfield>
+    <subfield code="d">OCLCL</subfield>
+    <subfield code="d">OCLCQ</subfield>
+    <subfield code="d">OCLCL</subfield>
+    <subfield code="d">OCLCQ</subfield>
+    <subfield code="d">CGU</subfield>
+    <subfield code="d">OCLCQ</subfield>
+  </datafield>
+  <datafield tag="041" ind1="0" ind2=" ">
+    <subfield code="a">per</subfield>
+    <subfield code="a">eng</subfield>
+  </datafield>
+  <datafield tag="042" ind1=" " ind2=" ">
+    <subfield code="a">pcc</subfield>
+  </datafield>
+  <datafield tag="043" ind1=" " ind2=" ">
+    <subfield code="a">a-ir---</subfield>
+  </datafield>
+  <datafield tag="050" ind1="0" ind2="0">
+    <subfield code="a">BL9.P4</subfield>
+    <subfield code="b">Q223</subfield>
+  </datafield>
+  <datafield tag="050" ind1=" " ind2="4">
+    <subfield code="a">AP95.P3</subfield>
+    <subfield code="b">Q33x</subfield>
+  </datafield>
+  <datafield tag="066" ind1=" " ind2=" ">
+    <subfield code="c">(3</subfield>
+    <subfield code="c">(4</subfield>
+  </datafield>
+  <datafield tag="222" ind1=" " ind2="0">
+    <subfield code="a">Qabasat</subfield>
+    <subfield code="b">Tihran</subfield>
+  </datafield>
+  <datafield tag="245" ind1="0" ind2="0">
+    <subfield code="6">880-01</subfield>
+    <subfield code="a">Qabasa&#x304;t.</subfield>
+  </datafield>
+  <datafield tag="260" ind1=" " ind2=" ">
+    <subfield code="6">880-02</subfield>
+    <subfield code="a">[Tehran] :</subfield>
+    <subfield code="b">&#x2BB;A. A. Rasha&#x304;d</subfield>
+  </datafield>
+  <datafield tag="300" ind1=" " ind2=" ">
+    <subfield code="a">volumes :</subfield>
+    <subfield code="b">illustrations ;</subfield>
+    <subfield code="c">28 cm</subfield>
+  </datafield>
+  <datafield tag="310" ind1=" " ind2=" ">
+    <subfield code="a">Quarterly</subfield>
+  </datafield>
+  <datafield tag="336" ind1=" " ind2=" ">
+    <subfield code="a">text</subfield>
+    <subfield code="b">txt</subfield>
+    <subfield code="2">rdacontent</subfield>
+  </datafield>
+  <datafield tag="337" ind1=" " ind2=" ">
+    <subfield code="a">unmediated</subfield>
+    <subfield code="b">n</subfield>
+    <subfield code="2">rdamedia</subfield>
+  </datafield>
+  <datafield tag="338" ind1=" " ind2=" ">
+    <subfield code="a">volume</subfield>
+    <subfield code="b">nc</subfield>
+    <subfield code="2">rdacarrier</subfield>
+  </datafield>
+  <datafield tag="340" ind1=" " ind2=" ">
+    <subfield code="p">illustration</subfield>
+    <subfield code="0">http://rdaregistry.info/termList/IllusContent/1014</subfield>
+    <subfield code="2">rdaill</subfield>
+  </datafield>
+  <datafield tag="362" ind1="0" ind2=" ">
+    <subfield code="a">Sa&#x304;l-i 1, shuma&#x304;rah-i 1 (pa&#x304;&#x2BC;i&#x304;z 1375 [fall 1996])-</subfield>
+  </datafield>
+  <datafield tag="515" ind1=" " ind2=" ">
+    <subfield code="a">Some numbers issued in combined form; issues for &lt;Apr./June 2001-July/Dec. 2001&gt; called also shuma&#x304;rah-i paya&#x304;pay &lt;19-20/21&gt;</subfield>
+  </datafield>
+  <datafield tag="546" ind1=" " ind2=" ">
+    <subfield code="a">Chiefly in Persian, some English.</subfield>
+  </datafield>
+  <datafield tag="550" ind1=" " ind2=" ">
+    <subfield code="a">Issued by: Pizhu&#x304;hishga&#x304;h-i Farhang va Andi&#x304;shah-&#x2BC;i Isla&#x304;mi&#x304;, &lt;Apr./June 2001-July/Dec. 2001&gt;</subfield>
+  </datafield>
+  <datafield tag="588" ind1=" " ind2=" ">
+    <subfield code="a">Latest issue consulted: Sa&#x304;l-i 6., shuma&#x304;rah-i 2 va 3 (ta&#x304;bista&#x304;n va pa&#x304;&#x2BC;i&#x304;z 80, i.e. July/Dec. 2001) = shuma&#x304;rah-i paya&#x304;pay 20 va 21.</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="0">
+    <subfield code="a">Religions</subfield>
+    <subfield code="v">Periodicals.</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="0">
+    <subfield code="a">Islam and politics</subfield>
+    <subfield code="z">Iran</subfield>
+    <subfield code="v">Periodicals.</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="0">
+    <subfield code="a">Islam</subfield>
+    <subfield code="z">Iran</subfield>
+    <subfield code="v">Periodicals.</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="0">
+    <subfield code="a">Religion and culture</subfield>
+    <subfield code="z">Iran</subfield>
+    <subfield code="v">Periodicals.</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="0">
+    <subfield code="a">Philosophy</subfield>
+    <subfield code="z">Iran</subfield>
+    <subfield code="v">Periodicals.</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="7">
+    <subfield code="a">Islam.</subfield>
+    <subfield code="2">fast</subfield>
+    <subfield code="0">(OCoLC)fst00979776</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="7">
+    <subfield code="a">Islam and politics.</subfield>
+    <subfield code="2">fast</subfield>
+    <subfield code="0">(OCoLC)fst00979879</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="7">
+    <subfield code="a">Philosophy.</subfield>
+    <subfield code="2">fast</subfield>
+    <subfield code="0">(OCoLC)fst01060777</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="7">
+    <subfield code="a">Religion and culture.</subfield>
+    <subfield code="2">fast</subfield>
+    <subfield code="0">(OCoLC)fst01093823</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="7">
+    <subfield code="a">Religions.</subfield>
+    <subfield code="2">fast</subfield>
+    <subfield code="0">(OCoLC)fst01093898</subfield>
+  </datafield>
+  <datafield tag="651" ind1=" " ind2="7">
+    <subfield code="a">Iran.</subfield>
+    <subfield code="2">fast</subfield>
+    <subfield code="0">(OCoLC)fst01204889</subfield>
+    <subfield code="1">https://id.oclc.org/worldcat/entity/E39PBJtrYvcVTwChrDqytBvJXd</subfield>
+  </datafield>
+  <datafield tag="655" ind1=" " ind2="7">
+    <subfield code="a">Periodicals.</subfield>
+    <subfield code="2">fast</subfield>
+    <subfield code="0">(OCoLC)fst01411641</subfield>
+  </datafield>
+  <datafield tag="655" ind1=" " ind2="7">
+    <subfield code="a">Periodicals.</subfield>
+    <subfield code="2">lcgft</subfield>
+    <subfield code="0">http://id.loc.gov/authorities/genreForms/gf2014026139</subfield>
+    <subfield code="0">(uri) http://id.loc.gov/authorities/genreForms/gf2014026139</subfield>
+  </datafield>
+  <datafield tag="710" ind1="2" ind2=" ">
+    <subfield code="6">880-03</subfield>
+    <subfield code="a">Pizhu&#x304;hishga&#x304;h-i Farhang va Andi&#x304;shah-&#x2BC;i Isla&#x304;mi&#x304;.</subfield>
+    <subfield code="1">https://id.oclc.org/worldcat/entity/E39QH7JmtjRQC3G6tGFkb3cfY6</subfield>
+  </datafield>
+  <datafield tag="850" ind1=" " ind2=" ">
+    <subfield code="a">DLC</subfield>
+  </datafield>
+  <datafield tag="880" ind1="0" ind2="0">
+    <subfield code="6">245-01/(3/r</subfield>
+    <subfield code="a">&#x642;&#x628;&#x633;&#x627;&#x62A;.</subfield>
+  </datafield>
+  <datafield tag="880" ind1=" " ind2=" ">
+    <subfield code="6">260-02/(3/r</subfield>
+    <subfield code="a">[&#x62A;&#x647;&#x631;&#x627;&#x646;] :</subfield>
+    <subfield code="b">&#x639;. &#x627;. &#x631;&#x634;&#x627;&#x62F;</subfield>
+  </datafield>
+  <datafield tag="880" ind1="2" ind2=" ">
+    <subfield code="6">710-03/(4/r</subfield>
+    <subfield code="a">&#x67E;&#x698;&#x648;&#x647;&#x634;&#x6AF;&#x627;&#x647; &#x641;&#x631;&#x647;&#x646;&#x6AF; &#x648; &#x627;&#x646;&#x62F;&#x649;&#x634;&#x6C0; &#x627;&#x633;&#x644;&#x627;&#x645;&#x649;.</subfield>
+  </datafield>
+  <datafield tag="906" ind1=" " ind2=" ">
+    <subfield code="a">7</subfield>
+    <subfield code="b">cbc</subfield>
+    <subfield code="c">serials</subfield>
+    <subfield code="d">3</subfield>
+    <subfield code="e">ncip</subfield>
+    <subfield code="f">19</subfield>
+    <subfield code="g">n-oclcserc</subfield>
+  </datafield>
+  <datafield tag="925" ind1="0" ind2=" ">
+    <subfield code="a">Acquire</subfield>
+    <subfield code="b">1 shelf copy</subfield>
+    <subfield code="x">Policy default 2005-05-20</subfield>
+  </datafield>
+  <datafield tag="955" ind1=" " ind2=" ">
+    <subfield code="a">AMED</subfield>
+    <subfield code="a">db01 2005-05-12</subfield>
+    <subfield code="i">db01 2005-05-20 to Shelflisting</subfield>
+    <subfield code="e">db21 2005-06-23 to AMED via AMEAS</subfield>
+  </datafield>
+  <datafield tag="955" ind1=" " ind2=" ">
+    <subfield code="a">LCAP batch update 2025-06-01-04:00: LCAPM-644</subfield>
+  </datafield>
+  <datafield tag="590" ind1=" " ind2=" ">
+    <subfield code="a">Acquired via LC overseas office. Islamabad Field Office. Most recent issues may not yet be available in LC Washington.</subfield>
+  </datafield>
+</record></zs:recordData><zs:recordPosition>1</zs:recordPosition></zs:record><zs:record><zs:recordSchema>marcxml</zs:recordSchema><zs:recordPacking>xml</zs:recordPacking><zs:recordData><record xmlns="http://www.loc.gov/MARC21/slim">
+  <leader>00821cam a2200277u  4500</leader>
+  <controlfield tag="001">9523574</controlfield>
+  <controlfield tag="005">20250608043548.9</controlfield>
+  <controlfield tag="008">840627s1971    xx a          000 0 ara  </controlfield>
+  <datafield tag="035" ind1=" " ind2=" ">
+    <subfield code="a">9523574</subfield>
+  </datafield>
+  <datafield tag="906" ind1=" " ind2=" ">
+    <subfield code="a">0</subfield>
+    <subfield code="b">cbc</subfield>
+    <subfield code="c">premunv</subfield>
+    <subfield code="d">u</subfield>
+    <subfield code="e">ncip</subfield>
+    <subfield code="f">19</subfield>
+    <subfield code="g">y-gencatlg</subfield>
+  </datafield>
+  <datafield tag="955" ind1=" " ind2=" ">
+    <subfield code="a">LCAP batch update 2025-06-02-04:00: LCAPM-644</subfield>
+  </datafield>
+  <datafield tag="010" ind1=" " ind2=" ">
+    <subfield code="a">   78981660 </subfield>
+  </datafield>
+  <datafield tag="035" ind1=" " ind2=" ">
+    <subfield code="9">(DLC)   78981660</subfield>
+  </datafield>
+  <datafield tag="040" ind1=" " ind2=" ">
+    <subfield code="a">DLC</subfield>
+    <subfield code="c">CarP</subfield>
+    <subfield code="d">DLC</subfield>
+  </datafield>
+  <datafield tag="043" ind1=" " ind2=" ">
+    <subfield code="a">f-sj---</subfield>
+  </datafield>
+  <datafield tag="050" ind1="0" ind2="0">
+    <subfield code="a">LA1813.7</subfield>
+    <subfield code="b">.S34</subfield>
+  </datafield>
+  <datafield tag="100" ind1="1" ind2=" ">
+    <subfield code="a">Sa&#x2BB;i&#x304;d, &#x2BB;Abd Alla&#x304;h Ah&#x323;mad.</subfield>
+  </datafield>
+  <datafield tag="245" ind1="1" ind2="0">
+    <subfield code="a">Qabasa&#x304;t al-tuqqa&#x304;bah.</subfield>
+  </datafield>
+  <datafield tag="260" ind1=" " ind2=" ">
+    <subfield code="c">[1971]</subfield>
+  </datafield>
+  <datafield tag="300" ind1=" " ind2=" ">
+    <subfield code="a">7, 127 p.</subfield>
+    <subfield code="b">illus.</subfield>
+    <subfield code="c">22 cm.</subfield>
+  </datafield>
+  <datafield tag="336" ind1=" " ind2=" ">
+    <subfield code="a">text</subfield>
+    <subfield code="b">txt</subfield>
+    <subfield code="2">rdacontent</subfield>
+  </datafield>
+  <datafield tag="337" ind1=" " ind2=" ">
+    <subfield code="a">unmediated</subfield>
+    <subfield code="b">n</subfield>
+    <subfield code="2">rdamedia</subfield>
+  </datafield>
+  <datafield tag="338" ind1=" " ind2=" ">
+    <subfield code="a">volume</subfield>
+    <subfield code="b">nc</subfield>
+    <subfield code="2">rdacarrier</subfield>
+  </datafield>
+  <datafield tag="500" ind1=" " ind2=" ">
+    <subfield code="a">Romanized.</subfield>
+  </datafield>
+  <datafield tag="650" ind1=" " ind2="0">
+    <subfield code="a">Education</subfield>
+    <subfield code="z">Sudan.</subfield>
+  </datafield>
+  <datafield tag="991" ind1=" " ind2=" ">
+    <subfield code="b">c-GenColl</subfield>
+    <subfield code="h">LA1813.7</subfield>
+    <subfield code="i">.S34 (Orien Arab)</subfield>
+    <subfield code="t">Copy 1</subfield>
+    <subfield code="w">PREM</subfield>
+  </datafield>
+</record></zs:recordData><zs:recordPosition>2</zs:recordPosition></zs:record></zs:records><zs:nextRecordPosition>3</zs:nextRecordPosition><zs:echoedSearchRetrieveRequest><zs:version>1.1</zs:version><zs:query>bath.title="qabasat"</zs:query><zs:maximumRecords>2</zs:maximumRecords><zs:recordPacking>xml</zs:recordPacking><zs:recordSchema>marcxml</zs:recordSchema></zs:echoedSearchRetrieveRequest></zs:searchRetrieveResponse>
