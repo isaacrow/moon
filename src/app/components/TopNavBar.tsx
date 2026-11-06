@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { UserAvatar } from './UserAvatar';
 import { uploadAvatar, removeAvatar } from '../utils/avatars';
+import { moonFetch } from '../utils/moonApi';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { LayoutDashboard, FilePlus, LogOut, Languages, ChevronLeft, Building2, Mail, ShieldCheck, Camera, ImageOff } from 'lucide-react';
+import { LayoutDashboard, FilePlus, LogOut, Languages, ChevronLeft, Building2, Mail, ShieldCheck, Camera, ImageOff, Link2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -98,6 +99,31 @@ export function TopNavBar({
     i18n.changeLanguage(newLang);
     document.documentElement.dir = newLang === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.lang = newLang;
+  };
+
+  // Super Admin: link the names and subjects of every saved record to the authority file (batch by batch).
+  const [linking, setLinking] = useState(false);
+  const handleLinkAllRecords = async () => {
+    setLinking(true);
+    const toastId = toast.loading('Linking names and subjects to the authority file…');
+    let offset: number | null = 0, changed = 0, linked = 0, total = 0;
+    const failed: string[] = [];
+    try {
+      while (offset !== null) {
+        const { ok, data }: { ok: boolean; data: any } = await moonFetch<any>(`/authorities/link-records?offset=${offset}&limit=50`, { method: 'POST', body: {} });
+        if (!ok) throw new Error(data?.error || 'The server refused the request.');
+        changed += data.changed; linked += data.linked; total = data.total; failed.push(...(data.failed || []));
+        offset = data.next;
+        toast.loading(`Linking… ${Math.min(offset ?? total, total)} of ${total} records`, { id: toastId });
+      }
+      toast.success(`${linked} names and subjects linked in ${changed} of ${total} records`, {
+        id: toastId, description: failed.length ? `Not changed (see the server log): ${failed.slice(0, 5).join(', ')}` : undefined,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Linking failed', { id: toastId });
+    } finally {
+      setLinking(false);
+    }
   };
 
   // Profile photo: chosen from the account menu, shrunk in the browser, saved on the server.
@@ -348,6 +374,15 @@ export function TopNavBar({
                           {pendingCount}
                         </span>
                       )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleLinkAllRecords}
+                      disabled={linking}
+                      className="cursor-pointer"
+                      style={{ color: isDark ? '#ffffff' : '#111827' }}
+                    >
+                      <Link2 className="mr-2 h-4 w-4" />
+                      <span>{i18n.language === 'ar' ? 'ربط كل التسجيلات بملف الاستناد' : 'Link all records to authorities'}</span>
                     </DropdownMenuItem>
                   </>
                 )}

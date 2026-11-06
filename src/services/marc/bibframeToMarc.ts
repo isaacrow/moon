@@ -43,6 +43,17 @@ const field = (tag: string, ind1: string, ind2: string, subfields: (Subfield | n
 };
 const sf = (code: string, value: string | undefined): Subfield | null => (value ? [code, value] : null);
 
+const ARABIC_SCRIPT = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+/** A subfield that may have a parallel Arabic-script value: [code, value, Arabic value]. */
+type PSub = [code: string, main: string, alt?: string];
+/** The romanized value and its Arabic-script parallel, when a value is held in both; else the one value. */
+function scripts(v: any): { main: string; alt?: string } {
+  const all = texts(v);
+  const roman = all.find((t) => !ARABIC_SCRIPT.test(t));
+  const arabic = all.find((t) => ARABIC_SCRIPT.test(t));
+  return roman && arabic ? { main: roman, alt: arabic } : { main: all[0] || '' };
+}
+
 const LEADER_TYPE: Record<string, string> = { txt: 'a', tct: 'a', ntm: 'c', tcm: 'c', cri: 'e', crd: 'e', crm: 'e', sti: 'k', prm: 'j', spw: 'i', tdi: 'g', cod: 'm' };
 const LEADER_LEVEL: Record<string, string> = { mono: 'm', serl: 's', intg: 'i', mulm: 'm' };
 const ROLE_FIELDS: Record<string, [string, string]> = { 'bf:Person': ['00', '1'], 'bf:Family': ['00', '3'], 'bf:Organization': ['10', '2'], 'bf:Jurisdiction': ['10', '1'], 'bf:Meeting': ['11', '2'] };
@@ -57,6 +68,22 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
   const now = options.now || new Date();
   const fields: MarcField[] = [];
   const push = (f: MarcField | null) => { if (f) fields.push(f); };
+
+  // Parallel scripts, as LC records them: when a value is held in both Arabic script and romanization,
+  // the field carries the romanization and $6 880-NN, and a linked 880 carries the Arabic ($6 TAG-NN/(3/r).
+  let linkCount = 0;
+  const ps = (code: string, v: any): PSub | null => {
+    const { main, alt } = scripts(v);
+    return main ? [code, main, alt] : null;
+  };
+  const pfield = (tag: string, ind1: string, ind2: string, parts: (PSub | null)[]) => {
+    const subs = parts.filter((p): p is PSub => !!p && !!p[1]);
+    if (!subs.length) return;
+    if (!subs.some((p) => p[2])) { push(field(tag, ind1, ind2, subs.map(([c, m]) => [c, m] as Subfield))); return; }
+    const n = String(++linkCount).padStart(2, '0');
+    push({ tag, ind1, ind2, subfields: [['6', `880-${n}`], ...subs.map(([c, m]) => [c, m] as Subfield)] });
+    push({ tag: '880', ind1, ind2, subfields: [['6', `${tag}-${n}/(3/r`], ...subs.map(([c, m, a]) => [c, a || m] as Subfield)] });
+  };
 
   // ---- Leader and control fields ----
   const content = codeIn(get(work, 'content'), 'contentTypes');
@@ -102,32 +129,33 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     const primary = isA(c, 'bf:PrimaryContribution') && !has1xx;
     if (primary) has1xx = true;
     const roles = all(get(c, 'role'));
-    push(field(`${primary ? '1' : '7'}${suffix}`, ind1, ' ', [
-      sf('a', name),
-      ...roles.map((r) => sf('e', text(r) && !/^[a-z]{3}$/.test(text(r)) ? text(r) : '')),
-      sf('0', uri(agent)),
-      ...roles.map((r) => sf('4', codeIn(r, 'relators'))),
-    ]));
+    const plain = (s: Subfield | null): PSub | null => (s ? [s[0], s[1]] : null);
+    pfield(`${primary ? '1' : '7'}${suffix}`, ind1, ' ', [
+      ps('a', agent),
+      ...roles.map((r) => plain(sf('e', text(r) && !/^[a-z]{3}$/.test(text(r)) ? text(r) : ''))),
+      plain(sf('0', uri(agent))),
+      ...roles.map((r) => plain(sf('4', codeIn(r, 'relators')))),
+    ]);
   }
 
   // ---- Title and statements ----
   const title = all(get(instance, 'title')).find((t) => !isA(t, 'bf:VariantTitle')) || all(get(work, 'title'))[0];
   const nonSort = text(title?.['bflc:nonSortNum']);
-  push(field('245', has1xx ? '1' : '0', /^\d$/.test(nonSort) ? nonSort : '0', [
-    sf('a', text(get(title, 'mainTitle'))),
-    sf('b', text(get(title, 'subtitle'))),
-    sf('n', text(get(title, 'partNumber'))),
-    sf('p', text(get(title, 'partName'))),
-    sf('c', text(get(instance, 'responsibilityStatement'))),
-  ]));
-  push(field('250', ' ', ' ', [sf('a', text(get(instance, 'editionStatement')))]));
+  pfield('245', has1xx ? '1' : '0', /^\d$/.test(nonSort) ? nonSort : '0', [
+    ps('a', get(title, 'mainTitle')),
+    ps('b', get(title, 'subtitle')),
+    ps('n', get(title, 'partNumber')),
+    ps('p', get(title, 'partName')),
+    ps('c', get(instance, 'responsibilityStatement')),
+  ]);
+  pfield('250', ' ', ' ', [ps('a', get(instance, 'editionStatement'))]);
   for (const p of provisions) {
     const ind2 = PROVISION_IND2[types(p).find((t) => PROVISION_IND2[t] !== undefined) || 'bf:Publication'];
-    push(field('264', ' ', ind2, [
-      ...all(get(p, 'place')).map((pl) => sf('a', text(resolve(pl, graph)))),
-      ...all(get(p, 'agent')).map((a) => sf('b', text(resolve(a, graph)))),
-      sf('c', text(get(p, 'date')) || text(p['bflc:simpleDate'])),
-    ]));
+    pfield('264', ' ', ind2, [
+      ...all(get(p, 'place')).map((pl) => ps('a', resolve(pl, graph))),
+      ...all(get(p, 'agent')).map((a) => ps('b', resolve(a, graph))),
+      ps('c', text(get(p, 'date')) || text(p['bflc:simpleDate'])),
+    ]);
   }
   push(field('300', ' ', ' ', [sf('a', texts(get(instance, 'extent')).join(' ; ')), sf('c', text(get(instance, 'dimensions')))]));
   const rda = (tag: string, v: any, vocab: string, source: string) => {
@@ -136,7 +164,10 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
   rda('336', get(work, 'content'), 'contentTypes', 'rdacontent');
   rda('337', get(instance, 'media'), 'mediaTypes', 'rdamedia');
   rda('338', get(instance, 'carrier'), 'carriers', 'rdacarrier');
-  for (const s of texts(get(instance, 'seriesStatement'))) push(field('490', '0', ' ', [sf('a', s)]));
+  // A series statement given in both scripts is one series with an 880; otherwise one 490 per statement.
+  const series = get(instance, 'seriesStatement');
+  if (scripts(series).alt) pfield('490', '0', ' ', [ps('a', series)]);
+  else for (const s of texts(series)) push(field('490', '0', ' ', [sf('a', s)]));
 
   // ---- Notes ----
   for (const n of [...all(get(work, 'note')), ...all(get(instance, 'note'))]) push(field('500', ' ', ' ', [sf('a', text(n))]));

@@ -34,6 +34,7 @@ import * as sparqlStore from "./sparqlEndpoint.tsx";
 import { missingForPublish, shapesFromProfile } from "./publishGate.tsx";
 import { PROFILES } from "./profiles.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
+import { linkAuthorities } from "./authorityLinking.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
@@ -650,6 +651,16 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
       return c.json({ error: 'A BIBFRAME record needs a bf:Work and a bf:Instance' }, 400);
     }
 
+    // Every name and subject points at an authority: plain-text ones are matched to (or added to) Moon's
+    // authority file and linked. Never blocks the save.
+    let authoritiesLinked = 0;
+    try {
+      authoritiesLinked = await linkAuthorities(document,
+        (input) => recordStore.addAuthority(input, session.username), (a) => withUri(a).uri);
+    } catch (error) {
+      console.error('Authority linking failed (record saved without new links):', error);
+    }
+
     // Review workflow: only the Super Admin can publish straight to the catalog.
     // Everyone else's saves (new records and edits) wait for approval.
     const isAdmin = session.role === 'admin';
@@ -719,6 +730,8 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
       publishedVersion: status === 'complete' ? version : existing?.publishedVersion,
       // The Super Admin's save that could not be published, and why.
       ...(publishBlocked ? { publishBlocked } : {}),
+      // How many names and subjects were linked to the authority file in this save.
+      authoritiesLinked,
       nodeCount: document['@graph'].length,
       saved: now,
     });
@@ -1017,6 +1030,41 @@ app.post("/make-server-49c0e13c/authorities", async (c) => {
   } catch (error) {
     console.error('Authority add error:', error);
     return c.json({ error: 'Failed to add the authority entry' }, 500);
+  }
+});
+
+// Super Admin: links the names and subjects of records saved before every save linked them. Works in
+// batches (offset / limit) so a large catalogue does not time out; each changed record gets a new version
+// noted "authority links", so it can be reverted from its history like any edit.
+app.post("/make-server-49c0e13c/authorities/link-records", async (c) => {
+  try {
+    const admin = await isAdminSession(c);
+    if (!admin) return c.json({ error: 'Super Admin session required' }, 403);
+    const offset = Math.max(0, Number(c.req.query('offset')) || 0);
+    const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 50));
+    const records = (await recordStore.listRecords()).sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
+    const batch = records.slice(offset, offset + limit);
+    let changed = 0, linked = 0;
+    const failed: string[] = [];
+    for (const rec of batch as any[]) {
+      try {
+        const document = JSON.parse(JSON.stringify(rec.document));
+        const n = await linkAuthorities(document, (input) => recordStore.addAuthority(input, admin.username), (a) => withUri(a).uri);
+        if (!n) continue;
+        await recordStore.saveRecord({ ...rec, document, saved: new Date().toISOString() }, admin.username, 'authority links',
+          Number.isInteger(rec.version) ? rec.version : undefined);
+        changed++;
+        linked += n;
+      } catch (error) {
+        console.error(`Authority linking failed for ${rec.id}:`, error);
+        failed.push(rec.id);
+      }
+    }
+    const next = offset + batch.length < records.length ? offset + batch.length : null;
+    return c.json({ total: records.length, processed: batch.length, changed, linked, failed, next });
+  } catch (error) {
+    console.error('Authority link-records error:', error);
+    return c.json({ error: 'Failed to link records to authorities' }, 500);
   }
 });
 
