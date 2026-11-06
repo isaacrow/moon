@@ -6,7 +6,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2 } from 'lucide-react';
+import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network } from 'lucide-react';
 import { moonFetch, moonHeaders, MOON_API } from '../utils/moonApi';
 import { romanizeAll } from '../../services/romanize';
 import { searchLOCAuthorities, searchWikidata, searchVIAF, type AuthorityResult } from '../../services/authoritySearch';
@@ -24,6 +24,24 @@ interface Entity extends StoredEntity {
   mergedInto?: string | null;
 }
 interface Usage { count: number; records: Array<{ id: string; title: string }> }
+interface Relation {
+  relation: string; kind: EntityKind; label: string; uri: string | null; entityId?: string; entityUri?: string | null;
+  count: number; records: string[]; titles: string[];
+}
+/** How each relation reads, Arabic then English, in the order the page shows them. */
+const RELATION_LABELS: Record<string, [string, string]> = {
+  'worked-with': ['شارك في التأليف مع', 'Worked with'],
+  'wrote-about': ['كتب عن', 'Wrote about'],
+  'written-about-by': ['كتب عنه', 'Written about by'],
+  'studied-with': ['يُدرس مع', 'Studied together with'],
+  'published-by': ['نشر له', 'Published by'],
+  'published': ['نشر لـ', 'Published'],
+  'published-in': ['نُشر في', 'Published in'],
+  'published-here': ['نُشر هنا لـ', 'Authors published here'],
+  'based-in': ['مقره', 'Based in'],
+  'publishers-here': ['ناشرون هنا', 'Publishers here'],
+};
+const sourceOf = (uri: string) => (/id\.loc\.gov/.test(uri) ? 'LC' : /viaf\.org/.test(uri) ? 'VIAF' : /wikidata/.test(uri) ? 'Wikidata' : '');
 interface Version { version: number; label: string; changedBy?: string; changedAt: string }
 
 const GLASS: React.CSSProperties = {
@@ -59,6 +77,7 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
   const [form, setForm] = useState<EntityForm | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [history, setHistory] = useState<Version[] | null>(null);
+  const [relations, setRelations] = useState<Relation[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [romanizing, setRomanizing] = useState(false);
   // Copy from outside (step 3): the search panel, and what the last copy brought that the form does not show.
@@ -86,11 +105,25 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
     return () => { live = false; clearTimeout(timer); };
   }, [kind, query]);
 
+  const loadRelations = async (id: string) => {
+    setRelations(null);
+    const res = await moonFetch<{ relations?: Relation[] }>(`/authorities/${encodeURIComponent(id)}/relations`).catch(() => null);
+    setRelations(res?.ok ? res.data.relations || [] : []);
+  };
+
+  /** Opens a related entity from the relations list. */
+  const openById = async (id: string) => {
+    const res = await moonFetch<{ authority?: Entity }>(`/authorities/${encodeURIComponent(id)}`).catch(() => null);
+    if (res?.ok && res.data.authority) open(res.data.authority);
+    else toast.error(t('تعذّر فتح الكيان', 'Could not open the entity'));
+  };
+
   const open = async (e: Entity) => {
     setSelected(e);
     setForm(formFrom(e));
     setUsage(null);
     setHistory(null);
+    loadRelations(e.id);
     const res = await moonFetch<{ authority?: Entity; usage?: Usage }>(`/authorities/${encodeURIComponent(e.id)}`).catch(() => null);
     if (res?.ok && res.data.authority) {
       setSelected(res.data.authority);
@@ -477,6 +510,42 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
                         <a key={f} href={`${selected.uri}.${f}`} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline">{f === 'jsonld' ? 'JSON-LD' : f === 'ttl' ? 'Turtle' : f === 'nt' ? 'N-Triples' : 'RDF/XML'}</a>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {selected && (
+                  <div className="rounded-2xl bg-white/60 border border-white p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                      <Network className="h-4 w-4" /> {t('العلاقات مع كيانات أخرى', 'Relationships with other entities')}
+                    </div>
+                    {relations == null ? (
+                      <div className="text-sm text-slate-500">{t('جارٍ قراءة التسجيلات…', 'Reading the records…')}</div>
+                    ) : relations.length === 0 ? (
+                      <div className="text-sm text-slate-500">{t('لا علاقات بعد: تظهر حين تستخدمه تسجيلات مع أسماء أو موضوعات أو أماكن أخرى.', 'None yet: they appear once records use it with other names, subjects or places.')}</div>
+                    ) : (
+                      Object.keys(RELATION_LABELS).filter((rel) => relations.some((r) => r.relation === rel)).map((rel) => (
+                        <div key={rel}>
+                          <div className="text-xs font-bold text-slate-500 mb-1">{L(RELATION_LABELS[rel])}</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {relations.filter((r) => r.relation === rel).slice(0, 20).map((r) => (
+                              <button
+                                key={`${rel}|${r.entityId || r.uri || r.label}`}
+                                type="button"
+                                disabled={!r.entityId}
+                                onClick={() => r.entityId && openById(r.entityId)}
+                                title={r.titles.join(' · ')}
+                                className={`text-xs rounded-full px-2.5 py-1 border ${r.entityId ? 'bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100' : 'bg-slate-50 border-slate-200 text-slate-600 cursor-default'}`}
+                              >
+                                <span dir="auto">{r.label}</span>
+                                <span className="text-slate-400"> · {r.count}</span>
+                                {!r.entityId && r.uri && sourceOf(r.uri) && <span className="text-slate-400"> · {sourceOf(r.uri)}</span>}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    <div className="text-xs text-slate-400">{t('الرقم = عدد التسجيلات المشتركة. الأزرق كيان في Moon يُفتح بالنقر.', 'Number = records in common. Blue is a Moon entity: click to open it.')}</div>
                   </div>
                 )}
 
