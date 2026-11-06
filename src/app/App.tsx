@@ -256,6 +256,13 @@ function CatalogApp() {
               // From now on a refresh reopens this record instead of an empty one.
               if (storageId) window.history.replaceState(null, '', urlFor('wolf-moon', storageId));
             }}
+            onDerive={(derived) => {
+              // A new, unsaved record: the editor remounts on it (its key is the new Work URI).
+              setWork(derived.work);
+              setInstance(derived.instance);
+              setCurrentRecord(null);
+              window.history.pushState(null, '', urlFor('wolf-moon'));
+            }}
             onRestoreDraft={(draft) => {
               setDraftRestores(n => n + 1);
               setWork(draft.work);
