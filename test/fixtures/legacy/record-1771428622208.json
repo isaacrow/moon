@@ -1,0 +1,26 @@
+{
+ "id": "record-1771428622208",
+ "title": "Untitled",
+ "document": {
+  "@graph": [
+   {
+    "@id": "https://mooon.site/resource/work/record-1771428622208",
+    "@type": "bf:Work",
+    "title": {
+     "@type": "bf:Title",
+     "subtitle": "faleh",
+     "mainTitle": "isaac"
+    },
+    "bf:contribution": []
+   },
+   {
+    "@id": "https://mooon.site/resource/instance/record-1771428622208",
+    "@type": "bf:Instance",
+    "bf:instanceOf": {
+     "@id": "https://mooon.site/resource/work/record-1771428622208"
+    }
+   }
+  ],
+  "@context": "http://id.loc.gov/ontologies/bibframe/"
+ }
+}

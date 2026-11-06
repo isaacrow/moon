@@ -1,0 +1,242 @@
+{
+ "id": "record-1793814549325",
+ "title": "ʻAlá khuṭā al-Mutanabbī fī asfārihi wa-ashʻārih ",
+ "document": {
+  "@graph": [
+   {
+    "@id": "https://mooon.site/resource/work/1793813668810",
+    "@type": "bf:Work",
+    "title": {
+     "@type": "bf:Title",
+     "subtitle": "riḥlah fī al-tārīkh wa-al-jughrāfīyah wa-al-shiʻr ",
+     "mainTitle": "ʻAlá khuṭā al-Mutanabbī fī asfārihi wa-ashʻārih ",
+     "bf:subtitle": "riḥlah fī al-tārīkh wa-al-jughrāfīyah wa-al-shiʻr ",
+     "bf:mainTitle": "ʻAlá khuṭā al-Mutanabbī fī asfārihi wa-ashʻārih "
+    },
+    "subject": [],
+    "topical": [
+     {
+      "@id": "http://id.loc.gov/authorities/subjects/sh85006336",
+      "@type": "bf:Topic",
+      "rdfs:label": "Arabic poetry--750-1258"
+     }
+    ],
+    "bf:title": {
+     "@type": "bf:Title",
+     "subtitle": "riḥlah fī al-tārīkh wa-al-jughrāfīyah wa-al-shiʻr ",
+     "mainTitle": "ʻAlá khuṭā al-Mutanabbī fī asfārihi wa-ashʻārih ",
+     "bf:subtitle": "riḥlah fī al-tārīkh wa-al-jughrāfīyah wa-al-shiʻr ",
+     "bf:mainTitle": "ʻAlá khuṭā al-Mutanabbī fī asfārihi wa-ashʻārih "
+    },
+    "language": {
+     "@id": "http://id.loc.gov/vocabulary/languages/ara",
+     "@type": "bf:Language",
+     "rdfs:label": "Arabic (ara) — العربية"
+    },
+    "bf:content": {
+     "@id": "http://id.loc.gov/vocabulary/contentTypes/txt",
+     "rdfs:label": "text"
+    },
+    "bf:subject": [],
+    "bf:topical": [
+     {
+      "@id": "http://id.loc.gov/authorities/subjects/sh85006336",
+      "@type": "bf:Topic",
+      "rdfs:label": "Arabic poetry--750-1258"
+     }
+    ],
+    "bf:language": {
+     "@id": "http://id.loc.gov/vocabulary/languages/ara",
+     "@type": "bf:Language",
+     "rdfs:label": "Arabic (ara) — العربية"
+    },
+    "contribution": [
+     {
+      "@type": "bf:Contribution",
+      "bf:role": {
+       "@id": "http://id.loc.gov/vocabulary/relators/aut",
+       "code": "aut",
+       "rdfs:label": "Author"
+      },
+      "bf:agent": {
+       "@id": "http://id.loc.gov/authorities/names/nr98040643",
+       "@type": "bf:Agent",
+       "rdfs:label": "Wahb, Qāsim Muḥammad"
+      }
+     }
+    ],
+    "bf:contribution": [
+     {
+      "@type": "bf:Contribution",
+      "bf:role": {
+       "@id": "http://id.loc.gov/vocabulary/relators/aut",
+       "code": "aut",
+       "rdfs:label": "Author"
+      },
+      "bf:agent": {
+       "@id": "http://id.loc.gov/authorities/names/nr98040643",
+       "@type": "bf:Agent",
+       "rdfs:label": "Wahb, Qāsim Muḥammad"
+      }
+     }
+    ],
+    "intendedAudience": {
+     "@type": "bf:IntendedAudience",
+     "value": " "
+    },
+    "classificationLcc": [
+     {
+      "@type": "bf:ClassificationLcc",
+      "bf:itemPortion": "Z974 2013",
+      "bf:classificationPortion": "PJ7750.M8 "
+     }
+    ],
+    "bf:intendedAudience": {
+     "@type": "bf:IntendedAudience",
+     "value": " "
+    },
+    "bf:classificationLcc": [
+     {
+      "@type": "bf:ClassificationLcc",
+      "bf:itemPortion": "Z974 2013",
+      "bf:classificationPortion": "PJ7750.M8 "
+     }
+    ]
+   },
+   {
+    "@id": "https://mooon.site/resource/instance/1793813668810",
+    "@type": "bf:Instance",
+    "media": {
+     "@id": "http://id.loc.gov/vocabulary/mediaTypes/n",
+     "code": "n",
+     "@type": "bf:Media",
+     "rdfs:label": "Unmediated"
+    },
+    "title": {
+     "@type": "bf:Title",
+     "subtitle": "riḥlah fī al-tārīkh wa-al-jughrāfīyah wa-al-shiʻr ",
+     "mainTitle": "ʻAlá khuṭā al-Mutanabbī fī asfārihi wa-ashʻārih ",
+     "bf:subtitle": "riḥlah fī al-tārīkh wa-al-jughrāfīyah wa-al-shiʻr ",
+     "bf:mainTitle": "ʻAlá khuṭā al-Mutanabbī fī asfārihi wa-ashʻārih "
+    },
+    "extent": {
+     "@type": "bf:Extent",
+     "value": "385 pages",
+     "rdfs:label": "385 pages"
+    },
+    "bf:media": {
+     "@id": "http://id.loc.gov/vocabulary/mediaTypes/n",
+     "code": "n",
+     "@type": "bf:Media",
+     "rdfs:label": "Unmediated"
+    },
+    "bf:title": {
+     "@type": "bf:Title",
+     "subtitle": "riḥlah fī al-tārīkh wa-al-jughrāfīyah wa-al-shiʻr ",
+     "mainTitle": "ʻAlá khuṭā al-Mutanabbī fī asfārihi wa-ashʻārih ",
+     "bf:subtitle": "riḥlah fī al-tārīkh wa-al-jughrāfīyah wa-al-shiʻr ",
+     "bf:mainTitle": "ʻAlá khuṭā al-Mutanabbī fī asfārihi wa-ashʻārih "
+    },
+    "bf:extent": {
+     "@type": "bf:Extent",
+     "value": "385 pages",
+     "rdfs:label": "385 pages"
+    },
+    "dimensions": "24 cm",
+    "contribution": [
+     {
+      "@type": "bf:Contribution",
+      "bf:role": {
+       "@id": "http://id.loc.gov/vocabulary/relators/aut",
+       "code": "aut",
+       "rdfs:label": "Author"
+      },
+      "bf:agent": {
+       "@id": "http://id.loc.gov/authorities/names/nr98040643",
+       "@type": "bf:Agent",
+       "rdfs:label": "Wahb, Qāsim Muḥammad"
+      }
+     }
+    ],
+    "bf:dimensions": "24 cm",
+    "bf:instanceOf": {
+     "@id": "https://mooon.site/resource/work/1793813668810"
+    },
+    "bf:contribution": [
+     {
+      "@type": "bf:Contribution",
+      "bf:role": {
+       "@id": "http://id.loc.gov/vocabulary/relators/aut",
+       "code": "aut",
+       "rdfs:label": "Author"
+      },
+      "bf:agent": {
+       "@id": "http://id.loc.gov/authorities/names/nr98040643",
+       "@type": "bf:Agent",
+       "rdfs:label": "Wahb, Qāsim Muḥammad"
+      }
+     }
+    ],
+    "seriesStatement": "Dirāsāt fī al-adab al-ʻArabī ; 27",
+    "editionStatement": "al-Ṭabʻah al-ūlá",
+    "provisionActivity": {
+     "@type": "bf:ProvisionActivity",
+     "value": "Dimashq : Manshūrāt al-Hayʼah al-ʻĀmmah al-Sūrīyah lil-Kitāb, Wizārat al-Thaqāfah, 2013"
+    },
+    "bf:seriesStatement": "Dirāsāt fī al-adab al-ʻArabī ; 27",
+    "bf:editionStatement": "al-Ṭabʻah al-ūlá",
+    "bf:provisionActivity": {
+     "@type": "bf:ProvisionActivity",
+     "value": "Dimashq : Manshūrāt al-Hayʼah al-ʻĀmmah al-Sūrīyah lil-Kitāb, Wizārat al-Thaqāfah, 2013"
+    },
+    "supplementaryContent": {
+     "@type": "bf:SupplementaryContent",
+     "value": "Includes bibliographical references"
+    },
+    "bf:supplementaryContent": {
+     "@type": "bf:SupplementaryContent",
+     "value": "Includes bibliographical references"
+    },
+    "responsibilityStatement": "Qāsim Wahb",
+    "bf:responsibilityStatement": "Qāsim Wahb"
+   },
+   {
+    "@id": "https://mooon.site/resource/item/1793813668810-1",
+    "@type": "bf:Item",
+    "bf:itemOf": {
+     "@id": "https://mooon.site/resource/instance/1793813668810"
+    }
+   },
+   {
+    "@id": "https://mooon.site/resource/expression/1793813668810-1",
+    "@type": "bf:Expression",
+    "bf:hasInstance": {
+     "@id": "https://mooon.site/resource/instance/1793813668810"
+    },
+    "bf:expressionOf": {
+     "@id": "https://mooon.site/resource/work/1793813668810"
+    }
+   },
+   {
+    "@id": "https://mooon.site/resource/admin/1793813668810",
+    "@type": "bf:AdminMetadata",
+    "bf:source": {
+     "@id": "https://mooon.site",
+     "rdfs:label": "Moon Library System — Wolf Moon"
+    },
+    "bf:catalogerId": "MagdaGad",
+    "bf:creationDate": "2026-11-04",
+    "bf:generationProcess": "Wolf Moon v1.0 (Monograph (Complete))",
+    "bf:descriptionLanguage": {
+     "@id": "http://id.loc.gov/vocabulary/languages/eng",
+     "rdfs:label": "English"
+    },
+    "bf:descriptionConventions": {
+     "@id": "http://id.loc.gov/vocabulary/descriptionConventions/rda",
+     "rdfs:label": "RDA"
+    }
+   }
+  ],
+  "@context": "http://id.loc.gov/ontologies/bibframe/"
+ }
+}
