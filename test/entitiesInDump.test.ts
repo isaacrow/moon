@@ -42,3 +42,13 @@ test('with the entities added, the audit sees the outside links in the published
   assert.equal(m(after, 'sameAsInData').value, 1);
   assert.deepEqual(after.unknownTerms, before.unknownTerms, 'entities add no off-standard terms');
 });
+
+import { finishPublished } from '../supabase/functions/server/publishedOutput.tsx';
+
+test('an entity\'s Arabic names are language-tagged like a record\'s', async () => {
+  const doc = finishPublished({ '@context': CONTEXT, '@graph': entityNodes(IBN_KHALDUN as any, BASE, []) });
+  const nt = await jsonld.toRDF(doc, { format: 'application/n-quads' }) as string;
+  const arabic = nt.split('\n').filter((l) => /"[^"]*[\u0600-\u06ff][^"]*"/.test(l));
+  assert.ok(arabic.length > 0);
+  assert.ok(arabic.every((l) => /"@ar(-Latn)? \.$/.test(l.trim()) || /"@ar /.test(l)), 'every Arabic name tagged');
+});
