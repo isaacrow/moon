@@ -1,14 +1,14 @@
 {
   "workInstance": {
-    "value": 26,
+    "value": 46,
     "total": 46
   },
   "workTitle": {
-    "value": 44,
+    "value": 46,
     "total": 46
   },
   "instanceTitle": {
-    "value": 32,
+    "value": 46,
     "total": 46
   },
   "adminMetadata": {
@@ -17,11 +17,11 @@
   },
   "contributorsLinked": {
     "value": 19,
-    "total": 31
+    "total": 36
   },
   "subjectsLinked": {
-    "value": 61,
-    "total": 82
+    "value": 62,
+    "total": 83
   },
   "placesLinked": {
     "value": 12,
@@ -32,27 +32,27 @@
     "total": 33
   },
   "entitiesOutward": {
-    "value": 0,
-    "total": 72
+    "value": 1,
+    "total": 73
   },
   "sameAsInData": {
-    "value": 0,
+    "value": 1,
     "total": 1
   },
   "arabicTagged": {
-    "value": 0,
-    "total": 238
+    "value": 273,
+    "total": 273
   },
   "edtfDates": {
-    "value": 0,
+    "value": 33,
     "total": 46
   },
   "unknownTerms": {
-    "value": 20,
+    "value": 0,
     "total": 0
   },
   "rangeErrors": {
-    "value": 52,
+    "value": 0,
     "total": 0
   },
   "junk": {
