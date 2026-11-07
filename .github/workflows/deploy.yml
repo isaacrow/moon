@@ -96,6 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      MOON_JOB_TOKEN: ${{ secrets.MOON_JOB_TOKEN }}
       SUPABASE_PROJECT_ID: gfbagczwhvxxstbfrfhu
     steps:
       - name: Checkout
@@ -116,6 +117,12 @@ jobs:
           # The CLI expects an index.ts entrypoint; the server's is index.tsx.
           echo 'import "./index.tsx";' > supabase/functions/make-server-49c0e13c/index.ts
           supabase functions deploy make-server-49c0e13c --project-ref "$SUPABASE_PROJECT_ID" --use-api --yes
+
+      # The nightly jobs (link-records.yml) sign their calls with MOON_JOB_TOKEN; the function checks it against
+      # the same value. Set from the repository secret when there is one (never printed).
+      - name: Hand the job token to the function
+        if: env.SUPABASE_ACCESS_TOKEN != '' && env.MOON_JOB_TOKEN != ''
+        run: supabase secrets set "MOON_JOB_TOKEN=$MOON_JOB_TOKEN" --project-ref "$SUPABASE_PROJECT_ID"
 
       - name: Skipped (no SUPABASE_ACCESS_TOKEN secret)
         if: env.SUPABASE_ACCESS_TOKEN == ''
