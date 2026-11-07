@@ -88,6 +88,15 @@ export async function sendMarc(api: FolioApi, marc: MarcIn, link: (FolioLink & {
     return r.status === 200 ? r.json : null;
   };
 
+  // ---- FOLIO's own MARC checks first (quickMARC /records-editor/validate; older FOLIO has none) ----
+  const checked = await api.post("/records-editor/validate", { marcFormat: "BIBLIOGRAPHIC", leader: q.leader, fields: q.fields });
+  if (checked.status === 200 && Array.isArray(checked.json?.issues)) {
+    const said = (i: any) => [i.tag, i.message].filter(Boolean).join(": ");
+    const errors = checked.json.issues.filter((i: any) => /^err/i.test(String(i.severity || "")));
+    for (const i of checked.json.issues) if (!/^err/i.test(String(i.severity || ""))) warnings.push(`FOLIO: ${said(i)}`);
+    if (errors.length) return { status: "blocked", message: `FOLIO's MARC check found problems; nothing was sent. ${errors.map(said).join(" · ")}`, warnings };
+  }
+
   // ---- Update the record sent before ----
   if (link?.instanceId) {
     const instance = await instanceOf(link.instanceId);
@@ -135,6 +144,9 @@ export async function sendMarc(api: FolioApi, marc: MarcIn, link: (FolioLink & {
     if (st === "CREATED" && s.json?.externalId) instanceId = s.json.externalId;
   }
   if (!instanceId) return { status: "error", message: "FOLIO accepted the MARC record but did not report the new Instance in time. Check Inventory before sending again.", warnings };
+  // Read it back: the Instance FOLIO built from the MARC must be there, with a title.
   const instance = await instanceOf(instanceId);
-  return { status: "created", instanceId, hrid: instance?.hrid, warnings };
+  if (!instance) warnings.push("FOLIO made the record but its Instance could not be read back yet; check Inventory.");
+  else if (!String(instance.title || "").trim()) warnings.push("FOLIO made the Instance without a title; check its MARC-to-Instance mapping.");
+  return { status: "created", instanceId, hrid: instance?.hrid || created.json?.externalHrid, warnings };
 }
