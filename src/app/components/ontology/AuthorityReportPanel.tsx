@@ -58,7 +58,7 @@ export function AuthorityReportPanel({ recordIds, rtl }: { recordIds: string[]; 
   };
   const link = async (r: Row, m: AuthorityResult) => {
     if (!r.entryId) return;
-    const res = await moonFetch(`/authorities/${encodeURIComponent(r.entryId)}/same-as`, { method: 'POST', body: { uri: m.uri } });
+    const res = await moonFetch(`/authorities/${encodeURIComponent(r.entryId)}/same-as`, { method: 'POST', body: { uri: m.uri, method: 'import', evidence: 'Chosen from the authority report after a MARC import' } });
     if (res.ok) { setLinked((l) => ({ ...l, [keyOf(r)]: m.uri })); setOpen(null); }
     else setError((res.data as any)?.error || `HTTP ${res.status}`);
   };

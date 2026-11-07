@@ -5,6 +5,7 @@
  * ALA-LC romanized form from LC's ScriptShifter. Every save keeps the earlier version.
  */
 import React, { useEffect, useMemo, useState } from 'react';
+import { describeLinkSource, sourcesByLink, type LinkSource } from '../utils/linkSource';
 import { toast } from 'sonner';
 import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network, Link2 } from 'lucide-react';
 import { moonFetch, moonHeaders, MOON_API } from '../utils/moonApi';
@@ -78,6 +79,7 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
   const [selected, setSelected] = useState<Entity | null>(null);
   const [form, setForm] = useState<EntityForm | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [linkSources, setLinkSources] = useState<LinkSource[]>([]);
   const [history, setHistory] = useState<Version[] | null>(null);
   const [relations, setRelations] = useState<Relation[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -127,12 +129,14 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
     setForm(formFrom(e));
     setUsage(null);
     setHistory(null);
+    setLinkSources([]);
     loadRelations(e.id);
-    const res = await moonFetch<{ authority?: Entity; usage?: Usage }>(`/authorities/${encodeURIComponent(e.id)}`).catch(() => null);
+    const res = await moonFetch<{ authority?: Entity; usage?: Usage; linkSources?: LinkSource[] }>(`/authorities/${encodeURIComponent(e.id)}`).catch(() => null);
     if (res?.ok && res.data.authority) {
       setSelected(res.data.authority);
       setForm(formFrom(res.data.authority));
       setUsage(res.data.usage || null);
+      setLinkSources(res.data.linkSources || []);
     }
   };
 
@@ -517,6 +521,19 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
                 <Field label={t('الكيان نفسه في ملفات أخرى (رابط في كل سطر)', 'Same entity elsewhere (one link per line)')} hint={t('مكتبة الكونغرس، VIAF، ويكي بيانات، FAST، ISNI، ORCID', 'Library of Congress, VIAF, Wikidata, FAST, ISNI, ORCID')}>
                   <textarea className={INPUT} dir="ltr" rows={2} value={form.sameAs} onChange={(e) => set({ sameAs: e.target.value })} />
                   {problems.includes('same-as') && <span className="text-xs text-rose-600">{t('كل سطر يجب أن يكون رابطاً', 'Each line must be a link')}</span>}
+                  {/* Where each saved link came from: a person, Moon's match (with its confidence and reasons), an import. */}
+                  {selected && (selected.sameAs?.length || 0) > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {sourcesByLink(selected.sameAs || [], linkSources).map(({ uri, source }) => (
+                        <li key={uri} className="text-[11px] leading-4 text-slate-500" title={source?.evidence || undefined}>
+                          <span dir="ltr" className="font-mono text-slate-600 break-all">{uri.replace(/^https?:\/\/(www\.)?/, '')}</span>
+                          {' · '}
+                          {source ? describeLinkSource(source, isAr()) : t('أُضيف قبل حفظ المصادر', 'added before sources were kept')}
+                          {source?.evidence && source.method !== 'person' && <span className="block text-slate-400" dir="auto">{source.evidence}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </Field>
 
                 <Field label={t('ملاحظة', 'Note')}>
