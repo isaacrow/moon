@@ -116,7 +116,8 @@ const AUTHORITY_CONTEXT: Record<string, string> = {
 export function authorityDocument(a: {
   id: string; kind: string; label: string; variants: string[]; sameAs: string[]; note?: string | null; data?: any;
 }, expressions: string[] = []): any {
-  return { "@context": AUTHORITY_CONTEXT, "@graph": entityNodes(a, BASE_URI, expressions) };
+  // Through the same last step as records: Arabic names tagged @ar (romanized forms beside them @ar-Latn).
+  return finishPublished({ "@context": AUTHORITY_CONTEXT, "@graph": entityNodes(a, BASE_URI, expressions) });
 }
 
 export async function authorityNTriples(doc: any): Promise<string> {
