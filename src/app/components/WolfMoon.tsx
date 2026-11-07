@@ -151,7 +151,7 @@ import { type SaveStatus, BMCard, BMEntitySection, BMFieldWrapper, BMSaveStatus,
 
 // ============================== TYPES ==============================
 
-type OutputTab = "editor" | "history" | "jsonld" | "w3c-jsonld" | "rdf-xml" | "turtle" | "ntriples" | "marc" | "marc21-viewer" | "triples" | "opac" | "mindmap" | "validation" | "relationships" | "authority-graph" | "discovery" | "scriptshifter" | "lc-cutter" | "ai-engine" | "hubs" | "remerge-marc" | "marva-tools";
+type OutputTab = "editor" | "marc-editor" | "history" | "jsonld" | "w3c-jsonld" | "rdf-xml" | "turtle" | "ntriples" | "marc" | "marc21-viewer" | "triples" | "opac" | "mindmap" | "validation" | "relationships" | "authority-graph" | "discovery" | "scriptshifter" | "lc-cutter" | "ai-engine" | "hubs" | "remerge-marc" | "marva-tools";
 type MarvaLoadType = "work-instance" | "work-only" | "instance-only" | "hub-only" | "item-only";
 
 // ============================== FIELD TEMPLATE TYPE ==============================
@@ -277,7 +277,12 @@ export default function WolfMoon({
   const template = useMemo(() => getTemplate(selectedTemplate) || MONOGRAPH_COMPLETE_TEMPLATE, [selectedTemplate]);
 
   // ===== ACTIVE TAB =====
-  const [activeTab, setActiveTab] = useState<OutputTab>("editor");
+  const [activeTab, setActiveTab] = useState<OutputTab>(() => {
+    try {
+      if (localStorage.getItem("moon-open-tab") === "marc-editor") { localStorage.removeItem("moon-open-tab"); return "marc-editor"; }
+    } catch { /* private window */ }
+    return "editor";
+  });
   const [coverUrl, setCoverUrl] = useState<string | undefined>((initialRecord?.metadata as any)?.coverUrl);
   // A cover picked on a new record before its first save; uploaded by handleSave once it has an id.
   const [pendingCover, setPendingCover] = useState<File | null>(null);
@@ -337,7 +342,7 @@ export default function WolfMoon({
   const [fieldViewMode, setFieldViewMode] = useState<'both' | 'categories' | 'standard' | 'marc'>(() => {
     try {
       const saved = localStorage.getItem("moon-field-view-mode");
-      return saved === "standard" || saved === "both" || saved === "marc" ? saved : "categories";
+      return saved === "standard" || saved === "both" ? saved : "categories";
     } catch {
       return "categories";
     }
@@ -1789,6 +1794,8 @@ export default function WolfMoon({
             { key: "turtle" as OutputTab, icon: <Code className="h-3.5 w-3.5" />, label: t("turtle"), color: "#a78bfa" },
             { key: "ntriples" as OutputTab, icon: <FileText className="h-3.5 w-3.5" />, label: t("nTriples"), color: "#fb923c" },
             { key: "marc21-viewer" as OutputTab, icon: <BookOpen className="h-3.5 w-3.5" />, label: "MARC 21 View", color: "#f43f5e" },
+            // Cataloguing in MARC 21, converted to BIBFRAME live: its own tab beside the BIBFRAME editor.
+            { key: "marc-editor" as OutputTab, icon: <Code className="h-3.5 w-3.5" />, label: language === "ar" ? "محرر مارك 21" : "MARC 21 Editor", color: "#60a5fa" },
             // A record has a history once it has been saved.
             ...(storageIdRef.current ? [{ key: "history" as OutputTab, icon: <History className="h-3.5 w-3.5" />, label: language === "ar" ? "السجل" : "History", color: "#fbbf24" }] : [])
           ]).map(tab => {
@@ -2004,10 +2011,10 @@ export default function WolfMoon({
                   <button
                     type="button"
                     role="tab"
-                    aria-selected={fieldViewMode !== 'marc'}
-                    onClick={() => { if (fieldViewMode === 'marc') setFieldViewMode('categories'); }}
+                    aria-selected={true}
+                    onClick={() => setActiveTab("editor")}
                     className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                      fieldViewMode !== 'marc' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/75 hover:text-white hover:bg-white/10'
+                      'bg-blue-600 text-white shadow-lg'
                     }`}
                   >
                     <Layers className="h-4 w-4" />
@@ -2016,10 +2023,10 @@ export default function WolfMoon({
                   <button
                     type="button"
                     role="tab"
-                    aria-selected={fieldViewMode === 'marc'}
-                    onClick={() => setFieldViewMode('marc')}
+                    aria-selected={false}
+                    onClick={() => setActiveTab("marc-editor")}
                     className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                      fieldViewMode === 'marc' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/75 hover:text-white hover:bg-white/10'
+                      'text-white/75 hover:text-white hover:bg-white/10'
                     }`}
                     title={language === "ar" ? "فهرسة بمارك 21 مع تحويل فوري إلى BIBFRAME" : "Catalogue in MARC 21, converted to BIBFRAME as you type"}
                   >
@@ -2083,12 +2090,6 @@ export default function WolfMoon({
               )}
             </div>
 
-            {fieldViewMode === 'marc' && (
-              <React.Suspense fallback={null}>
-                <MarcEditor workData={workData} instanceData={instanceData} uriSet={uriSet} language={language}
-                  onApply={(work, instance) => { setWorkData(work); setInstanceData(instance); setSaveStatus("unsaved"); }} />
-              </React.Suspense>
-            )}
 
             {fieldViewMode !== 'marc' && <div className={
               loadType === "work-only" || loadType === "instance-only"
@@ -2237,6 +2238,14 @@ export default function WolfMoon({
           recordId={recordId} copyToClipboard={copyToClipboard} downloadFile={downloadFile} />
 
         {/* ===== MARC ===== */}
+        {activeTab === "marc-editor" && (
+          <div className="px-6 py-4 max-w-7xl mx-auto">
+            <React.Suspense fallback={<LazyPanelFallback />}>
+              <MarcEditor workData={workData} instanceData={instanceData} uriSet={uriSet} language={language}
+                onApply={(work, instance) => { setWorkData(work); setInstanceData(instance); setSaveStatus("unsaved"); }} />
+            </React.Suspense>
+          </div>
+        )}
         {activeTab === "marc" && <MarcView data={{ work: workData, instance: instanceData, admin: {} }} />}
 
         {/* ===== MARC 21 VIEWER ===== */}
@@ -2246,7 +2255,7 @@ export default function WolfMoon({
             <div className="flex justify-end mb-3">
               <button
                 type="button"
-                onClick={() => { setFieldViewMode('marc'); setActiveTab("editor"); }}
+                onClick={() => setActiveTab("marc-editor")}
                 className="flex items-center gap-2 px-4 py-2 rounded-full bg-blue-600 text-white text-sm font-bold hover:bg-blue-700"
               >
                 <Code className="h-4 w-4" /> {language === "ar" ? "حرّر بمارك 21" : "Edit in MARC 21"}
