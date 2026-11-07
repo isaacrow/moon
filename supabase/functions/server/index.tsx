@@ -1991,6 +1991,52 @@ app.post("/make-server-49c0e13c/records/:id/comments/:cid/resolve", async (c) =>
   }
 });
 
+// 💡 Suggest a change (Phase 13 S4): anyone signed in may suggest a new value for one field, with a reason;
+// the record's cataloger (or the Super Admin, when the record has none) is told. The cataloger or a reviewer
+// accepts it (the editor then puts the value in the field and saves as usual) or declines it, and the person
+// who suggested it is told. Nothing in the record changes on the server here.
+app.post("/make-server-49c0e13c/records/:id/suggestions", async (c) => {
+  try {
+    const a = await commentAccess(c);
+    if (a.error) return a.error;
+    const { field, body, value } = await c.req.json().catch(() => ({}));
+    if (typeof field !== 'string' || !/^[A-Za-z]+:[A-Za-z0-9_.-]{1,80}$/.test(field)) return c.json({ error: 'Invalid field' }, 400);
+    if (typeof value !== 'string' || !value.trim() || value.length > 4000) return c.json({ error: 'A suggested value needs 1–4000 characters' }, 400);
+    if (typeof body !== 'string' || !body.trim() || body.length > 2000) return c.json({ error: 'Say why, in 1–2000 characters' }, 400);
+    const suggestion = await recordStore.addSuggestion(a.record!.id, field, body, value.trim(), a.session!.username);
+    const to = a.record!.cataloger || SUPER_ADMIN_USERNAME;
+    if (to !== a.session!.username) {
+      await recordStore.notify(to, 'suggestion', a.record!, a.session!.username, `${field.split(':')[1]}: ${value.trim()}`.slice(0, 300));
+    }
+    return c.json({ suggestion });
+  } catch (error) {
+    console.error('Add suggestion error:', error);
+    return c.json({ error: 'Failed to add the suggestion' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/records/:id/suggestions/:cid/decide", async (c) => {
+  try {
+    const a = await commentAccess(c);
+    if (a.error) return a.error;
+    if (!a.mayWrite) return c.json({ error: "Only the Super Admin and the record's cataloger can accept or decline suggestions" }, 403);
+    const cid = Number(c.req.param('cid'));
+    if (!Number.isInteger(cid) || cid < 1) return c.json({ error: 'Invalid suggestion' }, 400);
+    const { accept } = await c.req.json().catch(() => ({}));
+    if (typeof accept !== 'boolean') return c.json({ error: 'accept: true or false' }, 400);
+    const suggestion = await recordStore.decideSuggestion(a.record!.id, cid, a.session!.username, accept);
+    if (!suggestion) return c.json({ error: 'This suggestion was already decided, or is not a suggestion' }, 409);
+    if (suggestion.author !== a.session!.username) {
+      await recordStore.notify(suggestion.author, accept ? 'suggestion_accepted' : 'suggestion_declined', a.record!, a.session!.username,
+        `${suggestion.field.split(':')[1]}: ${suggestion.suggested ?? ''}`.slice(0, 300));
+    }
+    return c.json({ suggestion });
+  } catch (error) {
+    console.error('Decide suggestion error:', error);
+    return c.json({ error: 'Failed to update the suggestion' }, 500);
+  }
+});
+
 // ✏️ Who is editing: the editor calls this every half minute while a record is open, and gets back the
 // other catalogers active on it, so it can warn "<username> is working on this record".
 app.post("/make-server-49c0e13c/records/:id/editing", async (c) => {
