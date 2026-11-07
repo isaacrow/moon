@@ -45,6 +45,8 @@ import { relatedFrom, resolveRelated } from "./entityRelations.tsx";
 import { isBot, visitFrom, visitDay, visitorKey } from "./opacVisits.tsx";
 import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceHash, type FolioConfig, type FolioRef, type FolioLink } from "./folio.tsx";
 import { marcProblems, sendMarc } from "./folioMarc.tsx";
+import { auditNTriples } from "./ldAudit.tsx";
+import * as BF_TERMS from "./bibframeTerms.generated.tsx";
 import { seal, unseal, settingsProblems, publicSettings, type FolioSettings } from "./folioSettings.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
@@ -185,6 +187,24 @@ app.get("/make-server-49c0e13c/admin/storage", async (c) => {
     return c.json({ error: "Could not read storage use" }, 500);
   }
 });
+
+// 🩺 Linked-data audit (Phase 12): the published catalogue measured against BIBFRAME 3.0.1 and linked-data rules,
+// for the Super Admin's scorecard. Same code as CI and the nightly job (ldAudit.tsx).
+app.get("/make-server-49c0e13c/admin/ld-audit", async (c) => {
+  if (!(await isAdminSession(c))) return c.json({ error: "Super Admin session required" }, 403);
+  try {
+    const nt = await loadPublishedNTriples();
+    const entities = await recordStore.authorityStats();
+    return c.json(auditNTriples(nt, {
+      bfClasses: BF_TERMS.BF_CLASSES, bfObject: BF_TERMS.BF_OBJECT_PROPERTIES, bfData: BF_TERMS.BF_DATATYPE_PROPERTIES,
+      bflcClasses: BF_TERMS.BFLC_CLASSES, bflcObject: BF_TERMS.BFLC_OBJECT_PROPERTIES, bflcData: BF_TERMS.BFLC_DATATYPE_PROPERTIES,
+    }, entities));
+  } catch (e) {
+    console.error("Linked-data audit error:", e);
+    return c.json({ error: "Could not run the audit" }, 500);
+  }
+});
+
 
 // Cataloguing profiles (LC Marva JSON) and the SHACL shapes the publish gate enforces, both public.
 app.get("/make-server-49c0e13c/profiles/:id", (c) => {
@@ -1396,36 +1416,66 @@ app.post("/make-server-49c0e13c/authorities", async (c) => {
 // Super Admin: links the names and subjects of records saved before every save linked them. Works in
 // batches (offset / limit) so a large catalogue does not time out; each changed record gets a new version
 // noted "authority links", so it can be reverted from its history like any edit.
+/**
+ * Links the names, subjects, places and publishers of one batch of records (offset / limit) to entities, the
+ * way every save does. Each changed record gets a new version noted "authority links" (a published record's
+ * published version moves with it), so it can be reverted from its history like any edit.
+ */
+async function linkRecordsBatch(offset: number, limit: number, by: string) {
+  const records = (await recordStore.listRecords()).sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
+  const batch = records.slice(offset, offset + limit);
+  let changed = 0, linked = 0, mirrored = 0;
+  const failed: string[] = [];
+  for (const rec of batch as any[]) {
+    try {
+      const document = JSON.parse(JSON.stringify(rec.document));
+      const n = await linkAuthorities(document, (input) => addLinkedEntity(input, by), (a) => withUri(a).uri);
+      // LC-, VIAF- and Wikidata-linked headings get their Moon entity (the record itself is unchanged by this).
+      mirrored += await mirrorOutsideLinked(document, (input) => addLinkedEntity(input, by));
+      if (!n) continue;
+      await recordStore.saveRecord({ ...rec, document, saved: new Date().toISOString() }, by, 'authority links',
+        Number.isInteger(rec.version) ? rec.version : undefined);
+      changed++;
+      linked += n;
+    } catch (error) {
+      console.error(`Authority linking failed for ${rec.id}:`, error);
+      failed.push(rec.id);
+    }
+  }
+  const next = offset + batch.length < records.length ? offset + batch.length : null;
+  return { total: records.length, processed: batch.length, changed, linked, mirrored, failed, next };
+}
+
+// Super Admin: links the records saved before every save linked them (the button in the account menu and on
+// the linked-data scorecard).
 app.post("/make-server-49c0e13c/authorities/link-records", async (c) => {
   try {
     const admin = await isAdminSession(c);
     if (!admin) return c.json({ error: 'Super Admin session required' }, 403);
     const offset = Math.max(0, Number(c.req.query('offset')) || 0);
     const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 50));
-    const records = (await recordStore.listRecords()).sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)));
-    const batch = records.slice(offset, offset + limit);
-    let changed = 0, linked = 0, mirrored = 0;
-    const failed: string[] = [];
-    for (const rec of batch as any[]) {
-      try {
-        const document = JSON.parse(JSON.stringify(rec.document));
-        const n = await linkAuthorities(document, (input) => addLinkedEntity(input, admin.username), (a) => withUri(a).uri);
-        // LC-, VIAF- and Wikidata-linked headings get their Moon entity (the record itself is unchanged by this).
-        mirrored += await mirrorOutsideLinked(document, (input) => addLinkedEntity(input, admin.username));
-        if (!n) continue;
-        await recordStore.saveRecord({ ...rec, document, saved: new Date().toISOString() }, admin.username, 'authority links',
-          Number.isInteger(rec.version) ? rec.version : undefined);
-        changed++;
-        linked += n;
-      } catch (error) {
-        console.error(`Authority linking failed for ${rec.id}:`, error);
-        failed.push(rec.id);
-      }
-    }
-    const next = offset + batch.length < records.length ? offset + batch.length : null;
-    return c.json({ total: records.length, processed: batch.length, changed, linked, mirrored, failed, next });
+    return c.json(await linkRecordsBatch(offset, limit, admin.username));
   } catch (error) {
     console.error('Authority link-records error:', error);
+    return c.json({ error: 'Failed to link records to authorities' }, 500);
+  }
+});
+
+// The nightly job (GitHub Actions, .github/workflows/link-records.yml): the same linking, signed with the
+// MOON_JOB_TOKEN secret instead of a person's session. Without the secret set, the job is off.
+app.post("/make-server-49c0e13c/jobs/link-records", async (c) => {
+  const expected = Deno.env.get('MOON_JOB_TOKEN') || '';
+  const given = c.req.header('X-Moon-Job-Token') || '';
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([given, expected].map((x) => crypto.subtle.digest('SHA-256', enc.encode(x))));
+  const same = expected.length >= 32 && new Uint8Array(a).every((x, i) => x === new Uint8Array(b)[i]);
+  if (!same) return c.json({ error: 'Job token required' }, 403);
+  try {
+    const offset = Math.max(0, Number(c.req.query('offset')) || 0);
+    const limit = Math.min(100, Math.max(1, Number(c.req.query('limit')) || 50));
+    return c.json(await linkRecordsBatch(offset, limit, 'moon-nightly'));
+  } catch (error) {
+    console.error('Nightly link-records error:', error);
     return c.json({ error: 'Failed to link records to authorities' }, 500);
   }
 });

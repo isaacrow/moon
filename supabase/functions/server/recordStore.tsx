@@ -495,6 +495,13 @@ export async function searchAuthorities(query: string, kind?: AuthorityKind | nu
   return data || [];
 }
 
+/** The entity file in numbers (Phase 12 audit): total, how many link outward, by kind. */
+export async function authorityStats(): Promise<{ total: number; withOutsideLinks: number; byKind: Record<string, number> }> {
+  const { data, error } = await sb().rpc("moon_authority_stats");
+  if (error) throw new Error(`[authorities] stats failed: ${error.message}`);
+  return data || { total: 0, withOutsideLinks: 0, byKind: {} };
+}
+
 /** The entity (not merged) that already has one of these outside links, however the link is spelled. */
 export async function findAuthorityByLinks(uris: string[], kind?: AuthorityKind | null): Promise<Authority | null> {
   const { data, error } = await sb().rpc("moon_find_authority_by_links", { p_links: uris, p_kind: kind ?? null });

@@ -1,0 +1,44 @@
+# Nightly: links every record's names, subjects, places and publishers to Moon's entities, the way each save
+# does (Phase 12, step 2), so records published before linking existed, or imported in bulk, never stay
+# unlinked. Runs before the nightly data dump. Uses the MOON_JOB_TOKEN secret (the same value as the edge
+# function's MOON_JOB_TOKEN secret, 32 characters or more); without it the job does nothing.
+name: Nightly entity linking
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 00:00 UTC, before the 00:30 data dump
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: link-records
+  cancel-in-progress: false
+
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Link every record
+        env:
+          MOON_JOB_TOKEN: ${{ secrets.MOON_JOB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MOON_JOB_TOKEN}" ]; then
+            echo "::notice::MOON_JOB_TOKEN is not set; nightly linking is off. The Super Admin can link from the dashboard."
+            exit 0
+          fi
+          project=$(grep -o 'projectId = "[^"]*"' utils/supabase/info.tsx | cut -d'"' -f2)
+          key=$(grep -o 'publicAnonKey = "[^"]*"' utils/supabase/info.tsx | cut -d'"' -f2)
+          api="https://${project}.supabase.co/functions/v1/make-server-49c0e13c/jobs/link-records"
+          offset=0; changed=0; linked=0
+          while [ -n "${offset}" ] && [ "${offset}" != "null" ]; do
+            out=$(curl -fsS --retry 2 --max-time 240 -X POST "${api}?offset=${offset}&limit=25" \
+              -H "Authorization: Bearer ${key}" -H "X-Moon-Job-Token: ${MOON_JOB_TOKEN}" -H 'Content-Type: application/json' -d '{}')
+            changed=$((changed + $(echo "$out" | jq '.changed'))); linked=$((linked + $(echo "$out" | jq '.linked')))
+            offset=$(echo "$out" | jq -r '.next')
+            echo "batch done: $(echo "$out" | jq -c '{processed, changed, linked, failed}')"
+          done
+          echo "### Entity linking: ${linked} headings linked in ${changed} records" >> "$GITHUB_STEP_SUMMARY"

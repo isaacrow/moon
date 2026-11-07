@@ -74,10 +74,10 @@ test('a Koha-style record: ISBD punctuation, 260, 082 slashes, subdivided subjec
     'bf:agent': [{ 'rdfs:label': 'Wizarat al-Thaqafa' }],
     'bf:date': '1999',
   });
-  assert.equal(instance['bf:extent'], '5 v.', 'an abbreviation keeps its period');
+  assert.equal(instance['bf:extent']['rdfs:label'], '5 v.', 'an abbreviation keeps its period (in a bf:Extent node)');
   assert.equal(instance['bf:dimensions'], '24 cm.');
   assert.equal(work['bf:contribution'][0]['bf:agent']['rdfs:label'], 'Jawahiri, Muhammad Mahdi, 1899-1997', 'LC name heading: comma before the dates');
-  assert.deepEqual(work['bf:contribution'][0]['bf:role'], ['author']);
+  assert.deepEqual(work['bf:contribution'][0]['bf:role'], [{ '@type': 'bf:Role', 'rdfs:label': 'author' }], 'a role is a node');
   assert.equal(work['bf:classification'][0]['bf:classificationPortion'], '892.71');
   assert.equal(work['bf:subject'][0]['rdfs:label'], 'Arabic poetry--20th century');
   assert.equal(work['bf:language']['@id'], 'http://id.loc.gov/vocabulary/languages/ara');
