@@ -71,11 +71,11 @@ export function negotiate(accept: string | null | undefined): Format {
  * A published record as it is served as linked data: its stored document with admin metadata the way LC
  * writes it (history events, BIBFRAME version, cataloguing language, local record number).
  */
-export function publishedDocument(record: { id: string; document: any; cataloger?: string; createdAt?: string; saved?: string; approvedBy?: string }): any {
+export function publishedDocument(record: { id: string; document: any; title?: string; cataloger?: string; createdAt?: string; saved?: string; approvedBy?: string }): any {
   const facts: AdminFacts = { id: record.id, cataloger: record.cataloger, createdAt: record.createdAt, saved: record.saved, approvedBy: record.approvedBy };
   // Access points (bflc:aap) on Works and Hubs, and LC variant title types, as LC's records carry them.
   // Then strict BIBFRAME 3.0.1, language-tagged and with EDTF dates (publishedOutput.tsx, Phase 12).
-  return finishPublished(withLcLabels(withLcAdminMetadata(record.document, facts, BASE_URI)));
+  return finishPublished(withLcLabels(withLcAdminMetadata(record.document, facts, BASE_URI)), { title: record.title });
 }
 
 /** The stored document with a full @context, ready for any JSON-LD processor. */
