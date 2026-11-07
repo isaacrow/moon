@@ -1,47 +1,85 @@
-// W3C Reconciliation API over the authority file, as OpenRefine calls it.
+// Phase 12, step 5: Moon's entities matched to LC, VIAF and Wikidata. Real LC and Wikidata records (fixtures)
+// stand in for the services: sure matches are found, a different person with the same name is not taken,
+// and the links a match brings include every outside address its records carry.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reconcile, manifest, normalizeName, ReconEntry } from '../supabase/functions/server/reconcile.tsx';
+import { readFileSync } from 'node:fs';
+import { reconcileEntity, headingKey, lifeYears, type ReconcileDeps } from '../src/services/reconcile';
+import { fetchOutsideEntity } from '../src/services/entityImport';
 
-const FILE: ReconEntry[] = [
-  { id: 'jawahiri', kind: 'agent', label: 'محمد مهدي الجواهري', variants: ['Jawāhirī, Muḥammad Mahdī, 1899-1997'] },
-  { id: 'jawahiri-poet-society', kind: 'agent', label: 'جمعية الجواهري الأدبية', variants: [] },
-  { id: 'karbala', kind: 'place', label: 'كربلاء', variants: ['Karbalāʼ (Iraq)'] },
-  { id: 'poetry', kind: 'topic', label: 'الشعر العربي', variants: ['Arabic poetry'] },
-];
-const calls: any[] = [];
-const search = async (q: string, kind: any, limit: number) => {
-  calls.push({ q, kind, limit });
-  const n = normalizeName(q);
-  return FILE.filter((e) => (!kind || e.kind === kind) && [e.label, ...e.variants].some((v) => normalizeName(v).includes(n.split(' ')[0])));
-};
+const fixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/entity-import/${name}`, import.meta.url), 'utf8'));
+const IBN_KHALDUN_LC = 'http://id.loc.gov/authorities/names/n50052785';
 
-test('the manifest OpenRefine reads first', () => {
-  const m = manifest('https://mooon.site/resource');
-  assert.deepEqual(m.versions, ['0.2']);
-  assert.equal(m.identifierSpace, 'https://mooon.site/resource/');
-  assert.equal(m.view.url, 'https://mooon.site/resource/{{id}}', 'a candidate id opens its authority page');
-  assert.deepEqual(m.defaultTypes.map((t) => t.id), ['agent', 'place', 'topic']);
+/** LC and Wikidata as the fixtures answer them. */
+function deps(found: { lc?: any[]; wd?: any[] } = {}): ReconcileDeps & { asked: string[] } {
+  const asked: string[] = [];
+  const fetchJson = async (url: string) => {
+    const lc = url.match(/id\.loc\.gov\/authorities\/(\w+)\/(\w+)\.json$/);
+    if (lc) return fixture(`lc-${lc[1]}-${lc[2]}.json`);
+    const u = new URL(url);
+    if (u.searchParams.get('props') === 'labels') return { entities: {} };
+    const ids = u.searchParams.get('ids') || '';
+    return fixture(`wd-${ids}.json`);
+  };
+  return {
+    asked,
+    searchLc: async (q, scheme) => { asked.push(`lc:${scheme}:${q}`); return found.lc || []; },
+    searchWikidata: async (q) => { asked.push(`wd:${q}`); return found.wd || []; },
+    romanize: async (q) => ({ 'ابن خلدون': 'Ibn Khaldūn', 'بغداد': 'Baghdād' } as Record<string, string>)[q] || '',
+    details: (uri) => fetchOutsideEntity(uri, { fetchJson }),
+  };
+}
+
+test('headings compare without qualifiers, in either script; dates are read from data or the heading', () => {
+  assert.equal(headingKey('Baghdad (Iraq)'), headingKey('Baghdad'));
+  assert.equal(headingKey('بغداد (عراق)'), headingKey('بغداد'));
+  assert.deepEqual(lifeYears('Ibn Khaldūn, 1332-1406'), { born: 1332, died: 1406 });
+  assert.deepEqual(lifeYears('x', { birthDate: '1332-05-27' }), { born: 1332, died: undefined });
 });
 
-test('a batch of queries: exact names match, spellings fold, types filter', async () => {
-  const out = await reconcile({
-    q0: { query: 'محمد مهدى الجواهرى', type: 'agent' },        // ى for ي: the same name
-    q1: { query: 'Karbalāʼ (Iraq)', type: 'place', limit: 3 },   // a variant
-    q2: { query: 'الجواهري' },                                    // two candidates, no sure match
-    q3: { query: '   ' },
-  }, search);
-  assert.equal(out.q0.result[0].id, 'agent/jawahiri');
-  assert.equal(out.q0.result[0].score, 100);
-  assert.equal(out.q0.result[0].match, true, 'the only exact match is linked without asking');
-  assert.deepEqual(out.q1.result.map((r) => r.id), ['place/karbala']);
-  assert.ok(out.q2.result.length >= 2 && out.q2.result.every((r) => r.match === false));
-  assert.deepEqual(out.q3.result, []);
-  assert.deepEqual(calls.find((c) => c.q === 'Karbalāʼ (Iraq)'), { q: 'Karbalāʼ (Iraq)', kind: 'place', limit: 3 });
+test('an Arabic-named person is found in LC by romanization and linked surely, with Wikidata, VIAF and FAST', async () => {
+  const d = deps({
+    lc: [{ label: 'Ibn Khaldūn, 1332-1406', uri: IBN_KHALDUN_LC, source: 'LOC' }],
+    wd: [{ label: 'Ibn Khaldun', uri: 'http://www.wikidata.org/entity/Q9294', source: 'Wikidata' }],
+  });
+  const r = await reconcileEntity({ id: 'ibn-khaldun-1', kind: 'agent', label: 'ابن خلدون، 1332-1406', variants: [] }, d);
+  assert.ok(d.asked.includes('lc:names:Ibn Khaldūn'), 'LC searched with the romanized name');
+  assert.ok(r.sure, 'a sure match');
+  assert.equal(r.candidates.length, 1, 'LC and Wikidata records of one person are one candidate');
+  for (const u of [IBN_KHALDUN_LC, 'http://www.wikidata.org/entity/Q9294', 'http://viaf.org/viaf/41841661', 'http://id.worldcat.org/fast/17753']) {
+    assert.ok(r.sure!.links.includes(u), `brings ${u}`);
+  }
+  assert.ok(r.sure!.reasons.includes('same dates'));
 });
 
-test('Arabic name normalization', () => {
-  assert.equal(normalizeName('أحمد'), normalizeName('احمد'));
-  assert.equal(normalizeName('مدرسة'), normalizeName('مدرسه'));
-  assert.equal(normalizeName('Jawāhirī'), 'jawahiri');
+test('a person with the same name but other dates is not taken', async () => {
+  const r = await reconcileEntity({ id: 'x', kind: 'agent', label: 'Ibn Khaldūn, 1700-1760' },
+    deps({ lc: [{ label: 'Ibn Khaldūn, 1332-1406', uri: IBN_KHALDUN_LC, source: 'LOC' }] }));
+  assert.equal(r.sure, null);
+  assert.ok(!r.candidates.length || r.candidates[0].reasons.includes('different dates'));
+});
+
+test('places and subjects match by heading, and a place is not matched to a subject', async () => {
+  const place = await reconcileEntity({ id: 'baghdad', kind: 'place', label: 'بغداد' },
+    deps({ lc: [{ label: 'Baghdad (Iraq)', uri: 'http://id.loc.gov/authorities/names/n80006292', source: 'LOC' }] }));
+  assert.ok(place.sure, 'بغداد = Baghdad (Iraq) through LC\'s Arabic form');
+  const topic = await reconcileEntity({ id: 'philo', kind: 'topic', label: 'Islamic philosophy' },
+    deps({ lc: [{ label: 'Islamic philosophy', uri: 'http://id.loc.gov/authorities/subjects/sh85100934', source: 'LOC' }] }));
+  assert.ok(topic.sure);
+  const wrongKind = await reconcileEntity({ id: 'p', kind: 'agent', label: 'Islamic philosophy' },
+    deps({ lc: [{ label: 'Islamic philosophy', uri: 'http://id.loc.gov/authorities/subjects/sh85100934', source: 'LOC' }] }));
+  assert.equal(wrongKind.candidates.length, 0, 'a subject is not a person');
+});
+
+test('a name known only by its short form waits for review', async () => {
+  const r = await reconcileEntity({ id: 'k', kind: 'agent', label: 'ابن خلدون' },
+    deps({ lc: [{ label: 'Ibn Khaldūn, 1332-1406', uri: IBN_KHALDUN_LC, source: 'LOC' }] }));
+  assert.ok(r.candidates.length >= 1, 'offered');
+  assert.equal(r.sure, null, 'no dates to confirm it: a person decides');
+});
+
+test('a subject keeps its subdivisions: "Islamic philosophy" is not "Islamic philosophy--Early works to 1800"', () => {
+  assert.notEqual(headingKey('Islamic philosophy', 'topic'), headingKey('Islamic philosophy--Early works to 1800', 'topic'));
+  assert.equal(headingKey('Islam -- Doctrines', 'topic'), headingKey('Islam--Doctrines', 'topic'));
+  assert.notEqual(headingKey('Daʻwah (Islam)', 'topic'), headingKey('Islam', 'topic'));
 });
