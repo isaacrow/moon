@@ -46,6 +46,7 @@ import { isBot, visitFrom, visitDay, visitorKey } from "./opacVisits.tsx";
 import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceHash, type FolioConfig, type FolioRef, type FolioLink } from "./folio.tsx";
 import { marcProblems, sendMarc } from "./folioMarc.tsx";
 import { auditNTriples } from "./ldAudit.tsx";
+import { upgradeLegacyTerms } from "./publishedOutput.tsx";
 import * as BF_TERMS from "./bibframeTerms.generated.tsx";
 import { seal, unseal, settingsProblems, publicSettings, type FolioSettings } from "./folioSettings.tsx";
 import * as aiEngine from "./aiEngine.tsx";
@@ -743,6 +744,8 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     // authority file and linked. Never blocks the save.
     let authoritiesLinked = 0;
     try {
+      // Older records' bf:creator / bf:topical / bf:classificationLcc become BIBFRAME 3.0.1 first, so they link too.
+      upgradeLegacyTerms(document);
       authoritiesLinked = await linkAuthorities(document, (input) => addLinkedEntity(input, session.username), (a) => withUri(a).uri);
       // Names and subjects picked from LC, VIAF or Wikidata keep that address; Moon's entity store gets their
       // entity too (one per link), so every person, place and subject a record uses exists in Moon.
@@ -872,8 +875,19 @@ li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:n
 // application/sparql-query body or a form field "query". Without a query, browsers get a query page.
 const loadPublishedNTriples = async () => {
   const records = (await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  return await linkedData.dumpNTriples(records.map((r) => linkedData.publishedDocument(r)));
+  const documents = records.map((r) => linkedData.publishedDocument(r));
+  return await linkedData.dumpNTriples(documents, await publishedEntityDocs(documents));
 };
+
+/** The entities, as linked data, that go with the published records in the dump and SPARQL (never fails them). */
+async function publishedEntityDocs(documents: any[]): Promise<any[]> {
+  try {
+    return linkedData.entityDocuments(await recordStore.listAllAuthorities(), documents);
+  } catch (error) {
+    console.error('Entities for the dump failed (records only):', error);
+    return [];
+  }
+}
 
 const SPARQL_EXAMPLE = `PREFIX bf: <http://id.loc.gov/ontologies/bibframe/>
 
@@ -949,16 +963,18 @@ async function resourceDump(c: any, format: 'jsonld' | 'nt') {
   try {
     const records = (await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
     const documents = records.map((r) => linkedData.publishedDocument(r));
+    const entities = await publishedEntityDocs(documents);
     const headers = {
       'Access-Control-Allow-Origin': '*',
+      'X-Entity-Count': String(entities.length),
       'Cache-Control': 'public, max-age=3600',
       'Content-Disposition': `inline; filename="moon-published-records.${format}"`,
       'X-Record-Count': String(records.length),
     };
     if (format === 'jsonld') {
-      return c.body(JSON.stringify(linkedData.dumpJsonLd(documents)), 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
+      return c.body(JSON.stringify(linkedData.dumpJsonLd(documents, entities)), 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES.jsonld}; charset=utf-8` });
     }
-    return c.body(await linkedData.dumpNTriples(documents), 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES.nt}; charset=utf-8` });
+    return c.body(await linkedData.dumpNTriples(documents, entities), 200, { ...headers, 'Content-Type': `${linkedData.MEDIA_TYPES.nt}; charset=utf-8` });
   } catch (error) {
     console.error('Data dump error:', error);
     return c.json({ error: 'Failed to build the data dump' }, 500);
@@ -1429,10 +1445,11 @@ async function linkRecordsBatch(offset: number, limit: number, by: string) {
   for (const rec of batch as any[]) {
     try {
       const document = JSON.parse(JSON.stringify(rec.document));
+      const upgraded = upgradeLegacyTerms(document);
       const n = await linkAuthorities(document, (input) => addLinkedEntity(input, by), (a) => withUri(a).uri);
       // LC-, VIAF- and Wikidata-linked headings get their Moon entity (the record itself is unchanged by this).
       mirrored += await mirrorOutsideLinked(document, (input) => addLinkedEntity(input, by));
-      if (!n) continue;
+      if (!n && !upgraded) continue;
       await recordStore.saveRecord({ ...rec, document, saved: new Date().toISOString() }, by, 'authority links',
         Number.isInteger(rec.version) ? rec.version : undefined);
       changed++;

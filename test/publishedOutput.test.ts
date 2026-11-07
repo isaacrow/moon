@@ -66,3 +66,16 @@ test('the whole live catalogue, published this way, meets the standard', async (
   // And the stored record is not changed.
   assert.ok(JSON.stringify(dump).includes('"bf:creator"'));
 });
+
+import { upgradeLegacyTerms } from '../supabase/functions/server/publishedOutput.tsx';
+import { findUnlinked } from '../supabase/functions/server/authorityLinking.tsx';
+
+test('an older record\'s bf:creator becomes a contribution on save, so its author gets linked', () => {
+  const doc = { '@graph': [{ '@id': 'https://mooon.site/resource/work/old1', '@type': 'bf:Work', 'bf:title': { '@type': 'bf:Title', 'bf:mainTitle': 'x' }, 'bf:creator': { '@type': 'bf:Person', 'rdfs:label': 'Austen, Jane, 1775-1817' }, 'bf:topical': 'Courtship' }] };
+  assert.equal(findUnlinked(JSON.parse(JSON.stringify(doc))).some((t: any) => /Austen/.test(t.label)), false, 'before: the linker cannot see it');
+  assert.equal(upgradeLegacyTerms(doc), true);
+  const found = findUnlinked(doc).map((t: any) => `${t.kind}:${t.label}`);
+  assert.ok(found.includes('agent:Austen, Jane, 1775-1817'));
+  assert.ok(found.includes('topic:Courtship'));
+  assert.equal(upgradeLegacyTerms(doc), false, 'a second time changes nothing');
+});
