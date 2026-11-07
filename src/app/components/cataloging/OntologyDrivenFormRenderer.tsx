@@ -563,7 +563,7 @@ function CategorySection({
                 value={getFieldValue(node, property.shortName)}
                 onChange={(value) => onChange(nodeUri, property.shortName, value)}
               />
-              <FieldComments field={`${entityType}:${property.shortName}`} label={property.label} />
+              <FieldComments field={`${entityType}:${property.shortName}`} label={property.label} value={getFieldValue(node, property.shortName)} onApply={(value) => onChange(nodeUri, property.shortName, value)} />
               {onHideField && (
                 <button
                   onClick={() => onHideField(`registry:${property.shortName}`)}

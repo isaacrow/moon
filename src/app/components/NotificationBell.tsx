@@ -12,7 +12,7 @@ import { UserAvatar } from './UserAvatar';
 
 interface Notice {
   id: number;
-  kind: "welcome" | "review" | "approved" | "returned" | "comment" | "assigned";
+  kind: "welcome" | "review" | "approved" | "returned" | "comment" | "assigned" | "suggestion" | "suggestion_accepted" | "suggestion_declined";
   recordId?: string;
   recordTitle?: string;
   actor?: string;
@@ -38,6 +38,12 @@ function message(n: Notice, ar: boolean): { title: string; body?: string } {
       return ar
         ? { title: `علّق ${n.actor || "مراجع"} على ${t}`, body: n.reason }
         : { title: `${n.actor || "A reviewer"} commented on ${t}`, body: n.reason };
+    case "suggestion":
+      return ar ? { title: `اقترح ${n.actor || "مستخدم"} تعديلاً على ${t}`, body: n.reason } : { title: `${n.actor || "Someone"} suggested a change to ${t}`, body: n.reason };
+    case "suggestion_accepted":
+      return ar ? { title: `قُبل اقتراحك على ${t}`, body: n.reason } : { title: `Your suggestion on ${t} was accepted`, body: n.reason };
+    case "suggestion_declined":
+      return ar ? { title: `رُفض اقتراحك على ${t}`, body: n.reason } : { title: `Your suggestion on ${t} was declined`, body: n.reason };
     case "returned":
       return ar
         ? { title: `أُعيدت ${t} للتعديل`, body: n.reason ? `السبب: ${n.reason}` : undefined }

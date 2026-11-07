@@ -362,7 +362,7 @@ export async function findPublishedByUri(uri: string): Promise<{ id: string; tit
   return data ?? null;
 }
 
-export type NotificationKind = "welcome" | "review" | "approved" | "returned" | "comment" | "assigned";
+export type NotificationKind = "welcome" | "review" | "approved" | "returned" | "comment" | "assigned" | "suggestion" | "suggestion_accepted" | "suggestion_declined";
 
 /** Assigns a record to a reviewer (or clears it with null); false when the record does not exist. */
 export async function assignRecord(id: string, username: string | null): Promise<boolean> {
@@ -410,6 +410,11 @@ export interface FieldComment {
   createdAt: string;
   resolvedAt?: string;
   resolvedBy?: string;
+  /** A suggested new value for the field (a "suggest a change"), and what the record's cataloger decided. */
+  suggested?: string | null;
+  decision?: 'accepted' | 'declined' | null;
+  decidedBy?: string | null;
+  decidedAt?: string | null;
 }
 
 /** Every comment on a record's fields, oldest first. */
@@ -430,6 +435,20 @@ export async function resolveComment(recordId: string, id: number, by: string, r
   const { data, error } = await sb().rpc("moon_resolve_comment", { p_record: recordId, p_id: id, p_by: by, p_resolved: resolved });
   if (error) throw new Error(`[comments] resolve ${id} failed: ${error.message}`);
   return data as number;
+}
+
+/** A suggested new value for one field, with the reason (Phase 13 S4). */
+export async function addSuggestion(recordId: string, field: string, body: string, value: string, author: string): Promise<FieldComment> {
+  const { data, error } = await sb().rpc("moon_add_suggestion", { p_record: recordId, p_field: field, p_body: body, p_value: value, p_author: author });
+  if (error) throw new Error(`[suggestions] add on ${recordId} failed: ${error.message}`);
+  return data;
+}
+
+/** Accepts or declines an open suggestion; null when there is none to decide. */
+export async function decideSuggestion(recordId: string, id: number, by: string, accept: boolean): Promise<FieldComment | null> {
+  const { data, error } = await sb().rpc("moon_decide_suggestion", { p_record: recordId, p_id: id, p_by: by, p_accept: accept });
+  if (error) throw new Error(`[suggestions] decide ${id} failed: ${error.message}`);
+  return data ?? null;
 }
 
 export interface PossibleDuplicate {
