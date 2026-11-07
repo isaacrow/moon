@@ -6,6 +6,41 @@
 import { searchFAST, searchORCID, searchISNI } from './moreAuthorities';
 import { lookupIsbnEverywhere, normalizeIsbn, IsbnInfo, IsbnRecord, IsbnSource } from './isbnLookup';
 import { searchMoonAuthorities } from './moonAuthorities';
+import { sameNameScore } from './arabicNames';
+import { MOON_API, moonHeaders } from '../app/utils/moonApi';
+
+/**
+ * An Arabic query in ALA-LC romanization (LC's ScriptShifter, through Moon's server), so LC's files, which
+ * cannot be searched in Arabic script, are searched too. Empty when the service does not answer quickly.
+ */
+export async function romanizeQuery(query: string): Promise<string> {
+  if (!ARABIC_SCRIPT.test(query)) return '';
+  try {
+    const r = await fetch(`${MOON_API}/scriptshifter/trans`, {
+      method: 'POST',
+      headers: { ...moonHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lang: 'arabic', text: query.trim(), t_dir: 's2r', capitalize: 'first', options: {} }),
+      signal: AbortSignal.timeout(4000),
+    });
+    const d = r.ok ? await r.json() : null;
+    return typeof d?.output === 'string' ? d.output.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Person results best match first: Moon's own entities lead, then each result by how surely its name is the
+ * one searched (same ism-and-nasab chain, same known-by element …), compared in its own script (Arabic with
+ * the query, romanized with the query's romanization). Results keep their order otherwise.
+ */
+export function rankByName(results: AuthorityResult[], query: string, latin = ''): AuthorityResult[] {
+  const score = (r: AuthorityResult) => {
+    const q = ARABIC_SCRIPT.test(r.label) ? query : latin || query;
+    return (r.source === 'Moon' ? 2 : 0) + sameNameScore(q, r.label);
+  };
+  return results.map((r, i) => ({ r, i, s: score(r) })).sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.r);
+}
 
 export interface AuthorityResult {
   label: string;
@@ -160,6 +195,10 @@ export async function searchAllAuthorities(
   try {
     // Parallel search across sources
     const searches: Promise<AuthorityResult[]>[] = [];
+    // Arabic script: LC is searched with the ALA-LC romanization (LC's own search cannot read Arabic).
+    const latin = ['person', 'organization', 'subject', 'place', 'work'].includes(context) ? await romanizeQuery(query) : '';
+    const LC_SCHEME: Record<string, LOCScheme> = { person: 'names', organization: 'names', subject: 'subjects', place: 'names', work: 'names' };
+    if (latin) searches.push(searchLOCAuthorities(latin, LC_SCHEME[context]));
 
     switch (context) {
       case 'person':
@@ -217,7 +256,8 @@ export async function searchAllAuthorities(
     const allResults = await Promise.all(searches);
     allResults.forEach(sourceResults => results.push(...sourceResults));
 
-    return foldMoonTwins(results);
+    const folded = foldMoonTwins(results);
+    return context === 'person' ? rankByName(folded, query, latin) : folded;
   } catch (error) {
     console.error('Authority search error:', error);
     return [];
