@@ -3,7 +3,8 @@
  * VIAF, Wikidata, FAST … (the same search as the BIBFRAME fields). When nothing matches, it offers to make the
  * heading a Moon entity, so the field still gets an address.
  */
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Plus } from 'lucide-react';
 import { searchAllAuthorities, type AuthorityResult } from '../../../services/authoritySearch';
 import type { AuthoritySpec } from '../../../services/marc/marcAuthorityFields';
@@ -32,6 +33,8 @@ export function MarcAuthorityInput({ value, spec, ar, className, style, placehol
   const [results, setResults] = useState<AuthorityResult[]>([]);
   const [active, setActive] = useState(0);
   const box = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLUListElement>(null);
+  const [place, setPlace] = useState<CSSProperties | null>(null);
   const query = value.replace(/[\s.,:;/=]+$/, '').trim();
 
   // Search after a short pause, only once the cataloguer has typed in this box.
@@ -50,7 +53,11 @@ export function MarcAuthorityInput({ value, spec, ar, className, style, placehol
   }, [query, typed, spec.context]);
 
   useEffect(() => {
-    const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (box.current?.contains(t) || menu.current?.contains(t)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, []);
@@ -74,6 +81,27 @@ export function MarcAuthorityInput({ value, spec, ar, className, style, placehol
     genre: ['نوع أو شكل', 'genre/form'], place: ['مكان', 'place'], work: ['عمل', 'work'],
   };
   const showMenu = open && typed && query.length >= 2;
+
+  // The list is drawn at the top of the page (a portal), placed under the box: glass rows each make their
+  // own layer, so a list inside one row would be covered by the rows after it. Above the box when there is
+  // more room there.
+  useLayoutEffect(() => {
+    if (!showMenu) { setPlace(null); return; }
+    const measure = () => {
+      const r = box.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
+      const up = below < 220 && above > below;
+      const width = Math.max(r.width, 300);
+      const left = Math.min(Math.max(8, ar ? r.right - width : r.left), window.innerWidth - width - 8);
+      setPlace({ position: 'fixed', left, width, zIndex: 1000, maxHeight: Math.min(360, up ? above : below),
+        ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }) });
+    };
+    measure();
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => { window.removeEventListener('scroll', measure, true); window.removeEventListener('resize', measure); };
+  }, [showMenu, ar]);
   const canCreate = !!spec.entityKind && !loading && !results.some((r) => r.label.trim().toLowerCase() === query.toLowerCase());
 
   return (
@@ -89,9 +117,9 @@ export function MarcAuthorityInput({ value, spec, ar, className, style, placehol
           if (e.key === 'Enter' && results[active]) { e.preventDefault(); pick(results[active]); }
           if (e.key === 'Escape') setOpen(false);
         }} />
-      {showMenu && (
-        <ul role="listbox" className="absolute z-30 mt-1.5 w-full min-w-[280px] max-h-80 overflow-auto p-1.5 text-sm text-white"
-          style={{ background: 'rgba(30,41,59,0.85)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.25)', boxShadow: '0 8px 32px rgba(0,0,0,0.45)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+      {showMenu && place && createPortal(
+        <ul ref={menu} role="listbox" dir={ar ? 'rtl' : 'ltr'} className="overflow-auto p-1.5 text-sm text-white"
+          style={{ ...place, background: 'rgba(30,41,59,0.92)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.25)', boxShadow: '0 8px 32px rgba(0,0,0,0.45)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
           {loading && <li className="flex items-center gap-2 px-3 py-2 text-white/70"><Loader2 className="h-4 w-4 animate-spin" />{t('يبحث في Moon و LC و VIAF و Wikidata…', 'Searching Moon, LC, VIAF, Wikidata…')}</li>}
           {!loading && results.map((r, k) => (
             <li key={`${r.source}|${r.uri}|${k}`} role="option" aria-selected={k === active}>
@@ -117,7 +145,8 @@ export function MarcAuthorityInput({ value, spec, ar, className, style, placehol
               </button>
             </li>
           )}
-        </ul>
+        </ul>,
+        document.body,
       )}
     </div>
   );

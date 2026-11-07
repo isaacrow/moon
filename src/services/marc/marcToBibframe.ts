@@ -16,7 +16,8 @@ const link = (f: DataField) => subs(f, '0').find((v) => /^https?:\/\//.test(v)) 
 
 /** Drops ISBD punctuation at the end of a value: " /", " :", " ;", ",", " =", and a closing period. */
 export function clean(value: string): string {
-  let v = value.trim().replace(/\s*[\/:;,=]+$/, '').trim();
+  // Arabic punctuation too: "دار الشؤون الثقافية،" and "؛" end a field as "," and ";" do.
+  let v = value.trim().replace(/\s*[\/:;,=،؛]+$/, '').trim();
   // A final period ends the field in ISBD; keep it after an initial or an abbreviation ("J.", "ed.", "p.").
   // (Unicode-aware: \b only knows ASCII letters, so "Qabasāt." would look like the initial "t.")
   if (/\.$/.test(v) && !/(?<![\p{L}\p{M}])(\p{L}|ed|p|cm|ca|vol|no)\.$/iu.test(v)) v = v.slice(0, -1);
