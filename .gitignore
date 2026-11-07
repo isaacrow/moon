@@ -44,3 +44,7 @@ temp/
 
 # Record backups and copy reports from scripts/copy-kv-records.mjs
 backups/
+
+# Cloudflare Worker local dev (wrangler dev)
+.wrangler/
+.dev.vars

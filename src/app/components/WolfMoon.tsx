@@ -79,6 +79,9 @@ import { saveRecord, getAllRecordsLocal, getRecordById, RecordConflictError, toS
 import { deriveRecord } from "../../services/deriveRecord";
 import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils/recordEditing";
 import { EditingWarning } from "./EditingWarning";
+import { LivePresence } from "./LivePresence";
+import { connectLiveRoom } from "../utils/liveRoom";
+import { otherPeople, type LivePeer } from "../utils/livePeers";
 import { RecordCoverPanel } from "./RecordCoverPanel";
 import { CopiesPanel } from "./CopiesPanel";
 import { RomanizePanel } from "./RomanizePanel";
@@ -313,6 +316,8 @@ export default function WolfMoon({
   // Possible duplicates the cataloger already chose to save anyway, so later saves don't ask again.
   const acceptedDuplicatesRef = useRef<Set<string>>(new Set());
   const [otherEditors, setOtherEditors] = useState<ActiveEditor[]>([]);
+  // Catalogers in this record's live room right now (empty while live editing is off).
+  const [livePeople, setLivePeople] = useState<LivePeer[]>([]);
   // Comments on this record's fields (review v2); none until the record has been saved.
   const recordComments = useRecordComments(storageId);
 
@@ -1392,6 +1397,13 @@ export default function WolfMoon({
     };
   }, [storageId, username, language]);
 
+  // The live room: who else has this record open, the moment they open or close it.
+  useEffect(() => {
+    if (!storageId || !username) return;
+    const room = connectLiveRoom(storageId, (state) => setLivePeople(otherPeople(state, username)));
+    return () => { room.stop(); setLivePeople([]); };
+  }, [storageId, username]);
+
   const loadLatestVersion = async () => {
     if (!storageIdRef.current) return;
     const latest = await getRecordById(storageIdRef.current);
@@ -1848,6 +1860,7 @@ export default function WolfMoon({
         </div>
         )}
 
+        <LivePresence people={livePeople} language={language} />
         <EditingWarning editors={otherEditors} language={language} />
 
         {activeTab === "editor" && (
