@@ -18,6 +18,7 @@
 import { AISuggestionProfile, saveAuthorityProfileToMoonSystem } from './authorFinderService';
 import { getAllRecords } from '../app/utils/recordStorageBackend';
 import { nodeToCopy, hasCopyData } from './itemCopies';
+import type { TransmissionEvent } from './transmission';
 import { namesAgree } from '../opac/personPhoto';
 import { FOLIO_ENABLED, VUFIND_ENABLED } from '../app/utils/integrations';
 import { buildW3CJsonLd, BIBFRAME_JSONLD_CONTEXT } from './w3cJsonLdBuilder';
@@ -209,6 +210,8 @@ export interface OpacHoldingItem {
   dimensions?: string;
   notation?: string;
   notes?: string[];
+  /** The manuscript's notes as events (ijāzah, samāʿ, ownership, waqf …). */
+  events?: TransmissionEvent[];
   status?: 'available' | 'checked_out' | 'paged' | 'reference_only' | 'digital_access' | 'not_connected';
   dueDate?: string;
   patronName?: string;
@@ -1107,7 +1110,8 @@ class WolfMoonOpacService {
             notation: itNode['notation'] || instN['notation'],
             notes: Array.isArray(itNode['notes']) ? itNode['notes'] : (copy.note ? [copy.note] : []),
             status: itStatus,
-            accessUrl: itAccessUrl
+            accessUrl: itAccessUrl,
+            ...(copy.events?.length ? { events: copy.events } : {}),
           };
 
           instanceItems.push(itemEntity);

@@ -5,6 +5,7 @@
  * 6XX and 856. Authority links travel as $0 and relator codes as $4.
  */
 import type { DataField, MarcField, MarcRecord, Subfield } from './marcRecord';
+import { nodeToEvent, eventsToMarc, type TransmissionEvent } from '../transmission';
 
 const BF = 'http://id.loc.gov/ontologies/bibframe/';
 const all = (v: any): any[] => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
@@ -267,6 +268,14 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
   const workUri = typeof work['@id'] === 'string' && /^https?:\/\//.test(work['@id']) ? work['@id'] : '';
   if (workUri) push(field('758', ' ', ' ', [sf('4', 'http://id.loc.gov/ontologies/bibframe/instanceOf'), sf('a', text(get(work, 'title'))), sf('1', workUri)]));
   for (const loc of all(get(item, 'electronicLocator'))) push(field('856', '4', '0', [sf('u', uri(loc) || text(loc))]));
+
+  // A manuscript's notes recorded as events on its copies (ijāzah, samāʿ, ownership, waqf …): 561 and 500
+  // notes and a 700 for each person, placed among the other fields by tag (880s stay where they are).
+  const events = graph.filter((n) => isA(n, 'bf:Item')).flatMap((n) => all(n['moon:transmission']).map(nodeToEvent).filter((e): e is TransmissionEvent => !!e));
+  for (const f of eventsToMarc(events)) {
+    const at = fields.findIndex((x) => x.tag > f.tag && x.tag !== '880');
+    if (at < 0) fields.push(f); else fields.splice(at, 0, f);
+  }
 
   return { leader, fields };
 }
