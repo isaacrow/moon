@@ -560,9 +560,9 @@ Each is a real edition from Open Library; its author is linked to Wikidata, LC a
                 <button
                   key={action.id}
                   onClick={() => {
-                    // The MARC 21 card opens the editor in its MARC 21 mode (the layout the editor remembers).
+                    // The MARC 21 card opens the editor on its MARC 21 tab (once; Moon otherwise opens in BIBFRAME).
                     if (action.action === 'wolf-moon-marc') {
-                      try { localStorage.setItem('moon-field-view-mode', 'marc'); } catch {}
+                      try { localStorage.setItem('moon-open-tab', 'marc-editor'); } catch {}
                       onNavigate?.('wolf-moon');
                       return;
                     }
