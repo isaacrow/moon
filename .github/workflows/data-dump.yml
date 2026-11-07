@@ -45,3 +45,19 @@ jobs:
             gh release edit data-dump --notes "$notes"
           fi
           gh release upload data-dump moon-published-records.jsonld.gz moon-published-records.nt.gz --clobber
+
+  audit:
+    # Phase 12: the dump measured against BIBFRAME 3.0.1 and linked-data rules (supabase/functions/server/ldAudit.tsx).
+    # The scorecard goes to the job summary; the job fails when a number is worse than scripts/ld-audit-baseline.json.
+    needs: dump
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Audit the live dump
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 3 --max-time 300 -o dump.nt https://mooon.site/resource/dump.nt
+          npx -y tsx@4.19.2 scripts/ld-audit.mts dump.nt

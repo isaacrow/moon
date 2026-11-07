@@ -134,7 +134,8 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
     contributions.push({
       '@type': f.tag.startsWith('1') ? ['bf:Contribution', 'bf:PrimaryContribution'] : 'bf:Contribution',
       'bf:agent': agent,
-      ...(roles.length ? { 'bf:role': roles } : {}),
+      // A role is a node (BIBFRAME 3.0.1): the LC relator for a code, a labelled bf:Role for a term.
+      ...(roles.length ? { 'bf:role': roles.map((r) => (/^[a-z]{3}$/.test(r) ? { '@id': `${VOCAB}/relators/${r}`, '@type': 'bf:Role', 'rdfs:label': r } : { '@type': 'bf:Role', 'rdfs:label': r })) } : {}),
     });
   }
   if (contributions.length) work['bf:contribution'] = contributions;
@@ -249,7 +250,7 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
 
   // ---- Description, series, notes ----
   const f300 = data(r, '300')[0];
-  if (sub(f300, 'a')) instance['bf:extent'] = clean([sub(f300, 'a'), sub(f300, 'b')].filter(Boolean).join(' : '));
+  if (sub(f300, 'a')) instance['bf:extent'] = { '@type': 'bf:Extent', 'rdfs:label': clean([sub(f300, 'a'), sub(f300, 'b')].filter(Boolean).join(' : ')) };
   if (sub(f300, 'c')) instance['bf:dimensions'] = clean(sub(f300, 'c'));
   const series = data(r, '490').flatMap((f) => {
     const s = (x: DataField | undefined) => [sub(x, 'a'), sub(x, 'v')].filter(Boolean).join(' ; ');
@@ -258,9 +259,9 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
   }).filter(Boolean);
   if (series.length) instance['bf:seriesStatement'] = series.length === 1 ? series[0] : series;
   const notes = data(r, '500').map((f) => sub(f, 'a')).filter(Boolean);
-  if (notes.length) work['bf:note'] = notes;
+  if (notes.length) work['bf:note'] = notes.map((n) => ({ '@type': 'bf:Note', 'rdfs:label': n }));
   const summaries = data(r, '520').map((f) => sub(f, 'a')).filter(Boolean);
-  if (summaries.length) work['bf:summary'] = summaries;
+  if (summaries.length) work['bf:summary'] = summaries.map((v) => ({ '@type': 'bf:Summary', 'rdfs:label': v }));
   // Notes with their own BIBFRAME homes, as LC's marc2bibframe2 places them.
   const label = (tag: string, codes = 'a') => data(r, tag).map((f) => f.subfields.filter(([c]) => codes.includes(c)).map(([, v]) => v.trim()).filter(Boolean).join(' ')).filter(Boolean);
   const dissertations = data(r, '502').map((f) => {

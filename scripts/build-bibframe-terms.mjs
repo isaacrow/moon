@@ -63,5 +63,7 @@ export const BFLC_DEPRECATED = new Set<string>(${list(bflc.terms.deprecated)});
 `;
 
 writeFileSync(join(root, 'src/services/bibframeTerms.generated.ts'), out);
+// The server's copy (the edge function cannot import from src/): the same text, checked equal by test/ldAudit.test.ts.
+writeFileSync(join(root, 'supabase/functions/server/bibframeTerms.generated.tsx'), out);
 console.log(`bf: ${bf.terms.classes.size} classes, ${bf.terms.objectProps.size} object, ${bf.terms.datatypeProps.size} datatype; ` +
   `bflc: ${bflc.terms.classes.size} classes, ${bflc.terms.objectProps.size} object, ${bflc.terms.datatypeProps.size} datatype`);
