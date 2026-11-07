@@ -19,6 +19,32 @@ const BLANK = /^[#\\_ ]$/;
 const ind = (c: string | undefined) => (c === undefined || BLANK.test(c) ? ' ' : c);
 const showInd = (c: string) => (c === ' ' ? '#' : c);
 
+/**
+ * A data field's indicators and subfields, in the ways catalogues show them:
+ *   "10 $a Title"   "1# $aTitle"   "_0 $a …"   "1 0 $$a Title" (Alma)   "10\t|a Title" (Library of Congress)
+ *   "10 Title / ǂc …" (OCLC Connexion: the first subfield is $a, shown without its code)
+ * Returns the indicators and the subfield text as "<delimiter><code>value…", or why it cannot be read.
+ */
+function splitDataField(rest: string, afterTab = false): { inds: string; parts: string[] } | { error: 'indicators' | 'empty'; inds: string } {
+  // One separator after the tag (a tab, as the Library of Congress shows it, or a space); a space after a
+  // tab is a blank first indicator ("650<tab> 0 |a …").
+  const body = (afterTab ? rest : rest.replace(/^ /, '')).replace(/\t/g, ' ').replace(/\$\$/g, '$');
+  // "|" marks subfields only when nothing else does (the Library of Congress catalogue display).
+  const delimiter = /[$‡ǂ]/.test(body) || !/\|[a-z0-9]/.test(body) ? /[$‡ǂ]/ : /\|/;
+  const d = body.search(delimiter);
+  const head = (d < 0 ? body : body.slice(0, d)).replace(/\s+$/, '');
+  const subs = d < 0 ? [] : body.slice(d).split(delimiter).slice(1);
+  if (/^\S \S$/.test(head)) return { inds: head[0] + head[2], parts: subs }; // "1 0"
+  if (head.length <= 2) return subs.length ? { inds: head.padEnd(2, ' '), parts: subs } : { error: 'empty', inds: head };
+  // Longer: two indicators, then the first subfield's words without "$a".
+  // (Tried as typed too, so a blank first indicator — "650  0 Epic poetry." — is not lost.)
+  const implicit = /^([0-9#_\\ ])([0-9#_\\ ])\s+(\S.*)$/;
+  const raw = rest.replace(/\t/g, ' ').replace(/\$\$/g, '$');
+  const m = head.match(implicit) || (d < 0 ? raw : raw.slice(0, raw.search(delimiter))).replace(/\s+$/, '').match(implicit);
+  if (m) return { inds: m[1] + m[2], parts: [`a${m[3]}`, ...subs] };
+  return { error: 'indicators', inds: head };
+}
+
 /** Text → MARC record; lines that cannot be read are reported, not dropped silently. */
 export function parseMarcText(text: string): { record: MarcRecord; issues: MarcLineIssue[]; lineOf: number[] } {
   const record: MarcRecord = { leader: '', fields: [] };
@@ -28,25 +54,44 @@ export function parseMarcText(text: string): { record: MarcRecord; issues: MarcL
     const line = i + 1;
     const s = raw.replace(/^\s*=/, '').trimEnd();
     if (!s.trim()) return;
+    const prev = record.fields[record.fields.length - 1];
     const m = s.match(/^\s*(LDR|LEADER|[A-Za-z0-9]{3})(?=\s|$)\s?(.*)$/i);
+    const looksLikeField = m && !/^\s/.test(s) && (/^\d{3}$/.test(m[1]) || /^(LDR|LEADER)$/i.test(m[1]));
+    // A long field that ran onto the next line when it was copied is indented, or starts with a subfield
+    // mark; it is joined to the field above. Any other stray text stays an error.
+    const startsWithSubfield = /^\s*(\$\$?|[‡ǂ|])[a-z0-9]/.test(s);
+    if (!looksLikeField && (/^\s/.test(s) || startsWithSubfield) && prev && !isControl(prev) && prev.subfields.length) {
+      if (startsWithSubfield) {
+        const body = s.trim().replace(/\$\$/g, '$');
+        for (const part of body.split(/[$‡ǂ|]/).slice(1)) if (/^[a-z0-9]/.test(part)) prev.subfields.push([part[0], part.slice(1).trim()]);
+      } else {
+        const last = prev.subfields[prev.subfields.length - 1];
+        last[1] = `${last[1]} ${s.trim()}`.trim();
+      }
+      issues.push({ line, tag: prev.tag, level: 'warning', en: `Joined to ${prev.tag} above (the field had run onto a new line).`, ar: `ضُمّ إلى الحقل ${prev.tag} في الأعلى (كان قد انقسم على سطرين).` });
+      return;
+    }
     if (!m) { issues.push({ line, level: 'error', en: 'Not a MARC field: a line starts with a 3-character tag.', ar: 'ليس حقل مارك: يبدأ السطر برمز من 3 خانات.' }); return; }
     const tag = m[1].toUpperCase();
     const rest = m[2];
-    if (tag === 'LDR' || tag === 'LEADER') { record.leader = rest.replace(/^\s+/, '').replace(/\\/g, ' ').padEnd(24, ' ').slice(0, 24); return; }
+    // The leader: "LDR", "LEADER", or "000" as the Library of Congress catalogue shows it.
+    if (tag === 'LDR' || tag === 'LEADER' || tag === '000') { record.leader = rest.replace(/^\s+/, '').replace(/[\\#^]/g, ' ').padEnd(24, ' ').slice(0, 24); return; }
     if (!/^\d{3}$/.test(tag)) { issues.push({ line, tag, level: 'error', en: `Tag "${tag}" must be three digits.`, ar: `يجب أن يكون الرمز «${tag}» ثلاثة أرقام.` }); return; }
     if (tag < '010') {
       record.fields.push({ tag, data: rest.replace(/^\s+/, '').replace(/\\/g, ' ') });
       lineOf.push(line);
       return;
     }
-    // Indicators: two characters before the first subfield delimiter ("10", "#4", "\\0", " 0").
-    const body = rest.replace(/^ /, '');
-    const d = body.search(/[$‡ǂ]/);
-    if (d < 0) { issues.push({ line, tag, level: 'error', en: `${tag}: no subfields ($a …).`, ar: `${tag}: لا حقول فرعية ($a …).` }); return; }
-    const inds = body.slice(0, d).replace(/\s+$/, '').padEnd(2, ' ');
-    if (inds.length > 2) issues.push({ line, tag, level: 'error', en: `${tag}: two indicators, then the subfields ("${inds}" is too long).`, ar: `${tag}: مؤشران ثم الحقول الفرعية («${inds}» أطول من اللازم).` });
+    const split = splitDataField(rest, /^\s*[A-Za-z0-9]{3}\t/.test(s));
+    if ('error' in split) {
+      issues.push(split.error === 'empty'
+        ? { line, tag, level: 'error', en: `${tag}: no subfields ($a …).`, ar: `${tag}: لا حقول فرعية ($a …).` }
+        : { line, tag, level: 'error', en: `${tag}: two indicators, then the subfields ("${split.inds}" is too long).`, ar: `${tag}: مؤشران ثم الحقول الفرعية («${split.inds}» أطول من اللازم).` });
+      return;
+    }
+    const inds = split.inds;
     const subfields: Subfield[] = [];
-    for (const part of body.slice(d).split(/[$‡ǂ]/).slice(1)) {
+    for (const part of split.parts) {
       if (!part) continue;
       const code = part[0];
       const value = part.slice(1).trim();

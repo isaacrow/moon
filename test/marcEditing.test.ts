@@ -76,3 +76,38 @@ test('the book template is valid to start from, and fields have names', () => {
   assert.equal(fieldName('245', false), 'Title statement');
   assert.equal(fieldName('245', true), 'بيان العنوان');
 });
+
+// Records pasted from other catalogues (the Gilgamesh record that showed "13 to fix"), each layout read the same.
+const sub = (p: ReturnType<typeof parseMarcText>, tag: string) => (p.record.fields.find((f) => f.tag === tag) as any);
+test('reads records pasted from the Library of Congress, Alma and OCLC Connexion', () => {
+  const lc = parseMarcText([
+    '000\t03106cam a2200505 i 4500',
+    '020\t  |a 9781786562159',
+    '100\t1 |a Jastrow, Morris, |c Jr., |d 1861-1921, |e translator.',
+    '245\t14 |a The epic of Gilgamesh / |c translated by Morris Jastrow.',
+    '650\t 0 |a Epic poetry, Assyro-Babylonian |v Translations into English.',
+  ].join('\n'));
+  assert.deepEqual(lc.issues.filter((i) => i.level === 'error'), []);
+  assert.equal(lc.record.leader, '03106cam a2200505 i 4500');
+  assert.deepEqual(sub(lc, '245').subfields, [['a', 'The epic of Gilgamesh /'], ['c', 'translated by Morris Jastrow.']]);
+  assert.deepEqual([sub(lc, '650').ind1, sub(lc, '650').ind2], [' ', '0']);
+  assert.deepEqual([sub(lc, '245').ind1, sub(lc, '245').ind2], ['1', '4']);
+
+  const alma = parseMarcText('245 1 4 $$a The epic of Gilgamesh / $$c translated by Morris Jastrow.');
+  assert.deepEqual(alma.issues, []);
+  assert.deepEqual(sub(alma, '245').subfields, sub(lc, '245').subfields);
+  assert.deepEqual([sub(alma, '245').ind1, sub(alma, '245').ind2], ['1', '4']);
+
+  const oclc = parseMarcText('245 14 The epic of Gilgamesh / ǂc translated by Morris Jastrow.\n650  0 Epic poetry, Assyro-Babylonian ǂv Translations into English.');
+  assert.deepEqual(oclc.issues, []);
+  assert.deepEqual(sub(oclc, '245').subfields, sub(lc, '245').subfields, 'the first subfield is $a without its code');
+  assert.deepEqual([sub(oclc, '650').ind1, sub(oclc, '650').ind2], [' ', '0'], 'a blank first indicator is kept');
+});
+
+test('a field that ran onto the next line is joined to it; other stray text is still an error', () => {
+  const p = parseMarcText('500 ## $a Originally published in 1898 as part of\n    The religion of Babylonia and Assyria.\n650 #0 $a Babylonia\n$x History $v Sources.\nhello');
+  assert.equal(sub(p, '500').subfields[0][1], 'Originally published in 1898 as part of The religion of Babylonia and Assyria.');
+  assert.deepEqual(sub(p, '650').subfields, [['a', 'Babylonia'], ['x', 'History'], ['v', 'Sources.']]);
+  assert.equal(p.issues.filter((i) => i.level === 'warning').length, 2);
+  assert.ok(p.issues.some((i) => i.level === 'error' && i.line === 5 && /Not a MARC field/.test(i.en)));
+});

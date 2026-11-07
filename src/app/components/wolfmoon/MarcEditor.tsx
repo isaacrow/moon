@@ -366,7 +366,21 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
           {errors.length ? t(`${errors.length} خطأ يجب إصلاحه`, `${errors.length} to fix`) : t('مارك صالح؛ التحويل جاهز', 'Valid MARC; BIBFRAME ready')}
           {warnings.length > 0 && <span className="text-amber-200">· {t(`${warnings.length} تنبيه`, `${warnings.length} warnings`)}</span>}
         </div>
-        {result.issues.filter((x) => !x.line).map((x, k) => <p key={k} className={`text-[11px] ${x.level === 'error' ? 'text-rose-300' : 'text-amber-200'}`}>{ar ? x.ar : x.en}</p>)}
+        {/* What to fix, with the line it is on (errors first), so a pasted record can be put right. */}
+        {result.issues.length > 0 && (() => {
+          const list = [...errors, ...warnings];
+          const shown = list.slice(0, 12);
+          return (
+            <ul className="space-y-0.5">
+              {shown.map((x, k) => (
+                <li key={k} className={`text-[11px] ${x.level === 'error' ? 'text-rose-300' : 'text-amber-200'}`}>
+                  {x.line ? <span className="font-mono opacity-80">{t(`سطر ${x.line}`, `Line ${x.line}`)} · </span> : null}{ar ? x.ar : x.en}
+                </li>
+              ))}
+              {list.length > shown.length && <li className="text-[11px] text-white/60">{t(`و${list.length - shown.length} غيرها`, `and ${list.length - shown.length} more`)}</li>}
+            </ul>
+          );
+        })()}
         <dl className="text-xs space-y-1">
           {summary.map(([k, v], i) => v === '' && k.startsWith('bf:')
             ? <dt key={i} className="pt-2 font-mono text-[11px] font-bold text-sky-300">{k}</dt>
