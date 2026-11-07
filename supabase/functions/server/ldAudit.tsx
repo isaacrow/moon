@@ -87,7 +87,8 @@ export function auditNTriples(nt: string, vocab: Vocabulary, entities?: EntitySt
   }
 
   // Works and Instances
-  const works = subjects.filter((s) => isA(s, 'Work'));
+  // A record's own Works: addressed (not blank nodes such as a translated-from work), not an Expression of another.
+  const works = subjects.filter((s) => isA(s, 'Work') && !s.startsWith('_:') && !types(s).includes('https://mooon.site/ontology/Expression'));
   const instances = subjects.filter((s) => isA(s, 'Instance'));
   const items = subjects.filter((s) => isA(s, 'Item'));
   const titled = (s: string) => vals(s, BF + 'title').some((t) => has(t.v, BF + 'mainTitle'));
