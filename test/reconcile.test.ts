@@ -83,3 +83,19 @@ test('a subject keeps its subdivisions: "Islamic philosophy" is not "Islamic phi
   assert.equal(headingKey('Islam -- Doctrines', 'topic'), headingKey('Islam--Doctrines', 'topic'));
   assert.notEqual(headingKey('Daʻwah (Islam)', 'topic'), headingKey('Islam', 'topic'));
 });
+
+import { linksAcross, linkKey } from '../src/services/reconcile';
+
+test('an entity linked to one source gets the links that source itself lists (sure, not guessed)', async () => {
+  const d = deps();
+  const across = await linksAcross({ kind: 'agent', sameAs: [IBN_KHALDUN_LC] }, d.details);
+  const got = across.map((a) => a.uri);
+  for (const u of ['http://www.wikidata.org/entity/Q9294', 'http://viaf.org/viaf/41841661', 'http://id.worldcat.org/fast/17753']) {
+    assert.ok(got.some((g) => linkKey(g) === linkKey(u)), `brings ${u}`);
+  }
+  assert.ok(!got.some((g) => linkKey(g) === linkKey(IBN_KHALDUN_LC)), 'not its own link again');
+  assert.ok(across.every((a) => a.from === IBN_KHALDUN_LC));
+  const already = await linksAcross({ kind: 'agent', sameAs: [IBN_KHALDUN_LC, ...got.map((u) => u.replace('http://', 'https://'))] }, d.details);
+  assert.equal(already.length, 0, 'links it already has, in another form, are not added again');
+  assert.deepEqual(await linksAcross({ kind: 'place', sameAs: [IBN_KHALDUN_LC] }, d.details), [], 'a person\'s record gives a place nothing');
+});

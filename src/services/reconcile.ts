@@ -15,6 +15,7 @@
 import { sameNameScore, foldArabic, foldLatin } from './arabicNames';
 import type { AuthorityResult } from './authoritySearch';
 import type { EntityDraft } from './entityImport';
+import { outsideRef, SAME_AS_HOSTS } from './entityImport';
 
 export interface ReconcileEntity {
   id: string;
@@ -132,4 +133,35 @@ export async function reconcileEntity(e: ReconcileEntity, deps: ReconcileDeps): 
     && (e.kind !== 'agent' || top.reasons.includes('same dates'))
     && (!next || next.score <= top.score - 0.2) ? top : null;
   return { candidates: joined.slice(0, 5), sure };
+}
+
+/** A link in one form for comparing ("https://www.wikidata.org/wiki/Q1" = "http://www.wikidata.org/entity/Q1"). */
+export function linkKey(u: string): string {
+  const ref = outsideRef(u);
+  return (ref ? ref.uri : u.trim()).replace(/^https?:\/\/(www\.)?/i, '').replace(/\/+$/, '').toLowerCase();
+}
+
+export interface AcrossLink { uri: string; from: string; fromLabel: string }
+
+/**
+ * The links an entity's own outside records give (LC lists VIAF, Wikidata, FAST; Wikidata lists LC, VIAF,
+ * ISNI, ORCID …) that the entity does not have yet. These are not guesses: the source itself says they are
+ * the same, so they are sure. A record of another kind (a subject for a person) gives nothing.
+ */
+export async function linksAcross(e: { kind: string; sameAs?: string[] }, details: ReconcileDeps['details']): Promise<AcrossLink[]> {
+  const have = new Set((e.sameAs || []).map(linkKey));
+  const readable = [...new Set((e.sameAs || []).map((u) => outsideRef(u)?.uri).filter((u): u is string => !!u))];
+  const out: AcrossLink[] = [];
+  for (const from of readable) {
+    const draft = await details(from).catch(() => null);
+    if (!draft || (draft.kind && draft.kind !== e.kind)) continue;
+    for (const uri of draft.sameAs || []) {
+      if (!SAME_AS_HOSTS.test(uri) || uri.length > 300) continue;
+      const k = linkKey(uri);
+      if (have.has(k)) continue;
+      have.add(k);
+      out.push({ uri, from, fromLabel: draft.label });
+    }
+  }
+  return out;
 }
