@@ -1676,13 +1676,81 @@ app.post("/make-server-49c0e13c/authorities/:id/merge", async (c) => {
     if (!(await isAdminSession(c))) return c.json({ error: 'Only an admin can merge authority entries' }, 403);
     const { into } = await c.req.json().catch(() => ({}));
     if (typeof into !== 'string' || !into) return c.json({ error: 'into (the entry to keep) is required' }, 400);
-    const ok = await recordStore.mergeAuthority(c.req.param('id'), into);
-    if (!ok) return c.json({ error: 'Both entries must exist, be unmerged, differ, and be of the same kind' }, 409);
+    const admin = await getSession(c);
+    const asked = await recordStore.requestEntityChange('merge', c.req.param('id'), into, 'Merged directly by the Super Admin', admin!.username);
+    const done = asked ? await recordStore.decideEntityRequest(asked.id, admin!.username, true) : null;
+    if (!done || done.status !== 'approved') return c.json({ error: 'Both entries must exist, be unmerged, differ, and be of the same kind' }, 409);
     const kept = await recordStore.getAuthority(into);
     return c.json({ merged: true, authority: kept && withUri(kept) });
   } catch (error) {
     console.error('Authority merge error:', error);
     return c.json({ error: 'Failed to merge the entries' }, 500);
+  }
+});
+
+// 🗳️ Merge and split requests (Phase 13 S18): any cataloger asks, with a reason; the Super Admin decides.
+// { kind: "merge", into, reason } asks to merge this entity into another; { kind: "split", reason } asks to
+// take this (merged) entity out of the one it was merged into. An approved merge can be split again exactly.
+app.post("/make-server-49c0e13c/authorities/:id/requests", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to ask for a merge or split' }, 401);
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+    if (!reason || reason.length > 1000) return c.json({ error: 'Say why, in 1–1000 characters' }, 400);
+    let into = '';
+    if (body?.kind === 'merge') into = typeof body.into === 'string' ? body.into : '';
+    else if (body?.kind === 'split') into = (await recordStore.getAuthority(id))?.mergedInto || '';
+    else return c.json({ error: 'kind: merge or split' }, 400);
+    const request = into ? await recordStore.requestEntityChange(body.kind, id, into, reason, session.username) : null;
+    if (!request) return c.json({ error: body.kind === 'merge' ? 'Both entities must exist, be unmerged, differ, and be of the same kind' : 'This entity is not merged into another' }, 409);
+    return c.json({ request });
+  } catch (error) {
+    console.error('Entity request error:', error);
+    return c.json({ error: 'Failed to send the request' }, 500);
+  }
+});
+
+app.get("/make-server-49c0e13c/authorities/:id/merged", async (c) => {
+  try {
+    if (!(await getSession(c))) return c.json({ error: 'Sign in' }, 401);
+    return c.json({ merged: await recordStore.mergedInto(c.req.param('id')) });
+  } catch (error) {
+    console.error('Merged entities error:', error);
+    return c.json({ error: 'Failed to list merged entities' }, 500);
+  }
+});
+
+app.get("/make-server-49c0e13c/entity-requests", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in' }, 401);
+    const status = ['open', 'approved', 'declined'].includes(c.req.query('status') || '') ? c.req.query('status') as any : 'open';
+    const all = await recordStore.listEntityRequests(status);
+    // The Super Admin sees every request; a cataloger sees their own.
+    const admin = await isAdminSession(c);
+    return c.json({ requests: admin ? all : all.filter((r) => r.askedBy === session.username), mayDecide: admin });
+  } catch (error) {
+    console.error('Entity requests list error:', error);
+    return c.json({ error: 'Failed to list requests' }, 500);
+  }
+});
+
+app.post("/make-server-49c0e13c/entity-requests/:rid/decide", async (c) => {
+  try {
+    if (!(await isAdminSession(c))) return c.json({ error: 'Only the Super Admin decides merges and splits' }, 403);
+    const session = await getSession(c);
+    const rid = Number(c.req.param('rid'));
+    if (!Number.isInteger(rid) || rid < 1) return c.json({ error: 'Invalid request' }, 400);
+    const { approve } = await c.req.json().catch(() => ({}));
+    if (typeof approve !== 'boolean') return c.json({ error: 'approve: true or false' }, 400);
+    const request = await recordStore.decideEntityRequest(rid, session!.username, approve);
+    if (!request) return c.json({ error: 'This request was already decided' }, 409);
+    return c.json({ request });
+  } catch (error) {
+    console.error('Entity request decide error:', error);
+    return c.json({ error: 'Failed to decide the request' }, 500);
   }
 });
 

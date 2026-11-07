@@ -6,6 +6,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { describeLinkSource, sourcesByLink, type LinkSource } from '../utils/linkSource';
+import { EntityRequestsInbox, EntityMergeBox } from './EntityRequests';
 import { layerFrom, refreshFromSource, type ImportedLayers, type RefreshChange } from '../../services/entityLayers';
 import { toast } from 'sonner';
 import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network, Link2 } from 'lucide-react';
@@ -81,6 +82,7 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
   const [form, setForm] = useState<EntityForm | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [linkSources, setLinkSources] = useState<LinkSource[]>([]);
+  const [requestsKey, setRequestsKey] = useState(0);
   // What each outside source said (kept apart from Moon's own values), and what the last refresh changed.
   const [pendingLayers, setPendingLayers] = useState<ImportedLayers>({});
   const [refreshChanges, setRefreshChanges] = useState<RefreshChange[] | null>(null);
@@ -348,6 +350,8 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
             <Plus className="h-4 w-4" /> {t('كيان جديد', 'New entity')}
           </button>
         </div>
+
+        <EntityRequestsInbox ar={isAr()} refreshKey={requestsKey} onDecided={() => { setQuery((q) => q + ''); if (selected) open(selected); }} />
 
         {reconcileOpen && (
           <ReconcilePanel ar={isAr()} onClose={() => setReconcileOpen(false)} onLinked={() => setQuery((q) => q + '')} />
@@ -625,6 +629,8 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
                     </button>
                   )}
                 </div>
+
+                {selected && <EntityMergeBox entity={selected} ar={isAr()} onAsked={() => setRequestsKey((k) => k + 1)} />}
 
                 {selected && (
                   <div className="rounded-2xl bg-white/60 border border-white p-4 space-y-2">
