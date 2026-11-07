@@ -30,7 +30,7 @@ import {
   Copy, ExternalLink, Settings, RefreshCw, Plus, X, Home,
   Orbit, 
   Sliders, LayoutGrid, List, Lock, Box,
-  Trash2, History
+  Trash2, History, Send
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import moonLogoWhite from "../../assets/white.png";
@@ -81,6 +81,7 @@ import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils
 import { EditingWarning } from "./EditingWarning";
 import { LivePresence } from "./LivePresence";
 import { LiveCursors } from "./LiveCursors";
+import { FolioSendDialog } from "./FolioSendDialog";
 import { LiveFieldPresence } from "./LiveFieldPresence";
 import { connectLiveRoom, type LiveRoomHandle } from "../utils/liveRoom";
 import { otherPeople, type LivePeer } from "../utils/livePeers";
@@ -457,6 +458,7 @@ export default function WolfMoon({
   const [showAuthoritySearch, setShowAuthoritySearch] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showDeriveMenu, setShowDeriveMenu] = useState(false);
+  const [showFolio, setShowFolio] = useState(false);
   const [showIraqiAuthorityModal, setShowIraqiAuthorityModal] = useState(false);
 
   const handleInsertIraqiAuthor = (author: any, targetType: 'author' | 'contributor' | 'subject' = 'author') => {
@@ -1779,6 +1781,18 @@ export default function WolfMoon({
             <Upload className="h-3 w-3 text-cyan-300" />
             <span>{t("import")}</span>
           </button>
+
+          {/* Send to FOLIO: MARC + Instance, or Instance only (the record must be saved and published) */}
+          <button
+            type="button"
+            onClick={() => setShowFolio(true)}
+            title={language === "ar" ? "أرسل التسجيلة المنشورة إلى FOLIO" : "Send the published record to FOLIO"}
+            className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-2.5 py-1 text-xs font-bold cursor-pointer text-white shrink-0"
+          >
+            <Send className="h-3 w-3 text-emerald-300" />
+            <span>FOLIO</span>
+          </button>
+          {showFolio && <FolioSendDialog recordId={recordId} rtl={language === "ar"} onClose={() => setShowFolio(false)} />}
 
           {/* Field Manager (Restricted to Super Admin Isaac) */}
           <button

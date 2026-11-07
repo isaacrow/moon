@@ -6,6 +6,7 @@
  */
 import type { DataField, MarcField, MarcRecord, Subfield } from './marcRecord';
 import { nodeToEvent, eventsToMarc, type TransmissionEvent } from '../transmission';
+import { autoFill008 } from './marc008Auto';
 
 const BF = 'http://id.loc.gov/ontologies/bibframe/';
 const all = (v: any): any[] => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
@@ -277,5 +278,15 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     if (at < 0) fields.push(f); else fields.splice(at, 0, f);
   }
 
-  return { leader, fields };
+  // The 008 filled from what the record says (dates, place, illustrations, contents, index, literary form,
+  // language), as the MARC editor fills it, so FOLIO and other systems get a coded 008, not one left blank.
+  // A language or country taken from the BIBFRAME above stays. Leader/18: RDA records carry ISBD punctuation.
+  const at008 = fields.findIndex((f) => f.tag === '008');
+  if (at008 >= 0) {
+    const keep = new Set<number>([0, 1, 2, 3, 4, 5, ...(lang !== 'und' ? [35, 36, 37] : []), ...(country !== 'xx' ? [15, 16, 17] : [])]);
+    const f008 = fields[at008] as { tag: string; data: string };
+    f008.data = autoFill008(f008.data, { leader, fields }, keep, now).value;
+  }
+  const rdaRecord = fields.some((f) => f.tag === '040' && 'subfields' in f && f.subfields.some(([c, v]) => c === 'e' && v === 'rda'));
+  return { leader: rdaRecord ? leader.slice(0, 18) + 'i' + leader.slice(19) : leader, fields };
 }

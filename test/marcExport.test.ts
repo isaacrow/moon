@@ -87,7 +87,7 @@ test('MARCXML is well formed, escaped, and parses to the same record', () => {
 
 test('MarcEdit text uses its conventions', () => {
   const mrk = toMrk(record());
-  assert.match(mrk, /^=LDR {2}\d{5}nam\\a22\d{5}\\c\\4500$/m);
+  assert.match(mrk, /^=LDR {2}\d{5}nam\\a22\d{5}\\i\\4500$/m);
   assert.match(mrk, /^=245 {2}10\$aالقبسات\$bفي الحكمة\$cMīr Dāmād$/m);
   assert.match(mrk, /^=650 {2}\\0\$aIslamic philosophy\$0http:\/\/id\.loc\.gov\/authorities\/subjects\/sh85068382$/m);
 });

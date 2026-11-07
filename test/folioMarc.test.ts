@@ -46,7 +46,7 @@ test('what quickMARC would refuse is said before sending', () => {
 });
 
 /** A fake FOLIO with quickMARC and Inventory. */
-function fakeFolio(opts: { async?: boolean; isbnHit?: boolean } = {}) {
+function fakeFolio(opts: { async?: boolean; isbnHit?: boolean; issues?: any[]; noValidate?: boolean } = {}) {
   const calls: { method: string; path: string; body?: any }[] = [];
   const instances: Record<string, any> = {};
   let polls = 0;
@@ -67,7 +67,9 @@ function fakeFolio(opts: { async?: boolean; isbnHit?: boolean } = {}) {
     },
     async post(path, body) {
       calls.push({ method: 'POST', path, body });
-      instances['inst-1'] = { id: 'inst-1', hrid: 'in00001', source: 'MARC', _version: 3 };
+      // FOLIO's own MARC check (quickMARC); older FOLIO has none (404).
+      if (path === '/records-editor/validate') return opts.noValidate ? { status: 404, json: null } : { status: 200, json: { issues: opts.issues || [] } };
+      instances['inst-1'] = { id: 'inst-1', hrid: 'in00001', source: 'MARC', _version: 3, title: 'Title' };
       return { status: 201, json: opts.async ? { qmRecordId: 'qm-1', status: 'NEW' } : { externalId: 'inst-1' } };
     },
     async put(path, body) { calls.push({ method: 'PUT', path, body }); return { status: 202, json: null }; },
@@ -83,7 +85,8 @@ test('first send creates MARC + Instance (FOLIO answering at once, or after poll
     assert.equal(r.status, 'created');
     assert.equal(r.instanceId, 'inst-1');
     assert.equal(r.hrid, 'in00001');
-    const post = calls.find((c) => c.method === 'POST')!;
+    assert.equal(calls.find((c) => c.method === 'POST')!.path, '/records-editor/validate', "FOLIO's MARC check comes first");
+    const post = calls.find((c) => c.method === 'POST' && c.path === '/records-editor/records')!;
     assert.equal(post.path, '/records-editor/records');
     assert.equal(post.body._actionType, 'create');
     assert.equal(post.body.marcFormat, 'BIBLIOGRAPHIC');
@@ -101,7 +104,20 @@ test('a second send updates the same record and keeps FOLIO\'s own 001 and 999',
   assert.equal(put.body.relatedRecordVersion, '7');
   assert.equal(put.body.fields[0].tag, '001');
   assert.equal(put.body.fields.at(-1).tag, '999');
-  assert.ok(!calls.some((c) => c.method === 'POST'), 'no second record');
+  assert.ok(!calls.some((c) => c.method === 'POST' && c.path === '/records-editor/records'), 'no second record');
+});
+
+test("FOLIO's own MARC check: an error stops the send, a warning is passed on, an older FOLIO without it still sends", async () => {
+  const bad = fakeFolio({ issues: [{ tag: '245', severity: 'error', message: 'Field is required' }] });
+  const r: any = await sendMarc(bad.api, MARC, null, { wait: noWait });
+  assert.equal(r.status, 'blocked');
+  assert.match(r.message, /245: Field is required/);
+  assert.ok(!bad.calls.some((c) => c.path === '/records-editor/records'), 'nothing sent');
+  const warn = fakeFolio({ issues: [{ tag: '300', severity: 'warn', message: 'Subfield a is recommended' }] });
+  const w: any = await sendMarc(warn.api, MARC, null, { wait: noWait });
+  assert.equal(w.status, 'created');
+  assert.ok(w.warnings.some((x: string) => /300: Subfield a is recommended/.test(x)));
+  assert.equal((await sendMarc(fakeFolio({ noValidate: true }).api, MARC, null, { wait: noWait })).status, 'created');
 });
 
 test('same ISBN in FOLIO is offered first; an Instance sent without MARC is not overwritten', async () => {

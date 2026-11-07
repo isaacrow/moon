@@ -8,6 +8,8 @@
  * kept sealed on Moon's server and never shown again.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { toIso2709 } from '../../services/marc/marcRecord';
 import { Send, Download, X, ExternalLink, RefreshCw, Settings2, CheckCircle2, FileCode2, Database } from 'lucide-react';
 import { moonFetch } from '../utils/moonApi';
 import { bibframeToMarc } from '../../services/marc/bibframeToMarc';
@@ -116,9 +118,21 @@ export function FolioSendDialog({ recordId, rtl, onClose, onDownloadMarc }: {
     </button>
   );
 
-  return (
-    <div role="dialog" aria-modal="true" dir={rtl ? 'rtl' : 'ltr'}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+  // Without a MARC file from the caller, the dialog offers the MARC it would send.
+  const downloadMarc = onDownloadMarc || (marc ? () => {
+    const url = URL.createObjectURL(new Blob([toIso2709(marc as any)], { type: 'application/marc' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${recordId}-folio.mrc`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } : undefined);
+
+  // Drawn on <body>: inside the editor's glass panels (backdrop blur) a fixed window would be cut off and
+  // move with the panel.
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label={t('إرسال إلى FOLIO', 'Send to FOLIO')} dir={rtl ? 'rtl' : 'ltr'}
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-2xl max-h-[90vh] overflow-auto rounded-2xl bg-white p-5 text-slate-800 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-lg font-bold">{t('إرسال إلى FOLIO', 'Send to FOLIO')}</h2>
@@ -234,13 +248,13 @@ export function FolioSendDialog({ recordId, rtl, onClose, onDownloadMarc }: {
                 <Send className="h-4 w-4" />
                 {busy ? t('جارٍ الإرسال…', 'Sending…') : link ? t('حدّث في FOLIO', 'Update in FOLIO') : t('أرسل إلى FOLIO', 'Send to FOLIO')}
               </button>
-              {onDownloadMarc && (
-                <button onClick={onDownloadMarc} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 font-semibold">
+              {downloadMarc && (
+                <button onClick={downloadMarc} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 font-semibold">
                   <Download className="h-4 w-4" /> {t('ملف مارك لـ Data Import', 'MARC file for Data Import')}
                 </button>
               )}
             </div>
-            {onDownloadMarc && (
+            {downloadMarc && (
               <p className="text-xs text-slate-500">{t(
                 `بلا اتصال API: في FOLIO افتح Data import ← حمّل الملف ← اختر ملف المهمة «${DATA_IMPORT_PROFILE}».`,
                 `Without an API connection: in FOLIO open Data import → upload the file → choose the job profile “${DATA_IMPORT_PROFILE}”.`)}</p>
@@ -248,6 +262,7 @@ export function FolioSendDialog({ recordId, rtl, onClose, onDownloadMarc }: {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
