@@ -7,6 +7,10 @@
  */
 import type { DataField, MarcRecord } from './marcRecord';
 import { isControl } from './marcRecord';
+import { readDate } from '../hijri';
+
+/** A date statement that gives a Hijri or solar Hijri year and no Gregorian one. */
+const hijriOnly = (s: string) => { const r = readDate(s); return r.from !== undefined && r.gregorian === undefined; };
 
 export interface Filled { start: number; length: number; value: string; en: string; ar: string }
 
@@ -84,6 +88,13 @@ export function derive008(r: MarcRecord): Filled[] {
     if (pubYear && copyYear && pubYear !== copyYear) { put(6, 't', 'Publication and copyright date', 'تاريخ النشر وتاريخ حقوق النشر'); put(7, pubYear, 'Date 1', 'التاريخ 1'); put(11, copyYear, 'Date 2', 'التاريخ 2'); }
     else if (/\[[^\]]*\?\s*\]|\?/.test(dateText) && (pubYear || years[0])) { put(6, 'q', 'Questionable date', 'تاريخ مشكوك فيه'); put(7, pubYear || years[0], 'Date 1', 'التاريخ 1'); put(11, pubYear || years[0], 'Date 2', 'التاريخ 2'); }
     else if (pubYear || years[0]) { put(6, 's', 'Single known date', 'تاريخ واحد معروف'); put(7, pubYear || years[0], 'Date 1', 'التاريخ 1'); put(11, '    ', 'Date 2', 'التاريخ 2'); }
+    else if (hijriOnly(dateText)) {
+      // Only a Hijri (or solar Hijri) year: its Gregorian years, as LC codes "1445 [2023 or 2024]".
+      const h = readDate(dateText);
+      const [from, to] = [String(h.from).padStart(4, '0'), String(h.to).padStart(4, '0')];
+      if (from === to) { put(6, 's', 'Single known date', 'تاريخ واحد معروف'); put(7, from, 'Date 1', 'التاريخ 1'); put(11, '    ', 'Date 2', 'التاريخ 2'); }
+      else { put(6, 'q', 'Hijri year: one of two Gregorian years', 'سنة هجرية: إحدى سنتين ميلاديتين'); put(7, from, 'Date 1', 'التاريخ 1'); put(11, to, 'Date 2', 'التاريخ 2'); }
+    }
     else if (decade) { put(6, 'q', 'Questionable date', 'تاريخ مشكوك فيه'); put(7, `${decade[1]}${decade[2]}u`, 'Date 1', 'التاريخ 1'); put(11, '    ', 'Date 2', 'التاريخ 2'); }
   }
 
