@@ -225,7 +225,7 @@ export type SendResult =
   | { status: "blocked" | "error"; message: string; warnings: string[] };
 
 /** A short stable hash of what was sent, to tell "changed since sent". */
-export function instanceHash(instance: FolioInstance): string {
+export function instanceHash(instance: unknown): string {
   const s = JSON.stringify(instance);
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);

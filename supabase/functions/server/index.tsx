@@ -44,6 +44,8 @@ import { linkAuthorities, mirrorOutsideLinked, headingsOf, moonAuthorityId, auth
 import { relatedFrom, resolveRelated } from "./entityRelations.tsx";
 import { isBot, visitFrom, visitDay, visitorKey } from "./opacVisits.tsx";
 import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceHash, type FolioConfig, type FolioRef, type FolioLink } from "./folio.tsx";
+import { marcProblems, sendMarc } from "./folioMarc.tsx";
+import { seal, unseal, settingsProblems, publicSettings, type FolioSettings } from "./folioSettings.tsx";
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
@@ -1057,43 +1059,103 @@ app.get("/make-server-49c0e13c/isni/search", async (c) => {
   }
 });
 
-// 📚 Send to FOLIO (Phase 5, route 1: Inventory API). The library's FOLIO is set by secrets, never in the
-// browser: MOON_FOLIO_URL (Okapi or Kong gateway), MOON_FOLIO_TENANT, MOON_FOLIO_USERNAME, MOON_FOLIO_PASSWORD.
+// 📚 Send to FOLIO (Phase 5). The library's FOLIO is entered by the Super Admin in Moon (Settings → FOLIO:
+// gateway address, tenant, account, password; the password sealed, never sent back) or set as server secrets
+// MOON_FOLIO_URL, MOON_FOLIO_TENANT, MOON_FOLIO_USERNAME, MOON_FOLIO_PASSWORD (these win).
+// Three routes: MARC + Instance (quickMARC; FOLIO keeps the MARC in SRS and maps the Instance from it),
+// Instance only (Inventory API), and a MARC file for FOLIO's Data Import.
 // Moon keeps the FOLIO Instance id per record (KV moon:folio:link:<id>), so a second send updates it.
-function folioConfig(): FolioConfig | null {
+const FOLIO_SETTINGS_KEY = 'moon:folio:settings';
+const folioSecret = () => Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || 'moon';
+async function readFolioSettings(): Promise<FolioSettings | null> {
+  const raw = await kv.get(FOLIO_SETTINGS_KEY).catch(() => null);
+  if (!raw) return null;
+  try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return null; }
+}
+async function folioConfig(): Promise<FolioConfig | null> {
   const url = (Deno.env.get('MOON_FOLIO_URL') || '').trim();
   const tenant = (Deno.env.get('MOON_FOLIO_TENANT') || '').trim();
   const username = (Deno.env.get('MOON_FOLIO_USERNAME') || '').trim();
   const password = Deno.env.get('MOON_FOLIO_PASSWORD') || '';
-  return url && tenant && username && password ? { url, tenant, username, password } : null;
+  if (url && tenant && username && password) return { url, tenant, username, password };
+  const s = await readFolioSettings();
+  if (!s?.url || !s.tenant || !s.username || !s.sealedPassword) return null;
+  try {
+    return { url: s.url, tenant: s.tenant, username: s.username, password: await unseal(s.sealedPassword, folioSecret()) };
+  } catch {
+    return null;
+  }
 }
 let folioRefCache: { at: number; key: string; ref: FolioRef } | null = null;
-async function folioConnect() {
-  const cfg = folioConfig();
-  if (!cfg) throw new Error('FOLIO is not set up on this Moon (MOON_FOLIO_URL, MOON_FOLIO_TENANT, MOON_FOLIO_USERNAME, MOON_FOLIO_PASSWORD).');
+async function folioConnect(cfgIn?: FolioConfig) {
+  const cfg = cfgIn || await folioConfig();
+  if (!cfg) throw new Error('FOLIO is not connected yet. The Super Admin enters the FOLIO address, tenant, username and password in Send to FOLIO → Connection.');
   const timed = ((input: any, init?: any) => fetch(input, { ...init, signal: AbortSignal.timeout(20_000) })) as typeof fetch;
   const api = await folioClient(cfg, timed);
-  const key = `${cfg.url}|${cfg.tenant}`;
+  const key = `${cfg.url}|${cfg.tenant}|${cfg.username}`;
   if (!folioRefCache || folioRefCache.key !== key || Date.now() - folioRefCache.at > 3_600_000) {
     folioRefCache = { at: Date.now(), key, ref: await loadReference(api) };
   }
   return { cfg, api, ref: folioRefCache.ref };
 }
 const folioLinkKey = (id: string) => `moon:folio:link:${id}`;
-async function readFolioLink(id: string): Promise<FolioLink | null> {
+async function readFolioLink(id: string): Promise<(FolioLink & { mode?: string }) | null> {
   const raw = await kv.get(folioLinkKey(id));
   if (!raw) return null;
   try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return null; }
 }
-const folioRecordUrl = (cfg: FolioConfig | null, instanceId: string) =>
-  (Deno.env.get('MOON_FOLIO_UI_URL') || '').trim() ? `${Deno.env.get('MOON_FOLIO_UI_URL')!.replace(/\/+$/, '')}/inventory/view/${instanceId}` : undefined;
+async function folioRecordUrl(instanceId: string) {
+  const ui = (Deno.env.get('MOON_FOLIO_UI_URL') || '').trim() || (await readFolioSettings())?.uiUrl || '';
+  return ui ? `${ui.replace(/\/+$/, '')}/inventory/view/${instanceId}` : undefined;
+}
+
+// The connection details (Super Admin): everything but the password, which is never sent back.
+app.get("/make-server-49c0e13c/folio/settings", async (c) => {
+  if (!(await isAdminSession(c))) return c.json({ error: 'Super Admin session required' }, 403);
+  const fromSecrets = !!(Deno.env.get('MOON_FOLIO_URL') && Deno.env.get('MOON_FOLIO_PASSWORD'));
+  return c.json({ settings: publicSettings(await readFolioSettings()), fromSecrets });
+});
+
+// Saves the connection after signing in to FOLIO with it (a wrong address or password is not saved).
+// Body: { url, tenant, username, password?, uiUrl? }; no password keeps the stored one.
+app.put("/make-server-49c0e13c/folio/settings", async (c) => {
+  const admin = await isAdminSession(c);
+  if (!admin) return c.json({ error: 'Super Admin session required' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const input = {
+    url: String(body?.url || '').trim().replace(/\/+$/, ''), tenant: String(body?.tenant || '').trim(),
+    username: String(body?.username || '').trim(), uiUrl: String(body?.uiUrl || '').trim().replace(/\/+$/, ''),
+  };
+  const problems = settingsProblems(input);
+  if (problems.length) return c.json({ error: problems.join(' ') }, 400);
+  const old = await readFolioSettings();
+  const password = typeof body?.password === 'string' && body.password ? body.password.slice(0, 500)
+    : old?.sealedPassword ? await unseal(old.sealedPassword, folioSecret()).catch(() => '') : '';
+  if (!password) return c.json({ error: 'The FOLIO password is required.' }, 400);
+  try {
+    folioRefCache = null;
+    const { ref } = await folioConnect({ url: input.url, tenant: input.tenant, username: input.username, password });
+    const settings: FolioSettings = { ...input, sealedPassword: await seal(password, folioSecret()), updatedBy: admin.username, updatedAt: new Date().toISOString() };
+    await kv.set(FOLIO_SETTINGS_KEY, JSON.stringify(settings));
+    return c.json({ ok: true, settings: publicSettings(settings), instanceTypes: Object.keys(ref.instanceTypes).length });
+  } catch (error) {
+    return c.json({ error: `Could not sign in to FOLIO with these details: ${String((error as Error).message || error)}` }, 400);
+  }
+});
+
+app.delete("/make-server-49c0e13c/folio/settings", async (c) => {
+  if (!(await isAdminSession(c))) return c.json({ error: 'Super Admin session required' }, 403);
+  await kv.del(FOLIO_SETTINGS_KEY);
+  folioRefCache = null;
+  return c.json({ ok: true });
+});
 
 app.get("/make-server-49c0e13c/folio/status", async (c) => {
   if (!(await getSession(c))) return c.json({ error: 'Sign in to use FOLIO' }, 401);
-  const cfg = folioConfig();
+  const cfg = await folioConfig();
   if (!cfg) return c.json({ configured: false });
   try {
-    const { ref } = await folioConnect();
+    const { ref } = await folioConnect(cfg);
     const missing = [
       !ref.instanceTypes.txt && 'instance type "txt" (text)',
       !ref.identifierTypes.ISBN && 'identifier type ISBN',
@@ -1106,7 +1168,8 @@ app.get("/make-server-49c0e13c/folio/status", async (c) => {
   }
 });
 
-// What the record becomes in FOLIO (nothing is sent), and whether it changed since it was last sent.
+// What the record becomes in FOLIO (nothing is sent), and whether it changed since it was last sent. The
+// published document comes with it, so the browser can show and send the same record as MARC.
 app.get("/make-server-49c0e13c/folio/record/:id", async (c) => {
   if (!(await getSession(c))) return c.json({ error: 'Sign in to use FOLIO' }, 401);
   const id = c.req.param('id');
@@ -1114,21 +1177,23 @@ app.get("/make-server-49c0e13c/folio/record/:id", async (c) => {
   const record = await recordStore.getPublishedRecord(id);
   const link = await readFolioLink(id);
   if (!record) return c.json({ published: false, link });
-  if (!folioConfig()) return c.json({ configured: false, link });
+  const cfg = await folioConfig();
+  if (!cfg) return c.json({ configured: false, published: true, link, document: record.document });
   try {
-    const { cfg, ref } = await folioConnect();
+    const { ref } = await folioConnect(cfg);
     const { instance, warnings } = buildFolioInstance(record.document, ref);
     return c.json({
-      configured: true, published: true, link, instance, warnings,
-      changed: !!(link && instance && instanceHash(instance) !== link.hash),
-      ...(link ? { folioUrl: folioRecordUrl(cfg, link.instanceId) } : {}),
+      configured: true, published: true, link, instance, warnings, document: record.document,
+      changed: !!(link && instance && link.mode !== 'marc' && instanceHash(instance) !== link.hash),
+      ...(link ? { folioUrl: await folioRecordUrl(link.instanceId) } : {}),
     });
   } catch (error) {
-    return c.json({ configured: true, link, error: String((error as Error).message || error) }, 502);
+    return c.json({ configured: true, published: true, link, document: record.document, error: String((error as Error).message || error) }, 502);
   }
 });
 
-// Send: create the FOLIO Instance, or update the one already linked. Body: { linkTo?, createAnyway? }.
+// Send: create or update. Body: { mode: 'marc' | 'instance', marc? (the record's MARC, for mode marc),
+// linkTo?, createAnyway? }. Mode marc sends MARC through quickMARC (MARC in SRS + the Instance FOLIO maps).
 app.post("/make-server-49c0e13c/folio/send/:id", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: 'Sign in to send records to FOLIO' }, 401);
@@ -1136,17 +1201,32 @@ app.post("/make-server-49c0e13c/folio/send/:id", async (c) => {
   const record = await recordStore.getPublishedRecord(id);
   if (!record) return c.json({ status: 'error', message: 'Publish the record first; only published records go to FOLIO.', warnings: [] }, 409);
   const body = await c.req.json().catch(() => ({}));
+  const mode = body?.mode === 'instance' ? 'instance' : 'marc';
   const linkTo = typeof body?.linkTo === 'string' && /^[0-9a-f-]{36}$/i.test(body.linkTo) ? body.linkTo : undefined;
   try {
-    const { cfg, api, ref } = await folioConnect();
-    const { instance, warnings } = buildFolioInstance(record.document, ref);
-    if (!instance) return c.json({ status: 'error', message: warnings.join(' '), warnings }, 422);
+    const { api, ref } = await folioConnect();
     const link = await readFolioLink(id);
-    const result = await sendInstance(api, instance, link, { linkTo, createAnyway: body?.createAnyway === true, warnings });
+    let result: any;
+    let hash = '';
+    if (mode === 'marc') {
+      const marc = body?.marc;
+      const problems = marcProblems(marc);
+      if (problems.length) return c.json({ status: 'error', message: problems.join(' '), warnings: [] }, 422);
+      if (linkTo) {
+        return c.json({ status: 'error', message: 'Linking to an existing Instance works with "Instance only". As MARC, a new record is made, or the one sent before is updated.', warnings: [] }, 400);
+      }
+      result = await sendMarc(api, marc, link, { createAnyway: body?.createAnyway === true });
+      hash = instanceHash(marc);
+    } else {
+      const { instance, warnings } = buildFolioInstance(record.document, ref);
+      if (!instance) return c.json({ status: 'error', message: warnings.join(' '), warnings }, 422);
+      result = await sendInstance(api, instance, link, { linkTo, createAnyway: body?.createAnyway === true, warnings });
+      hash = instanceHash(instance);
+    }
     if (result.status === 'created' || result.status === 'updated') {
-      const saved: FolioLink = { instanceId: result.instanceId, hrid: result.hrid ?? link?.hrid, sentAt: new Date().toISOString(), hash: instanceHash(instance) };
+      const saved = { instanceId: result.instanceId, hrid: result.hrid ?? link?.hrid, sentAt: new Date().toISOString(), hash, mode };
       await kv.set(folioLinkKey(id), JSON.stringify({ ...saved, sentBy: session.username }));
-      return c.json({ ...result, link: saved, folioUrl: folioRecordUrl(cfg, result.instanceId) });
+      return c.json({ ...result, link: saved, folioUrl: await folioRecordUrl(result.instanceId) });
     }
     return c.json(result, result.status === 'error' ? 502 : 200);
   } catch (error) {
