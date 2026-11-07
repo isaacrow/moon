@@ -81,6 +81,7 @@ import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils
 import { EditingWarning } from "./EditingWarning";
 import { LivePresence } from "./LivePresence";
 import { LiveCursors } from "./LiveCursors";
+import { LiveFieldPresence } from "./LiveFieldPresence";
 import { connectLiveRoom, type LiveRoomHandle } from "../utils/liveRoom";
 import { otherPeople, type LivePeer } from "../utils/livePeers";
 import { RecordCoverPanel } from "./RecordCoverPanel";
@@ -1884,6 +1885,7 @@ export default function WolfMoon({
           onToggleCursors={toggleLiveCursors}
         />
         <LiveCursors room={liveRoom} peers={livePeers} myUsername={username || ""} show={showLiveCursors} />
+        <LiveFieldPresence room={liveRoom} peers={livePeers} myUsername={username || ""} language={language} />
         <EditingWarning editors={otherEditors} language={language} />
 
         {activeTab === "editor" && (
