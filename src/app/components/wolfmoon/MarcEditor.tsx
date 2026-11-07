@@ -35,6 +35,8 @@ const GLASS: CSSProperties = {
 /** The boxes people type in, dark enough for white text on the glass. */
 const FIELD_BG: CSSProperties = { background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(255, 255, 255, 0.2)' };
 const AUTO_KEY = 'moon-marc-auto008';
+/** One character or a tag, dead centre: no side padding (the page styles inputs with some), centred text. */
+const CENTERED: CSSProperties = { padding: 0, textAlign: 'center', textIndent: 0, lineHeight: 1 };
 import { isControl } from '../../../services/marc/marcRecord';
 import { bibframeToMarc } from '../../../services/marc/bibframeToMarc';
 import { buildW3CJsonLd } from '../../../services/w3cJsonLdBuilder';
@@ -156,7 +158,7 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
   /** A subfield box: an authority search where the field takes an authority, a plain box otherwise. */
   const subfieldBox = (f: DataField, i: number, code: string, value: string, j: number) => {
     const name = subfieldName(f.tag, code);
-    const cls = `w-full h-11 rounded-xl px-3 text-[15px] text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-sky-300/70`;
+    const cls = `w-full h-12 rounded-xl px-3 text-base text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-sky-300/70`;
     const set = (v: string) => edit((r) => { (r.fields[i] as DataField).subfields[j][1] = v; });
     const spec = authorityFor(f.tag, code);
     if (spec) {
@@ -199,7 +201,7 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
   }, [graph, ar]);
 
   const box = { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' };
-  const mono = 'font-mono text-[15px] h-11 rounded-xl px-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-300/70';
+  const mono = 'font-mono text-base h-12 rounded-xl px-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-300/70';
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-5 gap-4" dir={ar ? 'rtl' : 'ltr'}>
@@ -224,7 +226,7 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
         ) : (
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 p-2.5" style={GLASS}>
-              <span className="flex h-11 w-16 shrink-0 items-center justify-center font-mono text-sm font-bold text-white" style={LIQUID}>LDR</span>
+              <span className="flex h-12 w-20 shrink-0 items-center justify-center font-mono text-lg font-bold text-white" style={LIQUID}>LDR</span>
               <input value={rec.leader.replace(/ /g, '\\')} onChange={(e) => edit((r) => { r.leader = e.target.value.replace(/\\/g, ' ').padEnd(24, ' ').slice(0, 24); })} className={`${mono} flex-1 min-w-0`} style={FIELD_BG} dir="ltr" aria-label={t('الفاتح', 'Leader')} />
               {guideButton('LDR', t('الفاتح خانة بخانة', 'Leader position by position'))}
             </div>
@@ -243,12 +245,12 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
                     <input key={`${i}-${f.tag}`} defaultValue={f.tag} maxLength={3}
                       onChange={(e) => { const v = e.target.value; if (/^\d{3}$/.test(v) && v !== f.tag) edit((r) => { r.fields[i].tag = v; }); }}
                       onBlur={(e) => { if (!/^\d{3}$/.test(e.target.value)) e.target.value = f.tag; }}
-                      className="h-11 w-16 shrink-0 bg-transparent text-center font-mono text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-sky-300/70" style={LIQUID} aria-label={t('رمز الحقل', 'Tag')} dir="ltr" />
+                      className="h-12 w-20 shrink-0 bg-transparent font-mono text-lg font-bold text-white focus:outline-none focus:ring-2 focus:ring-sky-300/70" style={{ ...LIQUID, ...CENTERED }} aria-label={t('رمز الحقل', 'Tag')} dir="ltr" />
                     {!isControl(f) && (['ind1', 'ind2'] as const).map((k) => (
                       <input key={k} value={(f as DataField)[k] === ' ' ? '#' : (f as DataField)[k]} maxLength={1}
                         onChange={(e) => edit((r) => { (r.fields[i] as any)[k] = e.target.value === '#' || e.target.value === '' ? ' ' : e.target.value; })}
                         title={k === 'ind1' ? t('المؤشر الأول', 'First indicator') : t('المؤشر الثاني', 'Second indicator')}
-                        className={`${mono} w-11 px-0 text-center`} style={FIELD_BG} dir="ltr" aria-label={k === 'ind1' ? t('المؤشر الأول', 'First indicator') : t('المؤشر الثاني', 'Second indicator')} />
+                        className={`${mono} w-12 text-lg font-bold`} style={{ ...FIELD_BG, ...CENTERED }} dir="ltr" aria-label={k === 'ind1' ? t('المؤشر الأول', 'First indicator') : t('المؤشر الثاني', 'Second indicator')} />
                     ))}
                     <span className="text-sm font-semibold text-white" dir="auto">{fieldName(f.tag, ar)}</span>
                     <span className="flex-1" />
@@ -270,8 +272,8 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
                         <div key={j} className="flex flex-1 basis-[280px] items-center gap-1.5">
                           <input value={code} maxLength={1} onChange={(e) => { const v = e.target.value.toLowerCase(); if (/^[a-z0-9]$/.test(v)) edit((r) => { (r.fields[i] as DataField).subfields[j][0] = v; }); }}
                             title={subfieldName(f.tag, code) || t('حقل فرعي غير معرّف لهذا الحقل', 'Not a subfield of this field')}
-                            className={`h-11 w-11 shrink-0 bg-transparent text-center font-mono text-[15px] font-bold focus:outline-none focus:ring-2 focus:ring-sky-300/70 ${subfieldName(f.tag, code) || !fieldDef(f.tag) ? 'text-white' : 'text-amber-200'}`}
-                            style={LIQUID} dir="ltr" aria-label={t('رمز الحقل الفرعي', 'Subfield code')} />
+                            className={`h-12 w-12 shrink-0 bg-transparent font-mono text-lg font-bold focus:outline-none focus:ring-2 focus:ring-sky-300/70 ${subfieldName(f.tag, code) || !fieldDef(f.tag) ? 'text-white' : 'text-amber-200'}`}
+                            style={{ ...LIQUID, ...CENTERED }} dir="ltr" aria-label={t('رمز الحقل الفرعي', 'Subfield code')} />
                           {subfieldBox(f as DataField, i, code, value, j)}
                           <button type="button" onClick={() => edit((r) => { (r.fields[i] as DataField).subfields.splice(j, 1); })} className="shrink-0 text-white/50 hover:text-rose-200 opacity-0 group-hover:opacity-100" aria-label={t('احذف الحقل الفرعي', 'Remove subfield')}><X className="h-4 w-4" /></button>
                         </div>

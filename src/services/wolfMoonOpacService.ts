@@ -18,6 +18,7 @@
 import { AISuggestionProfile, saveAuthorityProfileToMoonSystem } from './authorFinderService';
 import { getAllRecords } from '../app/utils/recordStorageBackend';
 import { nodeToCopy, hasCopyData } from './itemCopies';
+import { normalizeForOpac } from '../opac/normalizeGraph';
 import type { TransmissionEvent } from './transmission';
 import { namesAgree } from '../opac/personPhoto';
 import { FOLIO_ENABLED, VUFIND_ENABLED } from '../app/utils/integrations';
@@ -752,6 +753,9 @@ class WolfMoonOpacService {
           return null;
         }
       }
+
+      // Records catalogued in MARC or imported hold text in both scripts and lists; read them in one shape.
+      graph = normalizeForOpac(graph);
 
       // 1. Build Node Map for complete graph dereferencing
       const nodeMap = new Map<string, any>();
