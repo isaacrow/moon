@@ -8,7 +8,10 @@
  *   bf:enumerationAndChronology → the copy number (bf:Enumeration, rdfs:label "c. 2")
  *   bf:usageAndAccessPolicy → "Reference only" (bf:UsePolicy)
  *   bf:note → a note (bf:Note, rdfs:label)
+ *   moon:transmission → the manuscript's notes as events (ijāzah, samāʿ, ownership …; see transmission.ts),
+ *   with ownership and waqf summed up in bf:custodialHistory
  */
+import { type TransmissionEvent, eventToNode, nodeToEvent, custodialHistory } from './transmission';
 
 export interface ItemCopy {
   /** The Item's URI. */
@@ -20,6 +23,8 @@ export interface ItemCopy {
   copyNumber: string;
   referenceOnly: boolean;
   note: string;
+  /** What the manuscript's notes record about this copy. */
+  events?: TransmissionEvent[];
 }
 
 export const REFERENCE_ONLY = 'Reference only — للاطلاع فقط';
@@ -41,6 +46,12 @@ export function textOf(v: any): string {
 
 const typeIs = (node: any, name: string) => list(node?.['@type']).some((t) => typeof t === 'string' && (t === `bf:${name}` || t === name || t.endsWith(`/${name}`)));
 
+/** The manuscript notes on an Item, when it has any (a copy without notes has no events key). */
+function eventsOf(node: any): { events?: TransmissionEvent[] } {
+  const events = list(node?.['moon:transmission']).map(nodeToEvent).filter((e): e is TransmissionEvent => !!e);
+  return events.length ? { events } : {};
+}
+
 /** Reads a bf:Item node (as Moon writes it, or as older or imported records have it) into a copy. */
 export function nodeToCopy(node: any): ItemCopy {
   const ids = list(node?.['bf:identifiedBy'] ?? node?.['identifiedBy']);
@@ -56,12 +67,13 @@ export function nodeToCopy(node: any): ItemCopy {
     copyNumber: copyRaw.replace(/^c\.\s*/i, ''),
     referenceOnly: policies.some((p) => /reference|للاطلاع/i.test(textOf(p))) || node?.['status'] === 'reference_only',
     note: textOf(node?.['bf:note'] ?? node?.['note']),
+    ...eventsOf(node),
   };
 }
 
 /** Whether a copy says anything a reader could use (an empty Item is not a copy). */
 export function hasCopyData(c: ItemCopy): boolean {
-  return !!(c.library || c.location || c.shelfMark || c.barcode || c.copyNumber || c.note);
+  return !!(c.library || c.location || c.shelfMark || c.barcode || c.copyNumber || c.note || c.events?.length);
 }
 
 /** Writes a copy as a bf:Item of the Instance. */
@@ -75,6 +87,12 @@ export function copyToNode(c: ItemCopy, instanceId: string): any {
   if (t(c.copyNumber)) node['bf:enumerationAndChronology'] = { '@type': 'bf:Enumeration', 'rdfs:label': `c. ${t(c.copyNumber)}` };
   if (c.referenceOnly) node['bf:usageAndAccessPolicy'] = { '@type': 'bf:UsePolicy', 'rdfs:label': REFERENCE_ONLY };
   if (t(c.note)) node['bf:note'] = { '@type': 'bf:Note', 'rdfs:label': t(c.note) };
+  const events = (c.events || []).filter((e) => e.participants.some((p) => p.label.trim()) || e.date || e.text || e.place?.label);
+  if (events.length) {
+    node['moon:transmission'] = events.map(eventToNode);
+    const history = custodialHistory(events);
+    if (history) node['bf:custodialHistory'] = history;
+  }
   return node;
 }
 

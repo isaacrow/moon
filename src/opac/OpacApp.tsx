@@ -30,6 +30,7 @@ import { MOON_API, moonHeaders } from '../app/utils/moonApi';
 import { t, opacLang, setOpacLang, type OpacLang } from './i18n';
 import { IiifViewer } from './IiifViewer';
 import { readDate, bothCalendars } from '../services/hijri';
+import { summary as eventSummary, EVENT_KINDS, ROLES, type TransmissionEvent } from '../services/transmission';
 import { findPersonQid, splitHeading, type PersonClues } from './personPhoto';
 import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, clusterWorks, type InfoCard as InfoCardData } from './linkedEntities';
 import './opac.css';
@@ -175,6 +176,47 @@ function uniqueTransitionNames() {
 /** Pages render as one keyed block so the fallback fade and the card stagger replay on each visit. */
 function viewKey(v: View): string {
   return v.mode + ':' + ('id' in v ? v.id : 'key' in v ? v.key : 'query' in v ? v.query : '');
+}
+
+/**
+ * A manuscript's chain of transmission: what its copies' notes record (ijāzāt, samāʿāt, copying, ownership,
+ * waqf), oldest first, each with its people and roles, place and date in both calendars.
+ */
+function TransmissionChain({ copies }: { copies: Array<{ id: string; heldBy?: string; events?: TransmissionEvent[] }> }) {
+  const ar = opacLang() === 'ar';
+  const events = copies.flatMap((c) => (c.events || []).map((e) => ({ e, copy: c })));
+  if (!events.length) return null;
+  const when = (e: TransmissionEvent) => (e.date ? readDate(e.date).from : undefined) ?? Number.POSITIVE_INFINITY;
+  const sorted = [...events].sort((a, b) => when(a.e) - when(b.e));
+  return (
+    <section className="panel glass rise" aria-labelledby="h-chain-t" id="h-chain">
+      <h2 id="h-chain-t">{t('سلسلة الرواية والتملّك', 'Chain of transmission and ownership')}</h2>
+      <p className="muted">{t('ما تسجّله قيود هذه النسخ وهوامشها: الإجازات والسماعات والنسخ والتملّك والوقف، من الأقدم.', 'What the notes in these copies record: licences, auditions, copying, ownership and endowment, oldest first.')}</p>
+      <ol className="chain">
+        {sorted.map(({ e }) => {
+          const r = e.date ? readDate(e.date) : null;
+          return (
+            <li key={e.id} className="chain-step">
+              <div className="chain-kind">{ar ? EVENT_KINDS[e.kind].ar : EVENT_KINDS[e.kind].en}</div>
+              <div className="chain-what" dir="auto">{eventSummary(e, ar)}</div>
+              {e.participants.length > 0 && (
+                <div className="chain-people">
+                  {e.participants.map((p, i) => (
+                    <span key={i} className="chain-person" dir="auto">
+                      <span className="role">{ar ? ROLES[p.role].ar : ROLES[p.role].en}: </span>
+                      {p.uri ? <a href={p.uri} target="_blank" rel="noreferrer">{p.label}</a> : p.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {r?.from !== undefined && <div className="chain-date muted" dir="auto">{bothCalendars(r, ar)}</div>}
+              {e.text && <blockquote className="chain-text" dir="auto">{e.text}</blockquote>}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1164,6 +1206,8 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
               </div>
             )}
           </section>
+
+          <TransmissionChain copies={copies} />
 
           {work.instances.length > 1 && (
             <section className="panel glass rise" aria-labelledby="h-eds-t" id="h-eds">

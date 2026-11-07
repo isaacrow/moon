@@ -6,6 +6,7 @@
 import React from 'react';
 import { Plus, Trash2, Library } from 'lucide-react';
 import { ItemCopy, emptyCopy } from '../../services/itemCopies';
+import { TransmissionPanel } from './TransmissionPanel';
 
 interface Props {
   copies: ItemCopy[];
@@ -53,6 +54,10 @@ export function CopiesPanel({ copies, instanceId, language, onChange }: Props) {
               className="p-1.5 rounded-full text-white/80 hover:bg-white/20">
               <Trash2 className="h-3.5 w-3.5" />
             </button>
+          </div>
+          {/* A manuscript's notes: ijāzāt, samāʿāt, ownership, waqf … as events of this copy. */}
+          <div className="col-span-2 md:col-span-4">
+            <TransmissionPanel itemId={c.id} events={c.events || []} ar={ar} onChange={(events) => set(i, { events })} />
           </div>
         </div>
       ))}
