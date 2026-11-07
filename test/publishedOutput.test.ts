@@ -79,3 +79,21 @@ test('an older record\'s bf:creator becomes a contribution on save, so its autho
   assert.ok(found.includes('topic:Courtship'));
   assert.equal(upgradeLegacyTerms(doc), false, 'a second time changes nothing');
 });
+
+test('step 6: a record\'s Work and Instance point at each other, and both carry a title', () => {
+  const W = 'https://mooon.site/resource/work/r1', I = 'https://mooon.site/resource/instance/r1';
+  // Only the Instance points at the Work; the Work's title is a reference to a Title node.
+  const g1 = finishPublished({ '@graph': [
+    { '@id': W, '@type': 'bf:Work', 'bf:title': { '@id': '_:b1' } },
+    { '@id': '_:b1', '@type': 'bf:Title', 'bf:mainTitle': 'المقدمة' },
+    { '@id': I, '@type': 'bf:Instance', 'bf:instanceOf': { '@id': W } },
+  ] })['@graph'];
+  const w1 = g1.find((n: any) => n['@id'] === W), i1 = g1.find((n: any) => n['@id'] === I);
+  assert.deepEqual(w1['bf:hasInstance'], [{ '@id': I }], 'the Work points back');
+  assert.deepEqual(i1['bf:title'][0]['bf:mainTitle'], { '@value': 'المقدمة', '@language': 'ar' }, 'the Instance takes the Work\'s title');
+  // No link at all, and no title anywhere: the pair is linked and takes the record's own title.
+  const g2 = finishPublished({ '@graph': [{ '@id': W, '@type': 'bf:Work' }, { '@id': I, '@type': 'bf:Instance' }] }, { title: 'Untitled draft 7' })['@graph'];
+  assert.deepEqual(g2[1]['bf:instanceOf'], [{ '@id': W }]);
+  assert.equal(g2[0]['bf:title'][0]['bf:mainTitle'], 'Untitled draft 7');
+  assert.equal(g2[1]['bf:title'][0]['bf:mainTitle'], 'Untitled draft 7');
+});

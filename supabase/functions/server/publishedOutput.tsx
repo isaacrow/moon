@@ -172,8 +172,51 @@ export function upgradeLegacyTerms(document: any): boolean {
   return changed;
 }
 
-/** The record as Moon publishes it: strict BIBFRAME 3.0.1, tagged, typed. The input is not changed. */
-export function finishPublished(document: any): any {
+const typesOf = (n: any): string[] => all(n?.["@type"]).filter((t: any) => typeof t === "string");
+const isType = (n: any, t: string) => typesOf(n).some((x) => x === `bf:${t}` || x.endsWith(`/bibframe/${t}`));
+const idsOf = (v: any): string[] => all(v).map((x) => (typeof x === "string" ? x : x?.["@id"])).filter((x): x is string => typeof x === "string");
+
+/**
+ * Step 6 (completeness), on the published copy: a record's Work and Instance point at each other both ways
+ * (bf:hasInstance and bf:instanceOf), and an Instance with no title takes its Work's (a Work with none, its
+ * Instance's), as BIBFRAME expects every Work and Instance to carry one.
+ */
+export function completeRecord(graph: any[], fallbackTitle?: string): any[] {
+  const out = graph.map((n) => (n && typeof n === "object" ? { ...n } : n));
+  const nodeById = new Map(out.filter((n) => n?.["@id"]).map((n) => [n["@id"], n]));
+  // A title held as a reference ({"@id": "_:b1"}) to a Title node elsewhere in the graph counts, and is copied as that node.
+  const titles = (n: any) => all(n?.["bf:title"]).map((t: any) => (t && typeof t === "object" && Object.keys(t).length === 1 && t["@id"] ? nodeById.get(t["@id"]) || t : t))
+    .filter((t: any) => t && typeof t === "object" && t["bf:mainTitle"] !== undefined);
+  const hasTitle = (n: any) => titles(n).length > 0;
+  const works = out.filter((n) => isType(n, "Work") && typeof n["@id"] === "string" && !typesOf(n).includes("bf:Expression"));
+  const instances = out.filter((n) => isType(n, "Instance") && typeof n["@id"] === "string");
+  const byId = new Map(out.filter((n) => n?.["@id"]).map((n) => [n["@id"], n]));
+  const link = (w: any, i: any) => {
+    if (!idsOf(w["bf:hasInstance"]).includes(i["@id"])) w["bf:hasInstance"] = [...all(w["bf:hasInstance"]), { "@id": i["@id"] }];
+    if (!idsOf(i["bf:instanceOf"]).includes(w["@id"])) i["bf:instanceOf"] = [...all(i["bf:instanceOf"]).filter((x: any) => idsOf(x).length), { "@id": w["@id"] }];
+  };
+  for (const i of instances) for (const wid of idsOf(i["bf:instanceOf"])) { const w = byId.get(wid); if (w && isType(w, "Work")) link(w, i); }
+  for (const w of works) for (const iid of idsOf(w["bf:hasInstance"])) { const i = byId.get(iid); if (i && isType(i, "Instance")) link(w, i); }
+  // One Work and one Instance with no link between them: they are the record's pair.
+  if (works.length === 1 && instances.length === 1 && !idsOf(instances[0]["bf:instanceOf"]).length) link(works[0], instances[0]);
+  const titleCopy = (t: any) => { const { "@id": _id, ...rest } = t; return rest; };
+  for (const i of instances) {
+    const w = idsOf(i["bf:instanceOf"]).map((id) => byId.get(id)).find((x) => x && hasTitle(x));
+    if (!hasTitle(i) && w) i["bf:title"] = titles(w).slice(0, 1).map(titleCopy);
+  }
+  for (const w of works) {
+    const i = idsOf(w["bf:hasInstance"]).map((id) => byId.get(id)).find((x) => x && hasTitle(x));
+    if (!hasTitle(w) && i) w["bf:title"] = titles(i).filter((t: any) => !/Variant|Parallel/.test(JSON.stringify(t["@type"] || ""))).slice(0, 1).map(titleCopy);
+  }
+  // No title anywhere in the graph: the record's own title (the one Moon lists it by), on its Work and Instance.
+  if (fallbackTitle?.trim() && works.length === 1 && instances.length <= 1) {
+    for (const n of [...works, ...instances]) if (!hasTitle(n)) n["bf:title"] = [{ "@type": "bf:Title", "bf:mainTitle": fallbackTitle.trim() }];
+  }
+  return out;
+}
+
+/** The record as Moon publishes it: strict BIBFRAME 3.0.1, tagged, typed, complete. The input is not changed. */
+export function finishPublished(document: any, options: { title?: string } = {}): any {
   const graph = Array.isArray(document?.["@graph"]) ? document["@graph"] : [];
-  return { ...document, "@graph": graph.map((node: any) => fixNode(legacyToBibframe(creatorsToContributions(node)))) };
+  return { ...document, "@graph": completeRecord(graph.map((node: any) => legacyToBibframe(creatorsToContributions(node))), options.title).map((node: any) => fixNode(node)) };
 }
