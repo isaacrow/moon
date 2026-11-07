@@ -2,10 +2,17 @@
 // serves files, so these addresses are passed to the Moon server, which answers with the published
 // record as JSON-LD, Turtle or N-Triples, or sends a browser to the record's OPAC page. Every other
 // address on mooon.site never reaches this Worker (see the route in wrangler.toml).
+// It also opens the live rooms at mooon.site/live/records/<id>, where catalogers on the same
+// record see each other (liveGate.js checks the ticket, liveRoom.js is the room).
+
+import { handleLive } from './liveGate.js';
+
+export { LiveRoom } from './liveRoom.js';
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/live/')) return handleLive(request, env);
     // The SPARQL endpoint also takes POSTed queries (and the browser's CORS preflight for them).
     const isSparql = url.pathname === '/resource/sparql';
     if (isSparql && request.method === 'OPTIONS') {

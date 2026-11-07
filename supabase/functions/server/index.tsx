@@ -52,6 +52,7 @@ import { seal, unseal, settingsProblems, publicSettings, type FolioSettings } fr
 import * as aiEngine from "./aiEngine.tsx";
 import * as aiRouter from "./aiRouter.tsx";
 import * as ld4 from "./ld4Integration.tsx";
+import { liveRoomUrl, liveTicketsEnabled, signLiveTicket } from "./liveTicket.tsx";
 
 const app = new Hono();
 
@@ -2017,6 +2018,25 @@ app.delete("/make-server-49c0e13c/records/:id/editing", async (c) => {
   } catch (error) {
     console.error('Editing leave error:', error);
     return c.json({ error: 'Failed to update who is editing' }, 500);
+  }
+});
+
+// 🟢 Live editing: a 60-second pass to join the record's live room (wss://mooon.site/live/records/:id),
+// where catalogers on the same record see each other at once. Off (503) until the LIVE_TICKET_SECRET
+// secret is set here and in the Cloudflare Worker; the heartbeat above keeps working either way.
+app.post("/make-server-49c0e13c/records/:id/live-ticket", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to edit records' }, 401);
+    const secret = Deno.env.get('LIVE_TICKET_SECRET');
+    if (!liveTicketsEnabled(secret)) return c.json({ error: 'Live editing is off' }, 503);
+    const recordId = c.req.param('id');
+    if (!/^[A-Za-z0-9_.:-]{1,200}$/.test(recordId)) return c.json({ error: 'Invalid record' }, 400);
+    const ticket = await signLiveTicket(secret, { username: session.username, recordId });
+    return c.json({ ticket, url: liveRoomUrl(recordId), expiresIn: 60 });
+  } catch (error) {
+    console.error('Live ticket error:', error);
+    return c.json({ error: 'Failed to start live editing' }, 500);
   }
 });
 

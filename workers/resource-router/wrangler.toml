@@ -7,7 +7,19 @@ workers_dev = false
 routes = [
   { pattern = "mooon.site/resource/*", zone_name = "mooon.site" },
   { pattern = "mooon.site/sitemap.xml", zone_name = "mooon.site" },
+  # Live editing rooms (WebSockets): catalogers on the same record see each other.
+  { pattern = "mooon.site/live/*", zone_name = "mooon.site" },
 ]
+
+# One live room per record. The secret LIVE_TICKET_SECRET (set by the deploy workflow from the GitHub
+# secret of the same name) must match the Moon server's; without it every ticket is refused.
+[[durable_objects.bindings]]
+name = "LIVE_ROOM"
+class_name = "LiveRoom"
+
+[[migrations]]
+tag = "v1-live-room"
+new_sqlite_classes = ["LiveRoom"]
 
 [vars]
 MOON_API = "https://gfbagczwhvxxstbfrfhu.supabase.co/functions/v1/make-server-49c0e13c"
