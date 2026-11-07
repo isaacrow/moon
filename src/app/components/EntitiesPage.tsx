@@ -6,10 +6,11 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network } from 'lucide-react';
+import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network, Link2 } from 'lucide-react';
 import { moonFetch, moonHeaders, MOON_API } from '../utils/moonApi';
 import { romanizeAll } from '../../services/romanize';
 import { parseArabicName, nameVariants } from '../../services/arabicNames';
+import { ReconcilePanel } from './ReconcilePanel';
 import { searchLOCAuthorities, searchWikidata, searchVIAF, type AuthorityResult } from '../../services/authoritySearch';
 import { outsideRef, fetchOutsideEntity, formFromDraft, mergeDraftIntoForm, type OutsideSource } from '../../services/entityImport';
 import {
@@ -83,6 +84,8 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
   const [romanizing, setRomanizing] = useState(false);
   // Copy from outside (step 3): the search panel, and what the last copy brought that the form does not show.
   const [copyOpen, setCopyOpen] = useState(false);
+  // Linking every entity to LC, VIAF and Wikidata (Phase 12, step 5).
+  const [reconcileOpen, setReconcileOpen] = useState(false);
   const [copyQuery, setCopyQuery] = useState('');
   const [copyResults, setCopyResults] = useState<AuthorityResult[]>([]);
   const [copySearching, setCopySearching] = useState(false);
@@ -281,10 +284,21 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
           >
             <Download className="h-4 w-4" /> {t('انسخ من LC أو VIAF أو ويكي بيانات', 'Copy from LC, VIAF or Wikidata')}
           </button>
+          <button
+            onClick={() => setReconcileOpen((o) => !o)}
+            aria-expanded={reconcileOpen}
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-white text-sm font-bold text-slate-800 hover:bg-white"
+          >
+            <Link2 className="h-4 w-4" /> {t('اربط بـ LC وVIAF وويكي بيانات', 'Link to LC, VIAF, Wikidata')}
+          </button>
           <button onClick={startNew} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm font-bold hover:bg-slate-800">
             <Plus className="h-4 w-4" /> {t('كيان جديد', 'New entity')}
           </button>
         </div>
+
+        {reconcileOpen && (
+          <ReconcilePanel ar={isAr()} onClose={() => setReconcileOpen(false)} onLinked={() => setQuery((q) => q + '')} />
+        )}
 
         {copyOpen && (
           <div className="p-4 space-y-3" style={GLASS}>
