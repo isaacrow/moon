@@ -575,6 +575,7 @@ export default function WolfMoon({
           const data = await res.json();
           if (data.success && Array.isArray(data.templates) && data.templates.length > 0) {
             setSavedFieldTemplates(data.templates);
+            knownTemplateIds.current = data.templates.map((t: any) => t.id);
             localStorage.setItem(FIELD_TEMPLATES_KEY, JSON.stringify(data.templates));
           } else if (data.success && data.templates.length === 0) {
             // Backend is empty — seed it with any localStorage templates
@@ -609,19 +610,31 @@ export default function WolfMoon({
     toast.success(t("restoreAll"));
   }, [t]);
 
+  // The template ids this browser's copy holds, so a save never removes a template someone added meanwhile.
+  const knownTemplateIds = useRef<string[]>([]);
+  useEffect(() => { if (!knownTemplateIds.current.length) knownTemplateIds.current = savedFieldTemplates.map((t: any) => t.id); }, [savedFieldTemplates]);
   const persistFieldTemplates = useCallback((templates: FieldTemplate[]) => {
     setSavedFieldTemplates(templates);
     localStorage.setItem(FIELD_TEMPLATES_KEY, JSON.stringify(templates));
-    // Persist to backend (fire-and-forget with error logging)
+    // Each template has an owner and a version: the server keeps what this save may change and answers with
+    // the list as it now is (and what it refused: another's template, or an older copy).
     fetch(TEMPLATES_API, {
       method: "PUT",
-      // The session header: only signed-in catalogers change the shared templates.
       headers: moonHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ templates }),
-    }).then(res => {
-      if (!res.ok) console.log("Backend field template save failed:", res.status);
+      body: JSON.stringify({ templates, known: knownTemplateIds.current }),
+    }).then(async (res) => {
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) { console.log("Backend field template save failed:", res.status); return; }
+      setSavedFieldTemplates(data.templates);
+      localStorage.setItem(FIELD_TEMPLATES_KEY, JSON.stringify(data.templates));
+      knownTemplateIds.current = data.templates.map((t: any) => t.id);
+      for (const r of data.refused || []) {
+        toast.error(r.reason === "stale"
+          ? (language === "ar" ? `لم يُحفظ القالب «${r.name || r.id}»: عُدّل بعد أن فتحته. فُتحت النسخة الأحدث.` : `Template "${r.name || r.id}" was not saved: it was changed after you opened it. The newer version is loaded.`)
+          : (language === "ar" ? `القالب «${r.name || r.id}» لصاحبه أو للمسؤول العام فقط؛ لم يُغيَّر.` : `Template "${r.name || r.id}" belongs to its owner or the Super Admin; it was not changed.`));
+      }
     }).catch(err => console.log("Backend field template save error:", err));
-  }, []);
+  }, [language]);
 
   // ===== LANGUAGE TOGGLE =====
   const toggleLanguage = useCallback(() => {

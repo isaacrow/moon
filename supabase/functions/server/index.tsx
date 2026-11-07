@@ -45,6 +45,7 @@ import { relatedFrom, resolveRelated } from "./entityRelations.tsx";
 import { isBot, visitFrom, visitDay, visitorKey } from "./opacVisits.tsx";
 import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceHash, type FolioConfig, type FolioRef, type FolioLink } from "./folio.tsx";
 import { marcProblems, sendMarc } from "./folioMarc.tsx";
+import { applyTemplateSave, type Template } from "./templatePolicy.tsx";
 import { auditNTriples } from "./ldAudit.tsx";
 import { upgradeLegacyTerms } from "./publishedOutput.tsx";
 import * as BF_TERMS from "./bibframeTerms.generated.tsx";
@@ -1729,7 +1730,7 @@ app.get("/make-server-49c0e13c/entity-requests", async (c) => {
     const status = ['open', 'approved', 'declined'].includes(c.req.query('status') || '') ? c.req.query('status') as any : 'open';
     const all = await recordStore.listEntityRequests(status);
     // The Super Admin sees every request; a cataloger sees their own.
-    const admin = await isAdminSession(c);
+    const admin = !!(await isAdminSession(c));
     return c.json({ requests: admin ? all : all.filter((r) => r.askedBy === session.username), mayDecide: admin });
   } catch (error) {
     console.error('Entity requests list error:', error);
@@ -5721,18 +5722,32 @@ app.get("/make-server-49c0e13c/field-templates", async (c) => {
   }
 });
 
-// PUT save/overwrite all field templates
+// PUT the editor's list of field templates. Each template has an owner and a version (Phase 13 S18): only
+// the owner or the Super Admin changes or removes it, a save from an older copy is refused for that template,
+// and a template the saver did not know (added by someone meanwhile) is never removed. `known`: the ids the
+// saver's copy had. Earlier versions go to field-templates-history:<id> (the last 20).
 app.put("/make-server-49c0e13c/field-templates", async (c) => {
   try {
-    if (!(await getSession(c))) {
+    const session = await getSession(c);
+    if (!session) {
       return c.json({ success: false, error: "Sign in to change field templates" }, 401);
     }
-    const { templates } = await c.req.json();
-    if (!Array.isArray(templates)) {
-      return c.json({ success: false, error: "templates must be an array" }, 400);
+    const { templates, known } = await c.req.json();
+    if (!Array.isArray(templates) || templates.length > 500 || JSON.stringify(templates).length > 1_000_000) {
+      return c.json({ success: false, error: "templates must be an array (up to 500)" }, 400);
     }
-    await kv.set("field-templates-all", JSON.stringify(templates));
-    return c.json({ success: true, count: templates.length });
+    const data = await kv.get("field-templates-all");
+    const stored: Template[] = data ? (typeof data === "string" ? JSON.parse(data) : data) : [];
+    const result = applyTemplateSave(stored, templates, Array.isArray(known) ? known.map(String) : undefined,
+      { username: session.username, admin: !!(await isAdminSession(c)) }, new Date().toISOString());
+    await kv.set("field-templates-all", JSON.stringify(result.templates));
+    for (const old of result.previous) {
+      const key = `field-templates-history:${old.id}`;
+      const h = await kv.get(key);
+      const list = h ? (typeof h === "string" ? JSON.parse(h) : h) : [];
+      await kv.set(key, JSON.stringify([old, ...list].slice(0, 20)));
+    }
+    return c.json({ success: true, count: result.templates.length, templates: result.templates, refused: result.refused });
   } catch (error) {
     console.log("Error saving field templates:", error);
     return c.json({ success: false, error: String(error) }, 500);
@@ -5748,12 +5763,29 @@ app.delete("/make-server-49c0e13c/field-templates/:id", async (c) => {
     const id = c.req.param("id");
     const data = await kv.get("field-templates-all");
     const templates = data ? (typeof data === "string" ? JSON.parse(data) : data) : [];
+    const target = templates.find((t: any) => t.id === id);
+    const session = await getSession(c);
+    if (target?.owner && target.owner !== session!.username && !(await isAdminSession(c))) {
+      return c.json({ success: false, error: `Only ${target.owner} (its owner) or the Super Admin can remove this template` }, 403);
+    }
     const updated = templates.filter((t: any) => t.id !== id);
     await kv.set("field-templates-all", JSON.stringify(updated));
     return c.json({ success: true, remaining: updated.length });
   } catch (error) {
     console.log("Error deleting field template:", error);
     return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// The earlier versions of a field template, newest first.
+app.get("/make-server-49c0e13c/field-templates/:id/history", async (c) => {
+  try {
+    if (!(await getSession(c))) return c.json({ error: "Sign in" }, 401);
+    const h = await kv.get(`field-templates-history:${c.req.param("id")}`);
+    return c.json({ history: h ? (typeof h === "string" ? JSON.parse(h) : h) : [] });
+  } catch (error) {
+    console.log("Error loading template history:", error);
+    return c.json({ error: "Failed to load the history" }, 500);
   }
 });
 
