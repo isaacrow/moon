@@ -1530,7 +1530,9 @@ app.get("/make-server-49c0e13c/authorities/:id", async (c) => {
     const withAddress = withUri(entry);
     // Records that point at the entity, or at the same thing in LC, VIAF or Wikidata.
     const usage = await recordStore.authorityUsage(withAddress.uri, withAddress.sameAs || []);
-    return c.json({ authority: withAddress, usage }, 200, { 'Access-Control-Allow-Origin': '*' });
+    // Where each outside link came from, for signed-in catalogers only (it names who added it).
+    const linkSources = (await getSession(c)) ? await recordStore.listLinkSources(withAddress.id).catch(() => []) : undefined;
+    return c.json({ authority: withAddress, usage, ...(linkSources ? { linkSources } : {}) }, 200, { 'Access-Control-Allow-Origin': '*' });
   } catch (error) {
     console.error('Entity read error:', error);
     return c.json({ error: 'Failed to read the entity' }, 500);
@@ -1646,15 +1648,22 @@ app.get("/make-server-49c0e13c/authorities/:id/history", async (c) => {
 
 // Links a Moon authority entry to the same person, place or subject elsewhere (owl:sameAs).
 const SAME_AS_HOSTS = /^https?:\/\/(id\.loc\.gov\/(authorities|rwo)\/|viaf\.org\/viaf\/|(www\.)?wikidata\.org\/(wiki|entity)\/Q\d+$|id\.worldcat\.org\/fast\/|isni\.org\/isni\/|orcid\.org\/)/;
+// Each link keeps where it came from (Phase 13 S18): { uri, method?: person | reconcile | record | import,
+// confidence?: 0..1 (a machine match), evidence?: why (its reasons) }. Without a method it is a person's link.
 app.post("/make-server-49c0e13c/authorities/:id/same-as", async (c) => {
   try {
-    if (!(await getSession(c))) return c.json({ error: 'Sign in to link authority entries' }, 401);
+    const session = await getSession(c);
+    if (!session) return c.json({ error: 'Sign in to link authority entries' }, 401);
     const id = c.req.param('id');
     const body = await c.req.json().catch(() => ({}));
     const uri = typeof body?.uri === 'string' ? body.uri.trim() : '';
     if (!SAME_AS_HOSTS.test(uri) || uri.length > 300) return c.json({ error: 'Link to LC, VIAF, Wikidata, FAST, ISNI or ORCID' }, 400);
+    const method = ['person', 'reconcile', 'record', 'import'].includes(body?.method) ? body.method : 'person';
+    const confidence = typeof body?.confidence === 'number' && body.confidence >= 0 && body.confidence <= 1 ? Math.round(body.confidence * 1000) / 1000 : null;
+    const evidence = typeof body?.evidence === 'string' ? body.evidence.trim().slice(0, 500) : null;
     const updated = await recordStore.addAuthoritySameAs(id, [uri]);
     if (!updated) return c.json({ error: 'No authority entry with this id' }, 404);
+    await recordStore.addLinkSource(id, { uri, addedBy: session.username, method, confidence, evidence });
     return c.json({ authority: withUri(updated) });
   } catch (error) {
     console.error('Authority same-as error:', error);

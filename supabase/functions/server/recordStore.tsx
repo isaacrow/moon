@@ -451,6 +451,23 @@ export async function decideSuggestion(recordId: string, id: number, by: string,
   return data ?? null;
 }
 
+/** Where an entity's outside link came from (Phase 13 S18): who, when, how, and a machine match's confidence. */
+export interface LinkSource { uri: string; addedBy: string; addedAt: string; method: 'person' | 'reconcile' | 'record' | 'import'; confidence?: number | null; evidence?: string | null }
+
+/** Records who added an outside link and how; the first statement of a link is kept. */
+export async function addLinkSource(id: string, s: Omit<LinkSource, 'addedAt'>): Promise<void> {
+  const { error } = await sb().rpc("moon_add_link_source", {
+    p_id: id, p_uri: s.uri, p_by: s.addedBy, p_method: s.method, p_confidence: s.confidence ?? null, p_evidence: s.evidence ?? null,
+  });
+  if (error) console.error(`[link sources] ${id} failed: ${error.message}`);
+}
+
+export async function listLinkSources(id: string): Promise<LinkSource[]> {
+  const { data, error } = await sb().rpc("moon_link_sources", { p_id: id });
+  if (error) throw new Error(`[link sources] list ${id} failed: ${error.message}`);
+  return data || [];
+}
+
 export interface PossibleDuplicate {
   id: string;
   title: string;

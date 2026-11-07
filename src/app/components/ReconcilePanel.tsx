@@ -56,11 +56,12 @@ export function ReconcilePanel({ ar, onClose, onLinked }: { ar: boolean; onClose
   };
 
   /** Adds the match's outside addresses to the entity. */
-  const link = async (row: Row, c: Candidate) => {
+  const link = async (row: Row, c: Candidate, method: 'person' | 'reconcile' = 'person') => {
     const links = c.links.filter((u) => SAME_AS_HOSTS.test(u) && u.length <= 300).slice(0, 12);
     let ok = 0;
     for (const uri of links) {
-      const r = await moonFetch<any>(`/authorities/${encodeURIComponent(row.entity.id)}/same-as`, { method: 'POST', body: { uri } }).catch(() => null);
+      const evidence = `Moon match ${Math.round(c.score * 100)}%: ${c.reasons.join(', ')} (${c.source} "${c.label}")`;
+      const r = await moonFetch<any>(`/authorities/${encodeURIComponent(row.entity.id)}/same-as`, { method: 'POST', body: { uri, method, confidence: c.score, evidence } }).catch(() => null);
       if (r?.ok) ok++;
     }
     if (ok) set(row.entity.id, { state: 'linked', sure: c });
@@ -72,7 +73,7 @@ export function ReconcilePanel({ ar, onClose, onLinked }: { ar: boolean; onClose
     setLinking(true);
     const sure = rows.filter((r) => r.state === 'sure' && r.sure);
     let done = 0;
-    for (const r of sure) if (await link(r, r.sure!)) done++;
+    for (const r of sure) if (await link(r, r.sure!, 'reconcile')) done++;
     setLinking(false);
     toast.success(t(`رُبط ${done} كياناً`, `${done} entities linked`));
     onLinked?.();
