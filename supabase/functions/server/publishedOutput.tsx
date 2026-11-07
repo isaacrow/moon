@@ -156,6 +156,22 @@ function legacyToBibframe(n: any): any {
   return out;
 }
 
+/**
+ * Older records' terms in place (bf:creator → a primary contribution, bf:classificationLcc, bf:topical), so
+ * a save or the linking job can link those names and subjects too. Changes the document; returns whether
+ * anything changed.
+ */
+export function upgradeLegacyTerms(document: any): boolean {
+  const graph = Array.isArray(document?.["@graph"]) ? document["@graph"] : null;
+  if (!graph) return false;
+  let changed = false;
+  for (let i = 0; i < graph.length; i++) {
+    const next = legacyToBibframe(creatorsToContributions(graph[i]));
+    if (next !== graph[i] && JSON.stringify(next) !== JSON.stringify(graph[i])) { graph[i] = next; changed = true; }
+  }
+  return changed;
+}
+
 /** The record as Moon publishes it: strict BIBFRAME 3.0.1, tagged, typed. The input is not changed. */
 export function finishPublished(document: any): any {
   const graph = Array.isArray(document?.["@graph"]) ? document["@graph"] : [];

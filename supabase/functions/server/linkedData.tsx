@@ -160,19 +160,34 @@ export function scopeBlankNodes(value: any, prefix: string): any {
   return out;
 }
 
-/** All the given records in one JSON-LD document (one @graph), blank nodes kept apart per record. */
-export function dumpJsonLd(documents: any[]): any {
+/**
+ * All the given records in one JSON-LD document (one @graph), blank nodes kept apart per record; then the
+ * entities they use (authorityDocument: MADS authority + real-world object + owl:sameAs), so the dump and
+ * SPARQL can follow a record to its author and on to LC, VIAF and Wikidata.
+ */
+export function dumpJsonLd(documents: any[], entityDocs: any[] = []): any {
   const graph = documents.flatMap((doc, i) =>
     (Array.isArray(doc?.["@graph"]) ? doc["@graph"] : []).map((n: any) => scopeBlankNodes(n, `r${i}`)));
-  return { "@context": CONTEXT, "@graph": graph };
+  const entities = entityDocs.flatMap((doc, i) =>
+    (Array.isArray(doc?.["@graph"]) ? doc["@graph"] : []).map((n: any) => scopeBlankNodes(n, `e${i}`)));
+  return { "@context": { ...AUTHORITY_CONTEXT, ...CONTEXT }, "@graph": [...graph, ...entities] };
 }
 
 /** All the given records as N-Triples, record by record; blank nodes renamed per record. */
-export async function dumpNTriples(documents: any[]): Promise<string> {
+export async function dumpNTriples(documents: any[], entityDocs: any[] = []): Promise<string> {
   const parts: string[] = [];
   for (let i = 0; i < documents.length; i++) {
     const nt = await toNTriples(documents[i]);
     parts.push(nt.replace(/_:([A-Za-z0-9_-]+)/g, `_:r${i}-$1`));
   }
+  for (let i = 0; i < entityDocs.length; i++) {
+    const nt = await authorityNTriples(entityDocs[i]);
+    parts.push(nt.replace(/_:([A-Za-z0-9_-]+)/g, `_:e${i}-$1`));
+  }
   return parts.join("");
+}
+
+/** Every entity as linked data (hubs with the published works that express them), for the dump and SPARQL. */
+export function entityDocuments(entities: Array<{ id: string; kind: string; label: string; variants: string[]; sameAs: string[]; note?: string | null; data?: any }>, publishedDocs: any[]): any[] {
+  return entities.map((e) => authorityDocument(e, e.kind === "hub" ? worksExpressing(publishedDocs, `${BASE_URI}/hub/${e.id}`) : []));
 }

@@ -495,6 +495,13 @@ export async function searchAuthorities(query: string, kind?: AuthorityKind | nu
   return data || [];
 }
 
+/** Every entity (not merged), for the data dump and SPARQL (Phase 12). */
+export async function listAllAuthorities(): Promise<Authority[]> {
+  const { data, error } = await sb().rpc("moon_list_authorities");
+  if (error) throw new Error(`[authorities] list failed: ${error.message}`);
+  return data || [];
+}
+
 /** The entity file in numbers (Phase 12 audit): total, how many link outward, by kind. */
 export async function authorityStats(): Promise<{ total: number; withOutsideLinks: number; byKind: Record<string, number> }> {
   const { data, error } = await sb().rpc("moon_authority_stats");
