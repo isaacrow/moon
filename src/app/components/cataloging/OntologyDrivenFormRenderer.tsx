@@ -557,7 +557,7 @@ function CategorySection({
           }}
         >
           {properties.map((property) => (
-            <div key={property.shortName} className="relative group overflow-visible">
+            <div key={property.shortName} data-live-field={`${entityType}:${property.shortName}`} className="relative group overflow-visible">
               <PropertyRenderer
                 property={property}
                 value={getFieldValue(node, property.shortName)}

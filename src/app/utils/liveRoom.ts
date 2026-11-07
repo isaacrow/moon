@@ -10,6 +10,8 @@ import { applyLiveMessage, emptyLiveState, reconnectDelay, type LiveState } from
 export interface LiveRoomHandle {
   /** Sends a message to the others (used by the live cursors). Dropped while not connected. */
   send(message: object): void;
+  /** Hears every message from the room (cursor moves and so on); returns a function to stop. */
+  onMessage(listener: (message: any) => void): () => void;
   stop(): void;
 }
 
@@ -21,6 +23,7 @@ export function connectLiveRoom(recordId: string, onState: (state: LiveState) =>
   let retry: number | undefined;
   let ping: number | undefined;
   let state: LiveState = emptyLiveState;
+  const listeners = new Set<(message: any) => void>();
 
   const publish = (next: LiveState) => { state = next; onState(state); };
 
@@ -63,6 +66,7 @@ export function connectLiveRoom(recordId: string, onState: (state: LiveState) =>
       let msg: unknown;
       try { msg = JSON.parse(event.data); } catch { return; }
       publish(applyLiveMessage(state, msg));
+      for (const listener of listeners) listener(msg);
     };
     socket.onclose = () => {
       window.clearInterval(ping);
@@ -85,8 +89,13 @@ export function connectLiveRoom(recordId: string, onState: (state: LiveState) =>
         try { ws.send(JSON.stringify(message)); } catch { /* closing */ }
       }
     },
+    onMessage(listener) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
     stop() {
       stopped = true;
+      listeners.clear();
       document.removeEventListener('visibilitychange', onVisibility);
       close();
     },
