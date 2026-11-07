@@ -62,7 +62,9 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
   const t = (a: string, e: string) => (ar ? a : e);
   const [text, setText] = useState(() => initialText(workData, instanceData, uriSet));
   const [view, setView] = useState<'fields' | 'text'>('fields');
-  const [live, setLive] = useState(false);
+  // Live by default: every valid change becomes the record's BIBFRAME at once (the choice is remembered).
+  const [live, setLiveState] = useState(() => { try { return localStorage.getItem('moon-marc-live') !== 'off'; } catch { return true; } });
+  const setLive = (on: boolean) => { setLiveState(on); try { localStorage.setItem('moon-marc-live', on ? 'on' : 'off'); } catch { /* private window */ } };
   const [debounced, setDebounced] = useState(text);
   useEffect(() => { const id = setTimeout(() => setDebounced(text), 250); return () => clearTimeout(id); }, [text]);
 
