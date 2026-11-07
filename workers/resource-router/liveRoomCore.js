@@ -3,11 +3,12 @@
 // cataloger's browser can never send another's page anything but a pointer position or a field name.
 //
 // Browser → room:   { t: 'cursor', f: fieldKey, x: 0..1, y: 0..1 }   pointer over a field
+//                   { t: 'hide' }   pointer left the editor
 //                   { t: 'focus', f: fieldKey }  /  { t: 'blur', f?: fieldKey }
 //                   { t: 'ping' }   (answered by the room without waking it)
 // Room → browser:   { t: 'welcome', self: Peer, peers: Peer[] }   on joining
 //                   { t: 'join', peer: Peer }  /  { t: 'leave', id }
-//                   { t: 'cursor' | 'focus' | 'blur', id, ...the cleaned fields }
+//                   { t: 'cursor' | 'hide' | 'focus' | 'blur', id, ...the cleaned fields }
 // Peer = { id, u: username, at: joined (ms) }. The same person in two tabs is two peers.
 
 export const MAX_MESSAGE_CHARS = 1024;
@@ -34,6 +35,7 @@ export function parseClientMessage(text) {
     const f = fieldKey(m.f), x = unit(m.x), y = unit(m.y);
     return f && x !== null && y !== null ? { t: 'cursor', f, x, y } : null;
   }
+  if (m.t === 'hide') return { t: 'hide' };
   if (m.t === 'focus') {
     const f = fieldKey(m.f);
     return f ? { t: 'focus', f } : null;

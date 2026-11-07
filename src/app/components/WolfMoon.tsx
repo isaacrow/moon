@@ -80,7 +80,8 @@ import { deriveRecord } from "../../services/deriveRecord";
 import { reportEditing, reportStoppedEditing, type ActiveEditor } from "../utils/recordEditing";
 import { EditingWarning } from "./EditingWarning";
 import { LivePresence } from "./LivePresence";
-import { connectLiveRoom } from "../utils/liveRoom";
+import { LiveCursors } from "./LiveCursors";
+import { connectLiveRoom, type LiveRoomHandle } from "../utils/liveRoom";
 import { otherPeople, type LivePeer } from "../utils/livePeers";
 import { RecordCoverPanel } from "./RecordCoverPanel";
 import { CopiesPanel } from "./CopiesPanel";
@@ -318,6 +319,16 @@ export default function WolfMoon({
   const [otherEditors, setOtherEditors] = useState<ActiveEditor[]>([]);
   // Catalogers in this record's live room right now (empty while live editing is off).
   const [livePeople, setLivePeople] = useState<LivePeer[]>([]);
+  const [livePeers, setLivePeers] = useState<Record<string, LivePeer>>({});
+  const [liveRoom, setLiveRoom] = useState<LiveRoomHandle | null>(null);
+  // Whether to draw the others' cursors (remembered in this browser only).
+  const [showLiveCursors, setShowLiveCursors] = useState<boolean>(() => {
+    try { return localStorage.getItem("moon_live_cursors_hidden") !== "1"; } catch { return true; }
+  });
+  const toggleLiveCursors = () => setShowLiveCursors((on) => {
+    try { localStorage.setItem("moon_live_cursors_hidden", on ? "1" : "0"); } catch { /* private window */ }
+    return !on;
+  });
   // Comments on this record's fields (review v2); none until the record has been saved.
   const recordComments = useRecordComments(storageId);
 
@@ -1400,8 +1411,12 @@ export default function WolfMoon({
   // The live room: who else has this record open, the moment they open or close it.
   useEffect(() => {
     if (!storageId || !username) return;
-    const room = connectLiveRoom(storageId, (state) => setLivePeople(otherPeople(state, username)));
-    return () => { room.stop(); setLivePeople([]); };
+    const room = connectLiveRoom(storageId, (state) => {
+      setLivePeople(otherPeople(state, username));
+      setLivePeers(state.peers);
+    });
+    setLiveRoom(room);
+    return () => { room.stop(); setLiveRoom(null); setLivePeople([]); setLivePeers({}); };
   }, [storageId, username]);
 
   const loadLatestVersion = async () => {
@@ -1838,7 +1853,8 @@ export default function WolfMoon({
       </nav>
 
       {/* ===== MAIN CONTENT ===== */}
-      <div className="flex-1 overflow-auto p-6 relative"
+      {/* data-live-root: the area where live cursors are shared (fields inside carry data-live-field). */}
+      <div data-live-root="" className="flex-1 overflow-auto p-6 relative"
         style={{
           background: isClassic
             ? "#ffffff"
@@ -1860,7 +1876,14 @@ export default function WolfMoon({
         </div>
         )}
 
-        <LivePresence people={livePeople} language={language} />
+        <LivePresence
+          people={livePeople}
+          language={language}
+          light={isLight}
+          cursorsShown={showLiveCursors}
+          onToggleCursors={toggleLiveCursors}
+        />
+        <LiveCursors room={liveRoom} peers={livePeers} myUsername={username || ""} show={showLiveCursors} />
         <EditingWarning editors={otherEditors} language={language} />
 
         {activeTab === "editor" && (
