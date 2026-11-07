@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network } from 'lucide-react';
 import { moonFetch, moonHeaders, MOON_API } from '../utils/moonApi';
 import { romanizeAll } from '../../services/romanize';
+import { parseArabicName, nameVariants } from '../../services/arabicNames';
 import { searchLOCAuthorities, searchWikidata, searchVIAF, type AuthorityResult } from '../../services/authoritySearch';
 import { outsideRef, fetchOutsideEntity, formFromDraft, mergeDraftIntoForm, type OutsideSource } from '../../services/entityImport';
 import {
@@ -452,6 +453,36 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
                 <Field label={t('أشكال أخرى للاسم (شكل في كل سطر)', 'Other forms of the name (one per line)')}>
                   <textarea className={INPUT} dir="auto" rows={3} value={form.variants} onChange={(e) => set({ variants: e.target.value })} />
                 </Field>
+                {form.kind === 'agent' && form.agentType === 'person' && form.label.trim() && (() => {
+                  // The parts of an Arabic name (kunya, ism, nasab, laqab, nisba), and the forms people search it by.
+                  const p = parseArabicName(form.label);
+                  const rows: [string, string, string | undefined][] = [
+                    ['المدخل', 'Entry element', p.entry], ['الكنية', 'Kunya', p.kunya], ['الاسم', 'Ism', p.ism],
+                    ['النسب', 'Nasab', p.nasab.join(p.script === 'arabic' ? ' بن ' : ' ibn ') || undefined],
+                    ['اللقب', 'Laqab', p.laqab], ['النسبة', 'Nisba', p.nisba.join(' ') || undefined], ['التواريخ', 'Dates', p.dates],
+                  ];
+                  const shown = rows.filter(([, , v]) => v);
+                  const current = form.variants.split('\n').map((s) => s.trim()).filter(Boolean);
+                  const missing = nameVariants(form.label).filter((v) => v !== form.label.trim() && !current.includes(v));
+                  if (shown.length < 2 && !missing.length) return null;
+                  return (
+                    <div className="rounded-xl bg-white/60 border border-white p-3 space-y-2 text-sm">
+                      {shown.length >= 2 && (
+                        <div className="flex flex-wrap gap-1.5" dir="auto">
+                          {shown.map(([a, e, v]) => (
+                            <span key={e} className="rounded-full bg-sky-50 border border-sky-100 px-2.5 py-0.5 text-xs text-slate-700"><b className="text-sky-800">{t(a, e)}:</b> {v}</span>
+                          ))}
+                        </div>
+                      )}
+                      {missing.length > 0 && (
+                        <button onClick={() => set({ variants: [...new Set([...current, ...missing])].join('\n') })}
+                          className="flex items-center gap-2 text-sm font-semibold text-sky-700 hover:underline">
+                          <Plus className="h-4 w-4" /> {t(`أضف ${missing.length} من أشكال الاسم (بن/ابن، الترتيب المباشر والمقلوب، بلا همزات)`, `Add ${missing.length} forms of the name (bin/ibn, direct and inverted order, plain letters)`)}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
                 {hasArabic(form.label + form.variants) && (
                   <button onClick={romanize} disabled={romanizing} className="flex items-center gap-2 text-sm font-semibold text-sky-700 hover:underline disabled:opacity-50">
                     <Languages className="h-4 w-4" /> {romanizing ? t('جارٍ التحويل…', 'Romanizing…') : t('أضف الشكل اللاتيني (ScriptShifter من مكتبة الكونغرس)', 'Add the romanized form (LC ScriptShifter)')}
