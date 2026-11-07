@@ -468,6 +468,39 @@ export async function listLinkSources(id: string): Promise<LinkSource[]> {
   return data || [];
 }
 
+/** A request to merge two entities or split a merged one (Phase 13 S18), decided by the Super Admin. */
+export interface EntityRequest {
+  id: number; kind: 'merge' | 'split'; from: string; into: string; reason: string; askedBy: string; askedAt: string;
+  status: 'open' | 'approved' | 'declined'; decidedBy?: string | null; decidedAt?: string | null; note?: string | null;
+  fromLabel?: string; intoLabel?: string; entityKind?: string;
+}
+
+/** Asks for a merge or split; null when it does not fit (missing, other kind, not merged …). */
+export async function requestEntityChange(kind: 'merge' | 'split', from: string, into: string, reason: string, by: string): Promise<EntityRequest | null> {
+  const { data, error } = await sb().rpc("moon_request_entity_change", { p_kind: kind, p_from: from, p_into: into, p_reason: reason, p_by: by });
+  if (error) throw new Error(`[entity requests] ask failed: ${error.message}`);
+  return data ?? null;
+}
+
+export async function decideEntityRequest(id: number, by: string, approve: boolean): Promise<EntityRequest | null> {
+  const { data, error } = await sb().rpc("moon_decide_entity_request", { p_id: id, p_by: by, p_approve: approve });
+  if (error) throw new Error(`[entity requests] decide ${id} failed: ${error.message}`);
+  return data ?? null;
+}
+
+export async function listEntityRequests(status: 'open' | 'approved' | 'declined' | null): Promise<EntityRequest[]> {
+  const { data, error } = await sb().rpc("moon_list_entity_requests", { p_status: status });
+  if (error) throw new Error(`[entity requests] list failed: ${error.message}`);
+  return data || [];
+}
+
+/** The entities merged into this one (to offer splitting them off again). */
+export async function mergedInto(id: string): Promise<Array<{ id: string; label: string }>> {
+  const { data, error } = await sb().from("authorities").select("id, label").eq("merged_into", id).order("label");
+  if (error) throw new Error(`[authorities] merged into ${id} failed: ${error.message}`);
+  return data || [];
+}
+
 export interface PossibleDuplicate {
   id: string;
   title: string;
