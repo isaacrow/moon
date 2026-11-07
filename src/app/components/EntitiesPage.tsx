@@ -6,6 +6,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { describeLinkSource, sourcesByLink, type LinkSource } from '../utils/linkSource';
+import { layerFrom, refreshFromSource, type ImportedLayers, type RefreshChange } from '../../services/entityLayers';
 import { toast } from 'sonner';
 import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network, Link2 } from 'lucide-react';
 import { moonFetch, moonHeaders, MOON_API } from '../utils/moonApi';
@@ -80,6 +81,10 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
   const [form, setForm] = useState<EntityForm | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [linkSources, setLinkSources] = useState<LinkSource[]>([]);
+  // What each outside source said (kept apart from Moon's own values), and what the last refresh changed.
+  const [pendingLayers, setPendingLayers] = useState<ImportedLayers>({});
+  const [refreshChanges, setRefreshChanges] = useState<RefreshChange[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [history, setHistory] = useState<Version[] | null>(null);
   const [relations, setRelations] = useState<Relation[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -130,6 +135,8 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
     setUsage(null);
     setHistory(null);
     setLinkSources([]);
+    setPendingLayers({});
+    setRefreshChanges(null);
     loadRelations(e.id);
     const res = await moonFetch<{ authority?: Entity; usage?: Usage; linkSources?: LinkSource[] }>(`/authorities/${encodeURIComponent(e.id)}`).catch(() => null);
     if (res?.ok && res.data.authority) {
@@ -146,6 +153,8 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
     setUsage(null);
     setHistory(null);
     setDraftData({});
+    setPendingLayers({});
+    setRefreshChanges(null);
     setCopiedFrom([]);
   };
 
@@ -184,18 +193,27 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
       draft.sameAs.forEach((u) => params.append('uri', u));
       const found = await moonFetch<{ authority?: Entity | null }>(`/authorities/by-link?${params}`).catch(() => null);
       const existing = found?.ok ? found.data.authority : null;
+      const source = outsideRef(link)?.uri || link;
+      const layer = layerFrom(draft);
       if (existing) {
         await open(existing);
-        setForm(mergeDraftIntoForm(formFrom(existing), draft));
+        const layers = ((existing.data as any)?.imported || {}) as ImportedLayers;
+        const others = Object.entries(layers).filter(([k]) => k !== source).map(([, v]) => v);
+        const merged = mergeDraftIntoForm(formFrom(existing), { ...draft, variants: [], details: {} });
+        const r = refreshFromSource(merged, layers[source], layer, others);
+        setForm(r.form);
+        setRefreshChanges(r.changes);
         toast.message(t('لدى Moon هذا الكيان من قبل؛ فُتح مع ما يضيفه المصدر الخارجي. راجِعه ثم احفظ.', 'Moon already has this entity: it is open with what the outside record adds. Review it, then save.'));
       } else {
         setSelected(null);
         setUsage(null);
         setHistory(null);
         setForm(formFromDraft(draft));
+        setRefreshChanges(null);
         toast.success(t('نُسخ؛ راجِع الحقول ثم اضغط «أنشئ الكيان».', 'Copied. Review the fields, then press "Create entity".'));
       }
       setDraftData(draft.data);
+      setPendingLayers({ [source]: layer });
       setCopiedFrom(draft.sources);
       setCopyOpen(false);
       setCopyQuery('');
@@ -204,6 +222,35 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
     } finally {
       setCopying(null);
     }
+  };
+
+  const refreshFromOutside = async () => {
+    if (!form || !selected) return;
+    const links = [...new Set(form.sameAs.split(/\r?\n/).map((x) => x.trim()).map((u) => outsideRef(u)?.uri).filter((u): u is string => !!u))];
+    if (!links.length) return;
+    setRefreshing(true);
+    const layers: ImportedLayers = { ...(((selected.data as any)?.imported || {}) as ImportedLayers), ...pendingLayers };
+    let next = form;
+    const all: RefreshChange[] = [];
+    const fresh: ImportedLayers = {};
+    for (const link of links) {
+      const draft = await fetchOutsideEntity(link, { lang: isAr() ? 'ar' : 'en' }).catch(() => null);
+      if (!draft) continue;
+      const layer = layerFrom(draft);
+      const others = Object.entries({ ...layers, ...fresh }).filter(([k]) => k !== link).map(([, v]) => v);
+      const r = refreshFromSource(next, layers[link], layer, others);
+      next = r.form;
+      // The same change from several sources is listed once.
+      for (const c of r.changes) if (!all.some((x) => x.kind === c.kind && x.field === c.field && x.value === c.value)) all.push(c);
+      fresh[link] = layer;
+    }
+    setRefreshing(false);
+    setForm(next);
+    setPendingLayers((p) => ({ ...p, ...fresh }));
+    setRefreshChanges(all);
+    const n = (k: RefreshChange['kind']) => all.filter((c) => c.kind === k).length;
+    toast.message(t(`أُضيف ${n('added')}، حُدّث ${n('updated')}، حُذف ${n('removed')}، وبقي ${n('kept-own')} من قيم مون. راجِع ثم احفظ.`,
+      `${n('added')} added, ${n('updated')} updated, ${n('removed')} removed, ${n('kept-own')} kept as Moon's own. Review, then save.`));
   };
 
   const loadHistory = async () => {
@@ -220,7 +267,9 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
     if (!form || problems.length) return;
     setSaving(true);
     // A copy's extras (a place's coordinates …) fill in, without replacing what the entity already holds.
-    const body = payloadFrom(form, { ...draftData, ...((selected?.data as Record<string, unknown>) || {}) });
+    const previous = (selected?.data as Record<string, unknown>) || {};
+    const imported = { ...((previous.imported as ImportedLayers) || {}), ...pendingLayers };
+    const body = payloadFrom(form, { ...draftData, ...previous, ...(Object.keys(imported).length ? { imported } : {}) });
     const res = selected
       ? await moonFetch<any>(`/authorities/${encodeURIComponent(selected.id)}`, { method: 'PUT', body: { ...body, version: selected.version } }).catch(() => null)
       : await moonFetch<any>('/authorities', { body }).catch(() => null);
@@ -530,6 +579,27 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
                           {' · '}
                           {source ? describeLinkSource(source, isAr()) : t('أُضيف قبل حفظ المصادر', 'added before sources were kept')}
                           {source?.evidence && source.method !== 'person' && <span className="block text-slate-400" dir="auto">{source.evidence}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {selected && form.sameAs.trim() && (
+                    <div className="mt-2">
+                      <button type="button" onClick={refreshFromOutside} disabled={refreshing}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-3 py-1 text-xs font-semibold text-sky-800 hover:bg-white disabled:opacity-50">
+                        {refreshing ? t('يحدّث…', 'Refreshing…') : t('حدّث من مكتبة الكونغرس / ويكي بيانات', 'Refresh from LC / Wikidata')}
+                      </button>
+                      <span className="ms-2 text-[11px] text-slate-500">{t('يُحدَّث ما جاء من المصدر فقط؛ لا تُمسّ قيم مون.', 'Only what came from the source changes; Moon\'s own values are never touched.')}</span>
+                    </div>
+                  )}
+                  {refreshChanges && refreshChanges.length > 0 && (
+                    <ul className="mt-2 space-y-0.5 rounded-xl bg-white/60 p-2 text-[11px] leading-4">
+                      {refreshChanges.map((c, i) => (
+                        <li key={i} className={c.kind === 'kept-own' ? 'text-amber-700' : c.kind === 'removed' ? 'text-rose-700' : 'text-emerald-800'} dir="auto">
+                          {c.kind === 'added' && t(`أُضيف (${c.field}): ${c.value}`, `Added (${c.field}): ${c.value}`)}
+                          {c.kind === 'updated' && t(`حُدّث (${c.field}): ${c.was} ← ${c.value}`, `Updated (${c.field}): ${c.was} → ${c.value}`)}
+                          {c.kind === 'removed' && t(`حُذف (${c.field}): ${c.value}`, `Removed (${c.field}): ${c.value}`)}
+                          {c.kind === 'kept-own' && t(`بقيت قيمة مون (${c.field}): ${c.value} — المصدر يقول: ${c.was}`, `Kept Moon's own (${c.field}): ${c.value} — the source says: ${c.was}`)}
                         </li>
                       ))}
                     </ul>
