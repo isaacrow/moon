@@ -29,6 +29,7 @@ import {
 import { MOON_API, moonHeaders } from '../app/utils/moonApi';
 import { t, opacLang, setOpacLang, type OpacLang } from './i18n';
 import { IiifViewer } from './IiifViewer';
+import { readDate, bothCalendars } from '../services/hijri';
 import { findPersonQid, splitHeading, type PersonClues } from './personPhoto';
 import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, clusterWorks, type InfoCard as InfoCardData } from './linkedEntities';
 import './opac.css';
@@ -1024,6 +1025,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
     ) : null],
     [t('العنوان', 'Title'), [work.title, work.subtitle].filter(Boolean).join(' : ')],
     [t('النشر', 'Publication'), [[inst?.publicationPlace, publisher].filter(Boolean).join(' : '), inst?.publicationYear || work.originDate].filter(Boolean).join(t('، ', ', '))],
+    [t('التاريخ بالتقويمين', 'In both calendars'), bothCalendars(readDate(String(inst?.publicationYear || work.originDate || '')), opacLang() === 'ar')],
     [t('الوصف المادي', 'Physical description'), [inst?.extent || work.extent, inst?.dimensions || work.dimensions].filter(Boolean).join(t(' ؛ ', ' ; '))],
     [t('السلسلة', 'Series'), work.series],
     [t('المعرّفات', 'Identifiers'), [...new Set(work.instances.map(i => i.isbn).filter(Boolean))].map(x => `ISBN ${x}`).join(t('، ', ', '))],

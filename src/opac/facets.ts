@@ -6,8 +6,9 @@
  * can be shared or bookmarked.
  */
 import { t, opacLang } from './i18n';
+import { readDate, hijriCenturyOf } from '../services/hijri';
 
-export type FacetKey = 'avail' | 'category' | 'format' | 'lang' | 'library' | 'decade' | 'author' | 'subject' | 'kind';
+export type FacetKey = 'avail' | 'category' | 'format' | 'lang' | 'library' | 'decade' | 'century' | 'author' | 'subject' | 'kind';
 export type Selection = Partial<Record<FacetKey, string[]>>;
 export type SortKey = 'relevance' | 'title-asc' | 'title-desc' | 'date-desc' | 'date-asc' | 'copies';
 
@@ -36,6 +37,7 @@ export const FACETS: Array<{ key: FacetKey; title: string; en: string }> = [
   { key: 'lang', title: 'اللغة', en: 'Language' },
   { key: 'library', title: 'المكتبة', en: 'Library' },
   { key: 'decade', title: 'سنة النشر', en: 'Year published' },
+  { key: 'century', title: 'القرن الهجري', en: 'Century AH' },
   { key: 'author', title: 'المؤلف والمساهمون', en: 'Authors and contributors' },
   { key: 'subject', title: 'الموضوع', en: 'Subject' },
   { key: 'kind', title: 'نوع العمل', en: 'Kind of work' },
@@ -91,6 +93,9 @@ const toLatinDigits = (s: string) => s.replace(/[٠-٩]/g, (d) => String('٠١٢
 /** The publication year of a work (its first edition's, else the work's date). */
 export function workYearOf(w: FacetWork): number | undefined {
   for (const raw of [...(w.instances || []).map((i) => i.publicationYear), w.originDate]) {
+    // A Hijri or solar Hijri year ("1420 هـ", "1398" in an Arabic imprint) is converted, never read as Gregorian.
+    const r = readDate(String(raw || ''));
+    if (r.from !== undefined && r.gregorian === undefined) return r.from;
     const all = toLatinDigits(String(raw || '')).match(/(?<!\d)(1[0-9]\d\d|20\d\d)(?!\d)/g);
     if (all) return Number(all[all.length - 1]);
   }
@@ -146,6 +151,15 @@ export function valuesOf(w: FacetWork, key: FacetKey): string[] {
       const y = workYearOf(w);
       return y ? [String(Math.floor(y / 10) * 10)] : [];
     }
+    case 'century': {
+      // The Hijri century: from the Hijri year itself when the record gives one, else from the Gregorian year.
+      for (const raw of [...(w.instances || []).map((i) => i.publicationYear), w.originDate]) {
+        const r = readDate(String(raw || ''));
+        if (r.hijri !== undefined) return [String(Math.floor((r.hijri - 1) / 100) + 1)];
+      }
+      const y = workYearOf(w);
+      return y ? [String(hijriCenturyOf(y))] : [];
+    }
     case 'author': return uniq([personLabel(w.primaryCreator), ...(w.contributors || []).map(personLabel)]);
     case 'subject': return uniq((w.subjects || []).map((s) => s.label));
     case 'kind': {
@@ -155,9 +169,12 @@ export function valuesOf(w: FacetWork, key: FacetKey): string[] {
   }
 }
 
+const ordinal = (n: number) => (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+
 export function valueLabel(key: FacetKey, value: string): string {
   if (key === 'avail') return value === 'online' ? t('متاح على الإنترنت', 'Available online') : value === 'physical' ? t('نسخة ورقية في مكتبة', 'Print copy in a library') : value;
   if (key === 'decade') return `${value}–${Number(value) + 9}`;
+  if (key === 'century') return t(`القرن ${value} هـ`, `${value}${ordinal(Number(value))} century AH`);
   if (key === 'kind') return value === 'translation' ? t('ترجمة', 'Translation') : value === 'hub' ? t('له طبعات وترجمات أخرى', 'Has other editions and translations') : value;
   if (key === 'lang') return languageDisplay(value);
   if (key === 'format') return opacLang() === 'en' ? FORMATS_EN[value] || value : value;
@@ -188,7 +205,7 @@ export function facetCounts(works: FacetWork[], sel: Selection): Record<FacetKey
     }
     for (const v of sel[key] || []) if (!counts.has(v)) counts.set(v, 0);
     const list = [...counts].map(([value, count]) => ({ value, label: valueLabel(key, value), count }));
-    list.sort(key === 'decade'
+    list.sort(key === 'decade' || key === 'century'
       ? (a, b) => Number(b.value) - Number(a.value)
       : (a, b) => b.count - a.count || a.label.localeCompare(b.label, opacLang()));
     out[key] = list;
