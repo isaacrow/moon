@@ -12,6 +12,7 @@ import { toBoundedRdfXml } from "./rdfXml.tsx";
 import { withLcAdminMetadata, type AdminFacts } from "./lcAdminMetadata.tsx";
 import { entityNodes } from "./entityDocument.tsx";
 import { withLcLabels } from "./lcLabels.tsx";
+import { finishPublished } from "./publishedOutput.tsx";
 
 export const BASE_URI = (Deno.env.get("MOON_URI_BASE") || "https://mooon.site/resource").replace(/\/+$/, "");
 
@@ -73,7 +74,8 @@ export function negotiate(accept: string | null | undefined): Format {
 export function publishedDocument(record: { id: string; document: any; cataloger?: string; createdAt?: string; saved?: string; approvedBy?: string }): any {
   const facts: AdminFacts = { id: record.id, cataloger: record.cataloger, createdAt: record.createdAt, saved: record.saved, approvedBy: record.approvedBy };
   // Access points (bflc:aap) on Works and Hubs, and LC variant title types, as LC's records carry them.
-  return withLcLabels(withLcAdminMetadata(record.document, facts, BASE_URI));
+  // Then strict BIBFRAME 3.0.1, language-tagged and with EDTF dates (publishedOutput.tsx, Phase 12).
+  return finishPublished(withLcLabels(withLcAdminMetadata(record.document, facts, BASE_URI)));
 }
 
 /** The stored document with a full @context, ready for any JSON-LD processor. */
