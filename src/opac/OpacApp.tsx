@@ -33,6 +33,7 @@ import { readDate, bothCalendars } from '../services/hijri';
 import { summary as eventSummary, EVENT_KINDS, ROLES, type TransmissionEvent } from '../services/transmission';
 import { findPersonQid, splitHeading, type PersonClues } from './personPhoto';
 import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, clusterWorks, type InfoCard as InfoCardData } from './linkedEntities';
+import type { WorkDecision } from '../services/workClustering';
 import './opac.css';
 
 type View =
@@ -50,6 +51,23 @@ type View =
  * Tells the server a reader opened this page, for the dashboard's visitor count. The server keeps no address;
  * robots and signed-in staff are not counted. Never in the way of the reader: errors are ignored.
  */
+/** Cataloguers' Work-group decisions (S11), fetched once per page load; the OPAC groups without them meanwhile. */
+let workDecisionsCache: WorkDecision[] | null = null;
+let workDecisionsLoad: Promise<WorkDecision[]> | null = null;
+function useWorkDecisions(): WorkDecision[] {
+  const [list, setList] = useState<WorkDecision[]>(workDecisionsCache || []);
+  useEffect(() => {
+    if (workDecisionsCache) return;
+    workDecisionsLoad = workDecisionsLoad || fetch(`${MOON_API}/work-clusters/decisions`, { headers: moonHeaders() })
+      .then(r => (r.ok ? r.json() : { decisions: [] })).then(j => (workDecisionsCache = Array.isArray(j?.decisions) ? j.decisions : []))
+      .catch(() => (workDecisionsCache = []));
+    let live = true;
+    workDecisionsLoad.then(d => { if (live) setList(d); });
+    return () => { live = false; };
+  }, []);
+  return list;
+}
+
 function reportVisit(v: View) {
   const ref = v.mode === 'search' ? v.query : v.mode === 'work' ? v.id : 'key' in v ? v.key : '';
   if (v.mode === 'search' && !ref.trim()) return;
@@ -744,7 +762,7 @@ function ResultCard({ w, ctx, i }: { w: OpacWorkEntity; ctx: Ctx; i: number }) {
 }
 
 /** Under a grouped result: the other records of the same Work (editions, translations), one line each. */
-function ClusterEditions({ members, ctx }: { members: OpacWorkEntity[]; ctx: Ctx }) {
+function ClusterEditions({ members, evidence, ctx }: { members: OpacWorkEntity[]; evidence?: string[]; ctx: Ctx }) {
   const langs = new Set(members.map(w => w.language));
   const label = langs.size > 1
     ? t(`${members.length} طبعات وترجمات لهذا العمل`, `${members.length} editions and translations of this work`)
@@ -764,8 +782,31 @@ function ClusterEditions({ members, ctx }: { members: OpacWorkEntity[]; ctx: Ctx
           );
         })}
       </ul>
+      {!!evidence?.length && (
+        <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>
+          {t('جُمعت لأن: ', 'Grouped because: ')}{evidence.map(evidenceText).join(t('، ', '; '))}
+        </p>
+      )}
     </details>
   );
+}
+
+/** Why records were grouped, in the reader's language. */
+function evidenceText(e: string): string {
+  const ar: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
+    [/^Same title$/, () => 'العنوان نفسه'],
+    [/^Nearly the same title$/, () => 'العنوان نفسه تقريبًا'],
+    [/^Same creator \((.*)\)$/, m => `المؤلف نفسه (${m[1]})`],
+    [/^Probably the same creator/, () => 'المؤلف نفسه على الأرجح'],
+    [/^Same hub/, () => 'المحور نفسه'],
+    [/^Linked as a translation/, () => 'إحداهما ترجمة الأخرى أو طبعة منها'],
+    [/^Joined by a cataloguer(?: \((.*)\))?$/, m => `جمعها مفهرس${m[1] ? ` (${m[1]})` : ''}`],
+    [/^Creators written in different scripts$/, () => 'اسم المؤلف بخطين مختلفين'],
+    [/^Only one record names a creator$/, () => 'تسجيلة واحدة فقط تذكر المؤلف'],
+  ];
+  if (opacLang() !== 'ar') return e;
+  for (const [re, f] of ar) { const m = e.match(re); if (m) return f(m); }
+  return e;
 }
 
 function FacetGroup({ title, k, values, sel, onToggle, needle, startOpen }: {
@@ -816,7 +857,8 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
   const counts = useMemo(() => facetCounts(base, sel), [base, sel]);
   // One result per Work (Libris): editions, translations and hub members fold under the best-placed record.
   const [grouped, setGrouped] = useState(() => new URLSearchParams(window.location.search).get('group') !== '0');
-  const clusters = useMemo(() => (grouped ? clusterWorks(filtered) : filtered.map(w => ({ key: w.id, lead: w, members: [w] }))), [filtered, grouped]);
+  const decisions = useWorkDecisions();
+  const clusters = useMemo(() => (grouped ? clusterWorks(filtered, decisions) : filtered.map(w => ({ key: w.id, lead: w, members: [w], confidence: 1, evidence: [] as string[] }))), [filtered, grouped, decisions]);
   const pages = Math.max(1, Math.ceil(clusters.length / PAGE_SIZE));
   const shown = clusters.slice((Math.min(page, pages) - 1) * PAGE_SIZE, Math.min(page, pages) * PAGE_SIZE);
 
@@ -900,7 +942,7 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
               {shown.map((c, i) => (
                 <React.Fragment key={c.key}>
                   <ResultCard w={c.lead} ctx={ctx} i={i} />
-                  {c.members.length > 1 && <ClusterEditions members={c.members} ctx={ctx} />}
+                  {c.members.length > 1 && <ClusterEditions members={c.members} evidence={c.evidence} ctx={ctx} />}
                 </React.Fragment>
               ))}
             </div>

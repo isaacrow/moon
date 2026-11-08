@@ -47,6 +47,7 @@ import { isBot, visitFrom, visitDay, visitorKey } from "./opacVisits.tsx";
 import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceHash, type FolioConfig, type FolioRef, type FolioLink } from "./folio.tsx";
 import { marcProblems, sendMarc } from "./folioMarc.tsx";
 import { applyTemplateSave, type Template } from "./templatePolicy.tsx";
+import { applyDecision, parseDecisions, DECISIONS_KEY } from "./workDecisions.tsx";
 import { auditNTriples } from "./ldAudit.tsx";
 import { upgradeLegacyTerms } from "./publishedOutput.tsx";
 import * as BF_TERMS from "./bibframeTerms.generated.tsx";
@@ -5731,6 +5732,34 @@ app.post("/make-server-49c0e13c/ai-router/reset-circuit/:provider", (c) => {
 // ===== FIELD TEMPLATE PERSISTENCE =====
 
 // GET all saved field templates
+// Work groups (Phase 13 S11): cataloguers' "same Work" / "not the same" decisions, read by the OPAC (public)
+// and the review queue; anyone signed in may decide, and each decision records who and when.
+app.get("/make-server-49c0e13c/work-clusters/decisions", async (c) => {
+  try {
+    const decisions = parseDecisions(await kv.get(DECISIONS_KEY).catch(() => null));
+    return c.json({ decisions }, 200, { "Cache-Control": "public, max-age=60" });
+  } catch (error) {
+    console.log("Error reading work decisions:", error);
+    return c.json({ decisions: [] });
+  }
+});
+
+app.post("/make-server-49c0e13c/work-clusters/decisions", async (c) => {
+  try {
+    const session = await getSession(c);
+    if (!session) return c.json({ success: false, error: "Sign in to decide on Work groups" }, 401);
+    const body = await c.req.json().catch(() => ({}));
+    const stored = parseDecisions(await kv.get(DECISIONS_KEY).catch(() => null));
+    const result = applyDecision(stored, body, session.username, new Date().toISOString());
+    if (result.error) return c.json({ success: false, error: result.error }, 400);
+    await kv.set(DECISIONS_KEY, JSON.stringify(result.list));
+    return c.json({ success: true, decisions: result.list });
+  } catch (error) {
+    console.log("Error saving a work decision:", error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
 app.get("/make-server-49c0e13c/field-templates", async (c) => {
   try {
     const data = await kv.get("field-templates-all");
