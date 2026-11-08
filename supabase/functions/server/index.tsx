@@ -65,11 +65,9 @@ async function refreshLabelCache() {
       return null;
     } catch (e) { note(`${e instanceof Error ? e.message : String(e)} ${url.slice(0, 120)}`); return null; }
   };
-  const result = await labelCache.refreshLabels(uris, cached, { fetchJson, now, since });
+  const result = await labelCache.refreshLabels(uris, cached, { fetchJson, now, since, sources: ["wikidata"] });
   await recordStore.storeLabels(result.rows);
-  // LC's feed counts as read only when it was read; otherwise the next run looks back as far again.
-  if (result.lcFeedRead > 0) await recordStore.setLabelState("lc-feed-read", now.toISOString());
-  return { addresses: uris.length, cachedBefore: cachedRows.length, fetched: result.rows.length, lcFeedPages: result.lcFeedRead, wikidataChanged: result.wikidataChanged, at: now.toISOString(), ...(Object.keys(problems).length ? { problems } : {}) };
+  return { addresses: uris.length, cachedBefore: cachedRows.length, fetched: result.rows.length, wikidataChanged: result.wikidataChanged, at: now.toISOString(), ...(Object.keys(problems).length ? { problems } : {}) };
 }
 import * as webhooks from "./webhooks.tsx";
 
@@ -1648,12 +1646,35 @@ app.post("/make-server-49c0e13c/authorities/link-records", async (c) => {
 
 // The label cache (Phase 13 S19): refreshed by the nightly job (MOON_JOB_TOKEN) or by the Super Admin; read
 // by anyone. No route writes a label by hand.
-app.post("/make-server-49c0e13c/jobs/label-cache", async (c) => {
+async function isJobCall(c: any): Promise<boolean> {
   const expected = Deno.env.get('MOON_JOB_TOKEN') || '';
   const given = c.req.header('X-Moon-Job-Token') || '';
   const enc = new TextEncoder();
   const [a, b] = await Promise.all([given, expected].map((x) => crypto.subtle.digest('SHA-256', enc.encode(x))));
-  if (!(expected.length >= 32 && new Uint8Array(a).every((x, i) => x === new Uint8Array(b)[i]))) return c.json({ error: 'Job token required' }, 403);
+  return expected.length >= 32 && new Uint8Array(a).every((x, i) => x === new Uint8Array(b)[i]);
+}
+// LC for the nightly runner: what Moon links to at LC and when each was last fetched; then the runner sends
+// back what it read from id.loc.gov (rows checked here: LC addresses only, LC-shaped labels).
+app.get("/make-server-49c0e13c/jobs/label-cache/lc", async (c) => {
+  if (!(await isJobCall(c))) return c.json({ error: 'Job token required' }, 403);
+  const [records, entities, cachedRows] = await Promise.all([recordStore.listPublishedRecords(), recordStore.listAllAuthorities(), recordStore.allCachedLabels()]);
+  const uris = labelCache.outsideUris([...records.map((r: any) => r.document), ...entities.map((e: any) => e.sameAs || [])]).filter((u) => labelCache.sourceOf(u) === 'lc');
+  const since = (await recordStore.labelState('lc-feed-read')) || new Date(Date.now() - labelCache.STALE_DAYS * 86_400_000).toISOString();
+  return c.json({ uris, cached: cachedRows.filter((r) => r.source === 'lc'), since });
+});
+app.post("/make-server-49c0e13c/jobs/label-cache/lc", async (c) => {
+  if (!(await isJobCall(c))) return c.json({ error: 'Job token required' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const rows = (Array.isArray(body.rows) ? body.rows : []).slice(0, labelCache.MAX_PER_RUN).filter((r: any) =>
+    r && typeof r.uri === 'string' && labelCache.sourceOf(r.uri) === 'lc' && r.uri === labelCache.canonical(r.uri) && Array.isArray(r.labels) && r.labels.length <= 50
+    && r.labels.every((l: any) => typeof l?.value === 'string' && l.value.length <= 500 && (l.lang === undefined || (typeof l.lang === 'string' && l.lang.length <= 20))));
+  const at = new Date().toISOString();
+  await recordStore.storeLabels(rows.map((r: any) => ({ uri: r.uri, source: 'lc', labels: r.labels.map((l: any) => ({ value: l.value, ...(l.lang ? { lang: l.lang } : {}) })), ...(typeof r.sourceModified === 'string' ? { sourceModified: r.sourceModified.slice(0, 40) } : {}), fetchedAt: at, ...(r.missing ? { missing: true } : {}) })));
+  if (Number(body.lcFeedRead) > 0) await recordStore.setLabelState('lc-feed-read', at);
+  return c.json({ stored: rows.length, refused: (Array.isArray(body.rows) ? body.rows.length : 0) - rows.length });
+});
+app.post("/make-server-49c0e13c/jobs/label-cache", async (c) => {
+  if (!(await isJobCall(c))) return c.json({ error: 'Job token required' }, 403);
   try { return c.json(await refreshLabelCache()); } catch (error) {
     console.error('Label cache refresh error:', error);
     return c.json({ error: 'Label cache refresh failed' }, 500);

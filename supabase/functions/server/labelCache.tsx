@@ -103,15 +103,23 @@ export interface RefreshDeps {
   fetchJson(url: string): Promise<any | null>;
   now: Date;
   since: string;
+  /** Which sources this run reads. id.loc.gov refuses the edge function's shared addresses (429), so the
+   *  server reads Wikidata and the nightly GitHub runner reads LC (scripts/label-cache-lc.mts). */
+  sources?: Array<"lc" | "wikidata">;
+  /** LC records fetched at once, and the pause between groups (ms). */
+  lcBatch?: number;
+  lcPause?: number;
 }
 
 /** Fetches what is due. Returns the rows to store and when LC's feed was read up to. */
 export async function refreshLabels(uris: string[], cached: Map<string, CachedLabels>, deps: RefreshDeps): Promise<{ rows: CachedLabels[]; lcFeedRead: number; wikidataChanged: number }> {
   const at = deps.now.toISOString();
+  const sources = deps.sources || ["lc", "wikidata"];
+  uris = uris.filter((u) => sources.includes(sourceOf(u)!));
   // LC's change feeds since the last run (names and subjects), a few pages at most.
   const lcChanged = new Map<string, string>();
   let lcFeedRead = 0;
-  for (const scheme of ["names", "subjects"]) {
+  for (const scheme of sources.includes("lc") ? ["names", "subjects"] : []) {
     let url: string | undefined = `https://id.loc.gov/authorities/${scheme}/activitystreams/feed/1.json`;
     for (let page = 0; url && page < 10; page++) {
       const json = await deps.fetchJson(url.endsWith(".json") ? url : `${url}.json`);
@@ -139,8 +147,10 @@ export async function refreshLabels(uris: string[], cached: Map<string, CachedLa
   const rows: CachedLabels[] = [];
   // LC, a few at a time (gentle on id.loc.gov, quick enough for one run).
   const lcPlan = plan.filter((p) => sourceOf(p) === "lc");
-  for (let i = 0; i < lcPlan.length; i += 6) {
-    await Promise.all(lcPlan.slice(i, i + 6).map(async (u) => {
+  const step = deps.lcBatch || 6;
+  for (let i = 0; i < lcPlan.length; i += step) {
+    if (i && deps.lcPause) await new Promise((r) => setTimeout(r, deps.lcPause));
+    await Promise.all(lcPlan.slice(i, i + step).map(async (u) => {
       const json = await deps.fetchJson(`${u}.json`);
       if (json === null) return; // unreachable: try again next run
       const labels = parseLc(json, u);
