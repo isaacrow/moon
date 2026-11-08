@@ -146,6 +146,14 @@ export async function listPublishedRecords(): Promise<StoredRecord[]> {
   return [...(published.data || []).map(fromPublishedRow), ...notCopied];
 }
 
+/** Records that were published and are now deleted (for the change feed's Delete activities). */
+export async function listWithdrawnRecords(): Promise<Array<{ id: string; title?: string; createdAt?: string; saved?: string; deletedAt: string }>> {
+  const { data, error } = await sb().from("records").select("id, title, created_at, updated_at, deleted_at")
+    .not("deleted_at", "is", null).not("published_version", "is", null);
+  if (error) throw new Error(`[records] withdrawn list failed: ${error.message}`);
+  return (data || []).map((r: any) => ({ id: r.id, title: r.title, createdAt: r.created_at, saved: r.updated_at, deletedAt: r.deleted_at }));
+}
+
 /** Thrown when a save starts from an older version than the record's current one. */
 export class VersionConflictError extends Error {
   constructor(readonly currentVersion: number) {
