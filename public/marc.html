@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>أين حقل مارك؟ — Where is my MARC field?</title>
+<meta name="description" content="لكل حقل وحقل فرعي في مارك 21: أين يضعه مون في BIBFRAME. جدول مأخوذ من محوّل مون نفسه.">
+<link rel="icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1d1d1f;--ink-2:#4a4a4f;--ink-3:#6b6b70;--hair:rgba(0,0,0,.08);--bg-top:#f5f5f6;--bg-bottom:#c9c9cc;--glass-bg:rgba(255,255,255,.6)}
+*{box-sizing:border-box}
+body{margin:0;font-family:'IBM Plex Sans Arabic',system-ui,'Segoe UI',sans-serif;font-size:16px;line-height:1.7;color:var(--ink);background:linear-gradient(180deg,var(--bg-top) 0%,#e4e4e6 38%,var(--bg-bottom) 100%) fixed;min-height:100vh}
+a{color:var(--ink)}
+.glass{background:var(--glass-bg);border-radius:16px;box-shadow:0 4px 30px rgba(0,0,0,.1);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid #fff}
+.wrap{max-width:1000px;margin:0 auto;padding:0 16px}
+header.bar{position:sticky;top:12px;z-index:5;margin:12px auto 0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px}
+header.bar img{height:36px;width:auto;display:block}
+header.bar button{font:inherit;font-size:14px;border:1px solid #fff;background:rgba(255,255,255,.7);border-radius:999px;padding:4px 14px;cursor:pointer}
+h1{font-family:'Noto Naskh Arabic',serif;font-size:clamp(30px,5vw,46px);line-height:1.25;margin:36px 0 8px}
+.lede{color:var(--ink-2);font-size:17px;margin:0 0 20px;max-width:64ch}
+.tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 14px;margin:0 0 14px}
+.tools input{flex:1;min-width:220px;font:inherit;border:1px solid #fff;background:rgba(255,255,255,.85);border-radius:12px;padding:8px 12px}
+.tools label{font-size:14px;color:var(--ink-2);display:flex;gap:6px;align-items:center}
+.count{font-size:14px;color:var(--ink-3)}
+details.field{margin:8px 0;padding:10px 16px}
+details.field summary{cursor:pointer;display:flex;gap:12px;align-items:baseline;list-style:none}
+details.field summary::-webkit-details-marker{display:none}
+.tag{font-family:ui-monospace,Consolas,monospace;font-weight:700;min-width:3ch;direction:ltr}
+.name{flex:1}
+.badge{font-size:12px;border-radius:999px;padding:1px 10px;white-space:nowrap}
+.b-mapped{background:#111;color:#fff}.b-kept{background:rgba(0,0,0,.08);color:var(--ink-2)}.b-coded{background:#e8e8ea;color:var(--ink)}.b-none{background:transparent;color:var(--ink-3);border:1px dashed var(--ink-3)}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0 2px}
+th,td{text-align:start;padding:6px 8px;border-top:1px solid var(--hair);vertical-align:top}
+th{color:var(--ink-3);font-weight:600}
+code{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;font-size:.86em;background:rgba(0,0,0,.06);padding:1px 6px;border-radius:6px;direction:ltr;unicode-bidi:isolate;display:inline-block;margin:1px 0}
+.muted{color:var(--ink-3);font-size:14px}
+footer{margin:28px 0 40px;padding:14px 18px;color:var(--ink-2);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar glass">
+    <a href="/opac.html" aria-label="Moon"><img src="/opac-logo.png" alt="مون" width="230" height="120"></a>
+    <button id="lang" type="button">English</button>
+  </header>
+
+  <h1 id="h1">أين حقل مارك؟</h1>
+  <p class="lede" id="lede">لكل حقل وحقل فرعي في مارك 21: أين يضعه مون في BIBFRAME. الجدول مأخوذ من محوّل مون نفسه (يُمرَّر كل حقل فيه ويُنظر أين يقع)، فهو ما يفعله مون فعلاً.</p>
+
+  <div class="tools glass">
+    <input id="q" type="search" autocomplete="off" placeholder="رقم الحقل أو اسمه أو خاصية BIBFRAME (245، المؤلف، bf:extent)">
+    <label><input type="checkbox" id="onlyMapped"> <span id="onlyLbl">المحوَّلة فقط</span></label>
+    <span class="count" id="count"></span>
+  </div>
+  <div id="list" aria-live="polite"></div>
+
+  <footer class="glass" id="foot">
+    <b>محوَّل</b>: يقع الحقل في BIBFRAME في الموضع المذكور. <b>محفوظ</b>: لا يحوّله مون بعد، لكنه يحفظه كما هو ويعيده عند التصدير إلى مارك. <b>مرمَّز</b>: يُقرأ منه رمز أو تاريخ لا نصه. الحقول الفرعية الرقمية ($0–$9) روابط وتحكم، لا نص.
+  </footer>
+</div>
+<script>
+(function () {
+  var lang = (function () { try { return localStorage.getItem('moon-marc-lang') || 'ar'; } catch (e) { return 'ar'; } })();
+  var data = [];
+  var T = {
+    ar: { h1: 'أين حقل مارك؟', btn: 'English', ph: 'رقم الحقل أو اسمه أو خاصية BIBFRAME (245، المؤلف، bf:extent)', only: 'المحوَّلة فقط', count: function (n, m) { return n + ' حقلاً، ' + m + ' منها محوَّل'; }, sub: 'الحقل الفرعي', where: 'في BIBFRAME', st: { mapped: 'محوَّل', kept: 'محفوظ', coded: 'مرمَّز', none: 'غير مستعمل' }, empty: 'لا شيء يطابق.',
+      lede: 'لكل حقل وحقل فرعي في مارك 21: أين يضعه مون في BIBFRAME. الجدول مأخوذ من محوّل مون نفسه (يُمرَّر كل حقل فيه ويُنظر أين يقع)، فهو ما يفعله مون فعلاً.',
+      foot: '<b>محوَّل</b>: يقع الحقل في BIBFRAME في الموضع المذكور. <b>محفوظ</b>: لا يحوّله مون بعد، لكنه يحفظه كما هو ويعيده عند التصدير إلى مارك. <b>مرمَّز</b>: يُقرأ منه رمز أو تاريخ لا نصه. الحقول الفرعية الرقمية ($0–$9) روابط وتحكم، لا نص.' },
+    en: { h1: 'Where is my MARC field?', btn: 'العربية', ph: 'Tag, name or BIBFRAME property (245, author, bf:extent)', only: 'Mapped only', count: function (n, m) { return n + ' fields, ' + m + ' mapped'; }, sub: 'Subfield', where: 'In BIBFRAME', st: { mapped: 'mapped', kept: 'kept', coded: 'coded', none: 'not used' }, empty: 'Nothing matches.',
+      lede: "For every MARC 21 field and subfield: where Moon puts it in BIBFRAME. The table comes from Moon's own converter (each field is put through it and looked for), so it is what Moon really does.",
+      foot: "<b>Mapped</b>: the field lands in BIBFRAME where shown. <b>Kept</b>: Moon does not map it yet, but keeps it as it is and writes it back on MARC export. <b>Coded</b>: a code or date is read from it, not its words. Numeric subfields ($0–$9) are links and control, not text." },
+  };
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function render() {
+    var t = T[lang];
+    document.documentElement.lang = lang; document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    $('h1').textContent = t.h1; $('lang').textContent = t.btn; $('q').placeholder = t.ph; $('onlyLbl').textContent = t.only;
+    $('lede').textContent = t.lede; $('foot').innerHTML = t.foot;
+    var q = $('q').value.trim().toLowerCase();
+    var only = $('onlyMapped').checked;
+    var shown = data.filter(function (f) {
+      if (only && f.status !== 'mapped') return false;
+      if (!q) return true;
+      var hay = (f.tag + ' ' + f.en + ' ' + f.ar + ' ' + f.subfields.map(function (s) { return s.code + ' ' + s.name + ' ' + s.places.join(' '); }).join(' ')).toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
+    $('count').textContent = t.count(shown.length, shown.filter(function (f) { return f.status === 'mapped'; }).length);
+    var open = /^\d{3}$/.test(q) || shown.length <= 3;
+    $('list').innerHTML = shown.length ? shown.map(function (f) {
+      var rows = f.subfields.map(function (s) {
+        return '<tr><td><code>$' + esc(s.code) + '</code> ' + esc(s.name) + '</td><td>' + (s.places.length ? s.places.map(function (p) { return '<code>' + esc(p) + '</code>'; }).join(' ') : '<span class="muted">—</span>') + '</td></tr>';
+      }).join('');
+      return '<details class="field glass"' + (open ? ' open' : '') + '><summary><span class="tag">' + esc(f.tag) + '</span><span class="name">' + esc(lang === 'ar' ? f.ar : f.en) + '</span><span class="badge b-' + f.status + '">' + esc(t.st[f.status]) + '</span></summary>'
+        + (rows ? '<table><tr><th>' + t.sub + '</th><th>' + t.where + '</th></tr>' + rows + '</table>' : '') + '</details>';
+    }).join('') : '<p class="muted">' + t.empty + '</p>';
+  }
+  $('lang').addEventListener('click', function () { lang = lang === 'ar' ? 'en' : 'ar'; try { localStorage.setItem('moon-marc-lang', lang); } catch (e) {} render(); });
+  $('q').addEventListener('input', render);
+  $('onlyMapped').addEventListener('change', render);
+  var initial = new URLSearchParams(location.search).get('q');
+  if (initial) $('q').value = initial;
+  fetch('/marc-where.json').then(function (r) { return r.json(); }).then(function (d) { data = d; render(); }).catch(function () { $('list').textContent = 'Could not load the table.'; });
+  render();
+})();
+</script>
+</body>
+</html>
