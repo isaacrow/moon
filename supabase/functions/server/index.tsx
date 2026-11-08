@@ -49,16 +49,27 @@ async function refreshLabelCache() {
   const cached = new Map(cachedRows.map((r) => [r.uri, r]));
   const now = new Date();
   const since = (await recordStore.labelState("lc-feed-read")) || new Date(now.getTime() - labelCache.STALE_DAYS * 86_400_000).toISOString();
+  // What went wrong, per site (the first few), so a run that could not reach LC or Wikidata says why.
+  const problems: Record<string, string[]> = {};
   const fetchJson = async (url: string) => {
+    const host = new URL(url).hostname;
+    const note = (p: string) => { const l = (problems[host] ||= []); if (l.length < 3) l.push(p); };
     try {
-      const r = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "Moon/1 (https://mooon.site; catalogue label cache)" }, signal: AbortSignal.timeout(10_000) });
-      return r.ok ? await r.json() : r.status === 404 ? [] : null;
-    } catch { return null; }
+      // id.loc.gov answers http with a redirect to https: ask https directly.
+      const r = await fetch(url.replace(/^http:\/\/id\.loc\.gov\//, "https://id.loc.gov/"), {
+        headers: { Accept: "application/json", "User-Agent": "Moon/1 (https://mooon.site; catalogue label cache)" }, signal: AbortSignal.timeout(15_000),
+      });
+      if (r.ok) return await r.json();
+      if (r.status === 404) return [];
+      note(`${r.status} ${url.slice(0, 120)}`);
+      return null;
+    } catch (e) { note(`${e instanceof Error ? e.message : String(e)} ${url.slice(0, 120)}`); return null; }
   };
   const result = await labelCache.refreshLabels(uris, cached, { fetchJson, now, since });
   await recordStore.storeLabels(result.rows);
-  await recordStore.setLabelState("lc-feed-read", now.toISOString());
-  return { addresses: uris.length, cachedBefore: cachedRows.length, fetched: result.rows.length, lcFeedPages: result.lcFeedRead, wikidataChanged: result.wikidataChanged, at: now.toISOString() };
+  // LC's feed counts as read only when it was read; otherwise the next run looks back as far again.
+  if (result.lcFeedRead > 0) await recordStore.setLabelState("lc-feed-read", now.toISOString());
+  return { addresses: uris.length, cachedBefore: cachedRows.length, fetched: result.rows.length, lcFeedPages: result.lcFeedRead, wikidataChanged: result.wikidataChanged, at: now.toISOString(), ...(Object.keys(problems).length ? { problems } : {}) };
 }
 import * as webhooks from "./webhooks.tsx";
 
