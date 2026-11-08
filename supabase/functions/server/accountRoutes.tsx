@@ -149,6 +149,12 @@ export async function getSession(c: any): Promise<Session | null> {
   return session;
 }
 
+/** The library (institution) a cataloguer belongs to, as their account gives it (S18 protected values). */
+export async function libraryOf(username: string): Promise<string> {
+  if (username.toLowerCase() === SUPER_ADMIN_USERNAME) return SUPER_ADMIN_PUBLIC.institution;
+  return (await getAccount(username))?.institution || username;
+}
+
 /** May review records: approve, return and comment on others' records. */
 export function canReview(session: Session | null): boolean {
   return !!session && (session.role === "admin" || session.role === "reviewer");
