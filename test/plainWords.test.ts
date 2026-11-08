@@ -39,3 +39,19 @@ test('"exact words only": whole words, the article allowed; close matches are th
   assert.ok(!exactMatch(w, 'العقل الفلسفي'));
   assert.ok(exactMatch(w, '  '));
 });
+
+test('A–Z in both scripts: headings file without the article, hamza folded', async () => {
+  const { letterOf, alphaIndex, filingKey } = await import('../src/opac/plainWords');
+  assert.equal(letterOf('الأصفهاني'), 'ا');
+  assert.equal(letterOf('إبراهيم'), 'ا');
+  assert.equal(letterOf('الوردي، علي'), 'و');
+  assert.equal(letterOf('al-Wardi, Ali'), 'W');
+  assert.equal(letterOf('ʻAbd al-Raḥmān'), 'A');
+  assert.equal(letterOf('The Prophet'), 'P');
+  assert.equal(letterOf('1001 nights'), '#');
+  assert.equal(filingKey('المتنبي'), 'متنبي');
+  const idx = alphaIndex(['الوردي', 'وليد', 'Wardi', '٣']);
+  assert.equal(idx.find((x) => x.letter === 'و')!.count, 2);
+  assert.equal(idx.find((x) => x.letter === 'W')!.count, 1);
+  assert.equal(idx.length, 28 + 26 + 1);
+});
