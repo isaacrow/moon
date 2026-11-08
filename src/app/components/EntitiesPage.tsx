@@ -593,11 +593,9 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
                 {!hasArabic(form.label + form.variants) && looksAlaLc(form.label) && (
                   // The other way (S9): a name that came only romanized gets its Arabic script proposed, to check.
                   <button onClick={() => {
-                    const proposed = toArabicScript(form.label.replace(/,?s*d{3,4}??-(d{3,4})?.?$/, '').trim());
+                    const proposed = toArabicScript(form.label.replace(/,?\s*\d{3,4}\??-(\d{3,4})?\.?$/, '').trim());
                     const edited = window.prompt(t('راجع الشكل العربي قبل إضافته:', 'Check the Arabic-script form before adding it:'), proposed);
-                    if (edited && edited.trim()) set({ variants: [...new Set([...form.variants.split('
-').map((x) => x.trim()).filter(Boolean), edited.trim()])].join('
-') });
+                    if (edited && edited.trim()) set({ variants: [...new Set([...form.variants.split('\n').map((x) => x.trim()).filter(Boolean), edited.trim()])].join('\n') });
                   }} className="flex items-center gap-2 text-sm font-semibold text-sky-700 hover:underline">
                     <Languages className="h-4 w-4" /> {t('أضف الشكل بالحرف العربي (من الكتابة اللاتينية)', 'Add the Arabic-script form (from the romanization)')}
                   </button>
