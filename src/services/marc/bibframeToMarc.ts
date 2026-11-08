@@ -291,8 +291,24 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
   for (const rel of all(get(work, 'relation'))) {
     if (!/relationship\/series$|^series$/.test(uri(get(rel, 'relationship')) || text(get(rel, 'relationship')))) continue;
     const hub = resolve(get(rel, 'associatedResource'), graph);
+    const skey = fromMarcKey(hub?.['bflc:marcKey']);
+    if (skey && /^8(00|10|11|30)$/.test(skey.tag)) { push({ ...skey, subfields: [...skey.subfields, ...[sf('1', uri(hub))].filter((x): x is Subfield => !!x)] }); continue; }
     const name = text(get(get(hub, 'title'), 'mainTitle')) || text(hub?.['bflc:aap']);
     push(field('830', ' ', '0', [sf('a', name), sf('v', text(get(rel, 'seriesEnumeration'))), sf('1', uri(hub))]));
+  }
+
+  // Works named in fields, as they came from MARC (bflc:marcKey): the Work this one expresses (130 / 240),
+  // related and contained works (7XX $t, 730). A Work made in Moon has no such key and is not written here.
+  const named = [
+    ...all(get(work, 'expressionOf')),
+    ...all(get(work, 'relation')).filter((rel) => !/relationship\/series$|^series$/.test(uri(get(rel, 'relationship')) || text(get(rel, 'relationship')))).map((rel) => get(rel, 'associatedResource')),
+    ...all(get(work, 'hasPart')),
+  ];
+  for (const h of named) {
+    const hub = resolve(h, graph);
+    const key = fromMarcKey(hub?.['bflc:marcKey']);
+    if (!key || !/^(130|240|7(00|10|11|30))$/.test(key.tag)) continue;
+    push({ ...key, subfields: [...key.subfields, ...[sf('1', uri(hub))].filter((x): x is Subfield => !!x)] });
   }
 
   // The Work this Instance is an instance of, by its URI (758), as LC's bibframe2marc writes it.
@@ -308,8 +324,20 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     if (at < 0) fields.push(f); else fields.splice(at, 0, f);
   }
 
+  // Fields kept from MARC that Moon maps only in part (020, 250, 502, 505): the kept field takes the place of
+  // Moon's own when it still says the same (its words, punctuation aside); if the record was edited since,
+  // Moon's own stays. Compared on the subfields Moon maps.
+  const PART = /^(020|250|502|505)$/;
+  const MAPPED_CODES: Record<string, RegExp> = { '020': /a/, '250': /a/, '502': /a/, '505': /[agrt]/ };
+  const words = (f: DataField) => f.subfields.filter(([c]) => MAPPED_CODES[f.tag].test(c)).map(([, v]) => v).join('').replace(/[\s\p{P}]/gu, '').toLowerCase();
+  const keptAll = all(instance['moonext:marcField']).map(fromMarcKey).filter((x): x is DataField => !!x);
+  for (const k of keptAll.filter((x) => PART.test(x.tag))) {
+    const at = fields.findIndex((x) => x.tag === k.tag && 'subfields' in x && words(x as DataField) === words(k));
+    if (at >= 0) fields[at] = { ...k, subfields: [...k.subfields] };
+  }
+
   // Fields kept from MARC that Moon has no BIBFRAME for (moonext:marcField), placed among the others by tag.
-  for (const f of all(instance['moonext:marcField']).map(fromMarcKey).filter((x): x is DataField => !!x)) {
+  for (const f of keptAll.filter((x) => !PART.test(x.tag))) {
     if (fields.some((x) => x.tag === f.tag && 'subfields' in x && JSON.stringify(x.subfields) === JSON.stringify(f.subfields))) continue;
     const at = fields.findIndex((x) => x.tag > f.tag && x.tag !== '880');
     if (at < 0) fields.push(f); else fields.splice(at, 0, f);
