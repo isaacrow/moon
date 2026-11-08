@@ -350,6 +350,8 @@ interface OntologyDrivenFormRendererProps {
   isLight?: boolean;
   hiddenFields?: Set<string>;
   onHideField?: (fieldKey: string) => void;
+  /** Simple mode (S22): show only these fields; the others keep their values, out of sight. */
+  onlyFields?: Set<string>;
 }
 
 export function OntologyDrivenFormRenderer({ 
@@ -361,6 +363,7 @@ export function OntologyDrivenFormRenderer({
   isLight = false,
   hiddenFields,
   onHideField,
+  onlyFields,
 }: OntologyDrivenFormRendererProps) {
   const formTheme: FormTheme = React.useMemo(() => {
     if (isLight) {
@@ -457,7 +460,7 @@ export function OntologyDrivenFormRenderer({
             </button>
           </div>
         </div>
-        {categories.map((category, index) => (
+        {categories.filter((c) => !onlyFields || getPropertiesByCategory(entityType, c).some((p) => onlyFields.has(p.shortName))).map((category, index) => (
           <div
             key={category}
             className="rounded-[20px] overflow-visible"
@@ -481,6 +484,7 @@ export function OntologyDrivenFormRenderer({
               onChange={onChange}
               hiddenFields={hiddenFields}
               onHideField={onHideField}
+              onlyFields={onlyFields}
             />
           </div>
         ))}
@@ -499,6 +503,7 @@ function CategorySection({
   onChange,
   hiddenFields,
   onHideField,
+  onlyFields,
 }: {
   category: string;
   entityType: string;
@@ -509,8 +514,9 @@ function CategorySection({
   onChange: (nodeUri: string, property: string, value: any) => void;
   hiddenFields?: Set<string>;
   onHideField?: (fieldKey: string) => void;
+  onlyFields?: Set<string>;
 }) {
-  const allProperties = getPropertiesByCategory(entityType, category);
+  const allProperties = getPropertiesByCategory(entityType, category).filter(p => !onlyFields || onlyFields.has(p.shortName));
   const properties = hiddenFields
     ? allProperties.filter(p => !hiddenFields.has(`registry:${p.shortName}`))
     : allProperties;
