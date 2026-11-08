@@ -8,6 +8,7 @@ import { roundTrip, roundTripReport, toMoonDocument } from '../src/services/marc
 import { toMarcKey, fromMarcKey } from '../src/services/marc/marcKey';
 import { finishPublished } from '../supabase/functions/server/publishedOutput.tsx';
 import type { MarcRecord } from '../src/services/marc/marcRecord';
+import { bibframeToMarc } from '../src/services/marc/bibframeToMarc';
 
 const article: MarcRecord = {
   leader: '00000nab a2200000 i 4500',
@@ -62,4 +63,33 @@ test('kept MARC fields stay in Moon and are not published; bflc:marcKey is', () 
   const published = JSON.stringify(finishPublished(doc));
   assert.ok(!published.includes('moonext:marcField'));
   assert.ok(published.includes('bflc:marcKey'));
+});
+
+test('Works named in fields come back: 240 with its name, a related work (700 $t), a work as subject (600 $t)', () => {
+  const book: MarcRecord = {
+    leader: '00000nam a2200000 i 4500',
+    fields: [
+      { tag: '100', ind1: '1', ind2: ' ', subfields: [['a', 'Ibn Khaldūn,'], ['d', '1332-1406,'], ['e', 'author.']] },
+      { tag: '240', ind1: '1', ind2: '0', subfields: [['a', 'Muqaddimah.'], ['l', 'English']] },
+      { tag: '245', ind1: '1', ind2: '4', subfields: [['a', 'The Muqaddimah :'], ['b', 'an introduction to history /']] },
+      { tag: '600', ind1: '1', ind2: '0', subfields: [['a', 'Ibn Khaldūn,'], ['d', '1332-1406.'], ['t', 'Muqaddimah.']] },
+      { tag: '700', ind1: '1', ind2: '2', subfields: [['a', 'Rosenthal, Franz,'], ['d', '1914-2003.'], ['t', 'Introduction.']] },
+    ],
+  };
+  assert.deepEqual(roundTrip(book).issues, []);
+});
+
+test('a kept field is used only while it still says what the record says: an edited ISBN is Moon\'s own', () => {
+  const rec: MarcRecord = { leader: '00000nam a2200000 i 4500', fields: [
+    { tag: '020', ind1: ' ', ind2: ' ', subfields: [['a', '9789953000000'], ['q', '(paperback)']] },
+    { tag: '245', ind1: '0', ind2: '0', subfields: [['a', 'Title']] },
+  ] };
+  assert.deepEqual(roundTrip(rec).issues, [], '$q comes back');
+  const doc = toMoonDocument(rec);
+  const inst = doc['@graph'].find((n: any) => n['@type'] === 'bf:Instance') as any;
+  inst['bf:identifiedBy'] = [{ '@type': 'bf:Isbn', 'rdf:value': '9781111111111' }]; // edited in Moon
+  const back = bibframeToMarc(doc as any, { recordId: 'x' });
+  const f020 = back.fields.filter((f) => f.tag === '020') as any[];
+  assert.equal(f020.length, 1);
+  assert.deepEqual(f020[0].subfields[0], ['a', '9781111111111']);
 });
