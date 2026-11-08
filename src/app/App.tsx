@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { practiceCopy } from './utils/editorModes';
 import { useTranslation } from 'react-i18next';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { JCricketProvider } from './contexts/JCricketContext';
@@ -11,7 +12,7 @@ import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { BASE_URI } from '../services/uriMintingService';
-import { getRecordById } from './utils/recordStorageBackend';
+import { getRecordById, getAllRecords } from './utils/recordStorageBackend';
 import { usePresenceHeartbeat } from './utils/usePresenceHeartbeat';
 import './i18n/config';
 
@@ -215,6 +216,32 @@ function CatalogApp() {
     setCurrentRecord(null);
     navigate('wolf-moon');
   };
+
+  // Practice (S22): /moon/?practice=<id> opens a copy of that published record (=1: one chosen at random);
+  // saves stay in this browser.
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get('practice');
+    if (viewMode !== 'wolf-moon' || !want) return;
+    (async () => {
+      let saved = want === '1' ? null : await getRecordById(want);
+      if (!saved) {
+        const all = await getAllRecords({ published: true }).catch(() => []);
+        saved = all.length ? all[Math.floor(Math.random() * all.length)] : null;
+      }
+      const record = (saved as any)?.record;
+      if (!record) { toast.error('No published record to practise on.'); return; }
+      const graph = record['@graph'];
+      const full = record.work && record.instance ? record : {
+        ...record, work: Array.isArray(graph) ? graph.find(isWorkNode) : null, instance: Array.isArray(graph) ? graph.find(isInstanceNode) : null,
+      };
+      if (!full.work || !full.instance) { toast.error('That record cannot be opened for practice.'); return; }
+      const copy = practiceCopy(full, (saved as any).id);
+      setWork(copy.work);
+      setInstance(copy.instance);
+      setCurrentRecord(copy);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Opening /moon/?record=… (a refresh or a shared link) reopens that saved record.
   useEffect(() => {

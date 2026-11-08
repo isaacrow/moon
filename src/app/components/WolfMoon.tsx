@@ -91,6 +91,7 @@ import { CopiesPanel } from "./CopiesPanel";
 import { RomanizePanel } from "./RomanizePanel";
 import { MajmuPanel } from "./MajmuPanel";
 import { MaqamPanel, isMusic } from "./MaqamPanel";
+import { SIMPLE_FIELDS, readSimpleMode, writeSimpleMode, isPractice, keepPractice } from "../utils/editorModes";
 import { ItemCopy, nodeToCopy, copyToNode } from "../../services/itemCopies";
 import { findIsbn, uploadCover } from "../utils/recordCovers";
 import { RecordCommentsContext, useRecordComments } from "./FieldComments";
@@ -403,8 +404,9 @@ export default function WolfMoon({
     if (saveStatus !== "unsaved") return;
     let last = "";
     const writeDraft = () => {
-      // A save clears the draft; never write it back afterwards.
-      if (saveStatusRef.current !== "unsaved") return;
+      // A save clears the draft; never write it back afterwards. Practice keeps no draft: restored later, it
+      // would become a real new record.
+      if (saveStatusRef.current !== "unsaved" || isPractice(initialRecord as any)) return;
       try {
         const draft: WolfMoonDraft = {
           record: {
@@ -462,6 +464,10 @@ export default function WolfMoon({
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showDeriveMenu, setShowDeriveMenu] = useState(false);
   const [showFolio, setShowFolio] = useState(false);
+  // Learning (S22): practice on a copy (saves stay in this browser), and simple mode (few fields).
+  const practice = isPractice(initialRecord as any);
+  const [simpleMode, setSimpleMode] = useState(readSimpleMode);
+  const toggleSimple = () => setSimpleMode((on) => { writeSimpleMode(!on); return !on; });
   // The "should fix" list the cataloger already chose to save with, so the same list is not asked again.
   const acceptedChecksRef = useRef("");
   const [showIraqiAuthorityModal, setShowIraqiAuthorityModal] = useState(false);
@@ -1318,7 +1324,8 @@ export default function WolfMoon({
       // The server decides the final status from the signed-in user's session.
       // Before a duplicate goes in: is this book already catalogued (same ISBN, LCCN or title)?
       if (overwriteVersion === undefined) {
-        const duplicates = (await checkDuplicates(record)).filter((d) => !acceptedDuplicatesRef.current.has(d.id));
+        // A practice copy is the real record's twin: comparing it with the catalogue would only find itself.
+        const duplicates = practice ? [] : (await checkDuplicates(record)).filter((d) => !acceptedDuplicatesRef.current.has(d.id));
         if (duplicates.length) {
           const why = (r: string) => (language === "ar"
             ? ({ isbn: "نفس ردمك ISBN", lccn: "نفس رقم LCCN", title: "نفس العنوان" } as Record<string, string>)[r]
@@ -1358,6 +1365,15 @@ export default function WolfMoon({
         }
         const notes = checks.filter((c) => c.level === "note");
         if (notes.length) toast.message(ar ? "لجعل التسجيلة أفضل" : "To make the record better", { description: checksText(notes, ar) });
+      }
+      if (practice) {
+        // Practice: every check above has run; the record stays in this browser and never reaches the catalogue.
+        keepPractice({ id: recordId, title, savedAt: new Date().toISOString(), from: String((initialRecord?.metadata as any)?.practiceFrom || ""), document: toServerDocument(record) });
+        clearDraft();
+        setSaveStatus("saved");
+        toast.success(language === "ar" ? "تمرين: فُحصت التسجيلة وحُفظت في هذا المتصفح فقط" : "Practice: checked and kept in this browser only",
+          { description: language === "ar" ? "لم يصل شيء إلى الفهرس." : "Nothing reached the catalogue." });
+        return;
       }
       let saved;
       try {
@@ -1825,8 +1841,19 @@ export default function WolfMoon({
             <span>{t("import")}</span>
           </button>
 
-          {/* Send to FOLIO: MARC + Instance, or Instance only (the record must be saved and published) */}
+          {/* Simple mode (S22): only the fields a language expert needs. */}
           <button
+            type="button"
+            onClick={toggleSimple}
+            aria-pressed={simpleMode}
+            title={language === "ar" ? "الوضع المبسط: الحقول الأساسية وحدها" : "Simple mode: the main fields only"}
+            className={`glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-2.5 py-1 text-xs font-bold cursor-pointer text-white shrink-0 ${simpleMode ? "ring-2 ring-white/70" : ""}`}
+          >
+            <span>{language === "ar" ? (simpleMode ? "مبسّط ✓" : "مبسّط") : (simpleMode ? "Simple ✓" : "Simple")}</span>
+          </button>
+
+          {/* Send to FOLIO: MARC + Instance, or Instance only (the record must be saved and published) */}
+          {!practice && <button
             type="button"
             onClick={() => setShowFolio(true)}
             title={language === "ar" ? "أرسل التسجيلة المنشورة إلى FOLIO" : "Send the published record to FOLIO"}
@@ -1834,7 +1861,7 @@ export default function WolfMoon({
           >
             <Send className="h-3 w-3 text-emerald-300" />
             <span>FOLIO</span>
-          </button>
+          </button>}
           {showFolio && <FolioSendDialog recordId={recordId} rtl={language === "ar"} onClose={() => setShowFolio(false)} />}
 
           {/* Field Manager (Restricted to Super Admin Isaac) */}
@@ -1945,6 +1972,16 @@ export default function WolfMoon({
         <LiveFieldPresence room={liveRoom} peers={livePeers} myUsername={username || ""} language={language} />
         <EditingWarning editors={otherEditors} language={language} />
 
+        {practice && (
+          <div role="status" className="mb-3 rounded-2xl px-4 py-3 text-sm text-white flex flex-wrap items-center gap-3"
+            style={{ background: "rgba(245,158,11,0.25)", border: "1px solid rgba(253,230,138,0.6)" }} dir={language === "ar" ? "rtl" : "ltr"}>
+            <b>{language === "ar" ? "تمرين" : "Practice"}</b>
+            <span className="flex-1 min-w-[14rem]">{language === "ar"
+              ? "هذه نسخة من تسجيلة حقيقية للتمرين. جرّب ما شئت: الحفظ يفحص التسجيلة ويحفظها في هذا المتصفح فقط، ولا يصل شيء إلى الفهرس."
+              : "This is a copy of a real record to practise on. Try anything: Save checks the record and keeps it in this browser only; nothing reaches the catalogue."}</span>
+            <a href="/learn.html" target="_blank" rel="noreferrer" className="underline">{language === "ar" ? "الدروس" : "Lessons"}</a>
+          </div>
+        )}
         {activeTab === "editor" && (
           // Cover, copies and romanization side by side (one column on narrow screens), so they take one row.
           <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-3 items-stretch [&>*]:min-w-0 [&>*>*]:h-full">
@@ -2213,7 +2250,7 @@ export default function WolfMoon({
                 
                 {(fieldViewMode === "both" || fieldViewMode === "categories") && (
                   <OntologyDrivenFormRenderer entityType="Work" nodeUri={uriSet.work} graphStore={graphStore} data={workData} onChange={handlePropertyChange}
-                    hiddenFields={hiddenFields} onHideField={hideField} isLight={isLight} />
+                    hiddenFields={hiddenFields} onHideField={hideField} isLight={isLight} onlyFields={simpleMode ? SIMPLE_FIELDS.Work : undefined} />
                 )}
                 {(fieldViewMode === "both" || fieldViewMode === "standard") && (
                   <div className={(fieldViewMode === "both" ? "mt-6 pt-4 " : "")} style={fieldViewMode === "both" ? { borderTop: `1px solid ${BM.cardBorder}` } : undefined}>
@@ -2267,7 +2304,7 @@ export default function WolfMoon({
                   <>
                     <IsbnAutofillBar language={language} isLight={isLight} onResult={handleCategoryIsbn} />
                     <OntologyDrivenFormRenderer entityType="Instance" nodeUri={uriSet.instance} graphStore={graphStore} data={instanceData} onChange={handlePropertyChange}
-                      hiddenFields={hiddenFields} onHideField={hideField} isLight={isLight} />
+                      hiddenFields={hiddenFields} onHideField={hideField} isLight={isLight} onlyFields={simpleMode ? SIMPLE_FIELDS.Instance : undefined} />
                   </>
                 )}
                 {(fieldViewMode === "both" || fieldViewMode === "standard") && (
