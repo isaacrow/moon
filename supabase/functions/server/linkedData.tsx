@@ -13,6 +13,7 @@ import { withLcAdminMetadata, type AdminFacts } from "./lcAdminMetadata.tsx";
 import { entityNodes } from "./entityDocument.tsx";
 import { withLcLabels } from "./lcLabels.tsx";
 import { finishPublished } from "./publishedOutput.tsx";
+import { licenceOf } from "./licence.tsx";
 
 export const BASE_URI = (Deno.env.get("MOON_URI_BASE") || "https://mooon.site/resource").replace(/\/+$/, "");
 
@@ -28,6 +29,8 @@ export const CONTEXT: Record<string, string> = {
   moonext: new URL("/ontology/", BASE_URI).toString(),
   // Copies' markings, condition and actions (Art and Rare Materials 1.0), and Moon's SKOS vocabularies (S24).
   arm: "https://w3id.org/arm/ontology/1.0/",
+  // Each record's licence (S23).
+  dcterms: "http://purl.org/dc/terms/",
   skos: "http://www.w3.org/2004/02/skos/core#",
 };
 
@@ -74,8 +77,8 @@ export function negotiate(accept: string | null | undefined): Format {
  * A published record as it is served as linked data: its stored document with admin metadata the way LC
  * writes it (history events, BIBFRAME version, cataloguing language, local record number).
  */
-export function publishedDocument(record: { id: string; document: any; title?: string; cataloger?: string; createdAt?: string; saved?: string; approvedBy?: string }): any {
-  const facts: AdminFacts = { id: record.id, cataloger: record.cataloger, createdAt: record.createdAt, saved: record.saved, approvedBy: record.approvedBy };
+export function publishedDocument(record: { id: string; document: any; title?: string; cataloger?: string; createdAt?: string; saved?: string; approvedBy?: string; metadata?: Record<string, unknown> }): any {
+  const facts: AdminFacts = { id: record.id, cataloger: record.cataloger, createdAt: record.createdAt, saved: record.saved, approvedBy: record.approvedBy, license: licenceOf(record).uri };
   // Access points (bflc:aap) on Works and Hubs, and LC variant title types, as LC's records carry them.
   // Then strict BIBFRAME 3.0.1, language-tagged and with EDTF dates (publishedOutput.tsx, Phase 12).
   return finishPublished(withLcLabels(withLcAdminMetadata(record.document, facts, BASE_URI)), { title: record.title });

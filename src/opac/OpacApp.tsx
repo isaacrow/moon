@@ -1384,6 +1384,10 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
               <button className="inline-link" onClick={() => downloadMarc(work, 'mrk', ctx.say)}>MarcEdit (.mrk)</button>
               <button className="inline-link" onClick={() => download(`${work.id}.bib`, wolfMoonOpacService.generateCitations(work).bibtex + '\n', 'application/x-bibtex')}>BibTeX (.bib)</button>
             </div>
+            <div className="dl-links">
+              <span className="lbl">{t('الترخيص', 'Licence')}</span>
+              <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer license">{t('CC0 1.0 — ملك عام: انسخ وانشر بحرية', 'CC0 1.0 — public domain: copy and share freely')}</a>
+            </div>
             <p className="muted">
               {t('كل ما في هذه الصفحة بيانات BIBFRAME مترابطة: لكل عمل وطبعة ونسخة وشخص وموضوع عنوان دائم على mooon.site، ويمكن الاستعلام عنها عبر', 'Everything on this page is linked BIBFRAME data: every work, edition, copy, person and subject has a permanent address on mooon.site, and can be queried with')}
               {' '}<a href="/resource/sparql">SPARQL</a> {t('أو تنزيل الفهرس كاملاً من', 'or downloaded in full from the')} <a href="/resource/">{t('قائمة السجلات', 'record list')}</a>.

@@ -92,6 +92,7 @@ import { RomanizePanel } from "./RomanizePanel";
 import { MajmuPanel } from "./MajmuPanel";
 import { MaqamPanel, isMusic } from "./MaqamPanel";
 import { SIMPLE_FIELDS, readSimpleMode, writeSimpleMode, isPractice, keepPractice } from "../utils/editorModes";
+import { LICENCES } from "../../../supabase/functions/server/licence.tsx";
 import { ItemCopy, nodeToCopy, copyToNode } from "../../services/itemCopies";
 import { findIsbn, uploadCover } from "../utils/recordCovers";
 import { RecordCommentsContext, useRecordComments } from "./FieldComments";
@@ -466,6 +467,8 @@ export default function WolfMoon({
   const [showFolio, setShowFolio] = useState(false);
   // Learning (S22): practice on a copy (saves stay in this browser), and simple mode (few fields).
   const practice = isPractice(initialRecord as any);
+  // The description's licence (S23): CC0 unless the record came from somewhere with other terms.
+  const [licence, setLicence] = useState<string>(() => String((initialRecord?.metadata as any)?.license || "cc0"));
   const [simpleMode, setSimpleMode] = useState(readSimpleMode);
   const toggleSimple = () => setSimpleMode((on) => { writeSimpleMode(!on); return !on; });
   // The "should fix" list the cataloger already chose to save with, so the same list is not asked again.
@@ -1312,7 +1315,7 @@ export default function WolfMoon({
           catalogingLanguage: language, descriptionConventions: "rda",
           catalogingInterface: "Wolf Moon",
           resourceType: `Wolf Moon (${template.name})`,
-          templateId: selectedTemplate, recordId, uriSet,
+          templateId: selectedTemplate, recordId, uriSet, license: licence,
           ontologyVersion: BF_ONTOLOGY_VERSION,
           createdAt: initialRecord?.metadata?.createdAt || new Date().toISOString(),
           catalogerId: username || "anonymous",
@@ -2021,6 +2024,21 @@ export default function WolfMoon({
             </div>
             <div>
               <MajmuPanel work={workData} language={language} onChange={(w) => { setWorkData(w); setSaveStatus("unsaved"); }} />
+            </div>
+            <div>
+              <div className="p-3 space-y-1.5" style={{ borderRadius: 16, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.25)' }} dir={language === "ar" ? "rtl" : "ltr"}>
+                <label className="flex items-center gap-2 text-sm font-bold text-white">
+                  {language === "ar" ? "ترخيص الوصف" : "Licence of this description"}
+                  <select value={licence} onChange={(e) => { setLicence(e.target.value); setSaveStatus("unsaved"); }}
+                    className="ms-auto rounded-lg px-2.5 py-1.5 text-xs text-white outline-none [&>option]:text-slate-900"
+                    style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.2)' }}>
+                    {LICENCES.map((l) => <option key={l.id} value={l.id}>{language === "ar" ? l.ar : l.en}</option>)}
+                  </select>
+                </label>
+                <p className="text-[11px] text-white/60">{language === "ar"
+                  ? "بيانات مون مفتوحة بترخيص CC0. غيّره فقط إن جاء الوصف من مصدر له شروط أخرى؛ «لا يُعاد نشره» يُبقي التسجيلة خارج التنزيل الشامل وSPARQL."
+                  : "Moon's data is open under CC0. Change this only if the description came from a source with other terms; \"Not for redistribution\" keeps the record out of the bulk downloads and SPARQL."}</p>
+              </div>
             </div>
             {isMusic(workData) && (
               <div>

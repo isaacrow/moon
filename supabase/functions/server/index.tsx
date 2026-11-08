@@ -41,6 +41,7 @@ import { oaiResponse } from "./oaiPmh.tsx";
 import { changeFeed } from "./changeFeed.tsx";
 import { handleMcp } from "./mcp.tsx";
 import { vocabDocument } from "./specialVocab.tsx";
+import { openRecords, cleanLicence, voidDocument, voidTurtle } from "./licence.tsx";
 import * as labelCache from "./labelCache.tsx";
 
 /** One run of the label cache refresh (S19): LC's change feed and Wikidata's modified times since the last run. */
@@ -829,7 +830,14 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
         id,
         title: title || existing?.title || 'Untitled',
         document,
-        metadata: { ...(existing?.metadata || {}), ...(metadata || {}), status },
+        metadata: (() => {
+          const m: Record<string, unknown> = { ...(existing?.metadata || {}), ...(metadata || {}), status };
+          // The description's licence (S23): one of Moon's, else the record keeps CC0.
+          const lic = cleanLicence((metadata || {}).license);
+          if (lic) m.license = lic; else delete m.license;
+          if (lic === undefined && existing?.metadata?.license && cleanLicence(existing.metadata.license) && (metadata || {}).license === undefined) m.license = existing.metadata.license;
+          return m;
+        })(),
         status,
         cataloger,
         createdAt: existing?.createdAt || existing?.saved || now,
@@ -925,7 +933,8 @@ li{padding:14px 0;border-top:1px solid #1f2937}a{color:#93c5fd;text-decoration:n
 // GET ?query=… (and optional &format=json|xml|csv|tsv|ttl|nt|rdfxml), or POST with an
 // application/sparql-query body or a form field "query". Without a query, browsers get a query page.
 const loadPublishedNTriples = async () => {
-  const records = (await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  // Only records whose licence allows redistribution go in the bulk exports (S23).
+  const records = openRecords(await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const documents = records.map((r) => linkedData.publishedDocument(r));
   return await linkedData.dumpNTriples(documents, await publishedEntityDocs(documents));
 };
@@ -1006,6 +1015,35 @@ async function sparqlEndpoint(c: any) {
   }
 }
 app.get("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
+
+// The dataset described in VoID (S23): https://mooon.site/resource/void (JSON-LD), void.ttl (Turtle).
+async function voidStats() {
+  const all = await recordStore.listPublishedRecords();
+  const open = openRecords(all);
+  const nt = await loadPublishedNTriples();
+  const triples = nt.split("\n").filter((l) => l.trim() && !l.startsWith("#")).length;
+  const subjects = new Set(nt.split("\n").map((l) => l.split(" ")[0]).filter((s) => s.startsWith("<") && s.includes("/resource/")));
+  const modified = open.map((r: any) => String(r.saved || "")).sort().pop();
+  return { records: open.length, triples, entities: Math.max(0, subjects.size - open.length), modified, left: all.length - open.length };
+}
+app.get("/make-server-49c0e13c/resource/void", async (c) => {
+  try {
+    const stats = await voidStats();
+    if (/text\/turtle/.test(c.req.header('Accept') || '')) return c.body(voidTurtle(linkedData.BASE_URI, stats), 200, { 'Content-Type': 'text/turtle; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=3600' });
+    return c.json(voidDocument(linkedData.BASE_URI, stats), 200, { 'Content-Type': 'application/ld+json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=3600' });
+  } catch (error) {
+    console.error('VoID error:', error);
+    return c.json({ error: 'The dataset description could not be built' }, 500);
+  }
+});
+app.get("/make-server-49c0e13c/resource/void.ttl", async (c) => {
+  try {
+    return c.body(voidTurtle(linkedData.BASE_URI, await voidStats()), 200, { 'Content-Type': 'text/turtle; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=3600' });
+  } catch (error) {
+    console.error('VoID error:', error);
+    return c.text('The dataset description could not be built', 500);
+  }
+});
 
 // Moon's own SKOS vocabularies (Phase 13 S24): https://mooon.site/resource/vocab/maqam and …/item-action,
 // and each concept at …/vocab/<scheme>/<id>, as JSON-LD.
@@ -1096,7 +1134,7 @@ app.post("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
 // (always current; a dated copy is also saved nightly by .github/workflows/data-dump.yml).
 async function resourceDump(c: any, format: 'jsonld' | 'nt') {
   try {
-    const records = (await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const records = openRecords(await recordStore.listPublishedRecords()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
     const documents = records.map((r) => linkedData.publishedDocument(r));
     const entities = await publishedEntityDocs(documents);
     const headers = {
@@ -1147,7 +1185,7 @@ async function oaiEndpoint(c: any) {
       const form = new URLSearchParams(await c.req.text());
       form.forEach((v, k) => { params[k] = v; });
     }
-    const records = (await recordStore.listPublishedRecords()).map((r: any) => ({ id: r.id, title: r.title, document: r.document, saved: r.saved }));
+    const records = openRecords(await recordStore.listPublishedRecords()).map((r: any) => ({ id: r.id, title: r.title, document: r.document, saved: r.saved }));
     const xml = oaiResponse(params, records, {
       baseUrl: linkedData.BASE_URI,
       repositoryName: 'Moon BIBFRAME catalogue',
@@ -1412,7 +1450,8 @@ app.get("/make-server-49c0e13c/resource/oai", oaiEndpoint);
 // publish theirs): what Moon published, changed or withdrawn, newest first; ?page=1 is the newest page.
 app.get("/make-server-49c0e13c/resource/changes", async (c) => {
   try {
-    const [published, withdrawn] = await Promise.all([recordStore.listPublishedRecords(), recordStore.listWithdrawnRecords().catch(() => [])]);
+    const [publishedAll, withdrawn] = await Promise.all([recordStore.listPublishedRecords(), recordStore.listWithdrawnRecords().catch(() => [])]);
+    const published = openRecords(publishedAll);
     const records = [
       ...published.map((r: any) => ({ id: r.id, title: r.title, document: r.document, createdAt: r.createdAt, saved: r.saved })),
       ...withdrawn.filter((w) => !published.some((p: any) => p.id === w.id)),
