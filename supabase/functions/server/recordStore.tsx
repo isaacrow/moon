@@ -154,6 +154,43 @@ export async function listWithdrawnRecords(): Promise<Array<{ id: string; title?
   return (data || []).map((r: any) => ({ id: r.id, title: r.title, createdAt: r.created_at, saved: r.updated_at, deletedAt: r.deleted_at }));
 }
 
+// ---- Label cache (Phase 13 S19): LC and Wikidata names, written only by the refresh job ----
+
+export interface LabelRow { uri: string; source: "lc" | "wikidata"; labels: Array<{ value: string; lang?: string }>; sourceModified?: string; fetchedAt: string; missing?: boolean }
+const fromLabelRow = (r: any): LabelRow => ({ uri: r.uri, source: r.source, labels: r.labels || [], ...(r.source_modified ? { sourceModified: r.source_modified } : {}), fetchedAt: r.fetched_at, ...(r.missing ? { missing: true } : {}) });
+
+export async function allCachedLabels(): Promise<LabelRow[]> {
+  const out: LabelRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb().from("label_cache").select("*").range(from, from + 999);
+    if (error) throw new Error(`[labels] read failed: ${error.message}`);
+    out.push(...(data || []).map(fromLabelRow));
+    if (!data || data.length < 1000) return out;
+  }
+}
+export async function cachedLabels(uris: string[]): Promise<LabelRow[]> {
+  if (!uris.length) return [];
+  const { data, error } = await sb().from("label_cache").select("*").in("uri", uris);
+  if (error) throw new Error(`[labels] read failed: ${error.message}`);
+  return (data || []).map(fromLabelRow);
+}
+export async function storeLabels(rows: LabelRow[]): Promise<void> {
+  for (let i = 0; i < rows.length; i += 200) {
+    const { error } = await sb().from("label_cache").upsert(rows.slice(i, i + 200).map((r) => ({
+      uri: r.uri, source: r.source, labels: r.labels, source_modified: r.sourceModified ?? null, fetched_at: r.fetchedAt, missing: !!r.missing,
+    })));
+    if (error) throw new Error(`[labels] store failed: ${error.message}`);
+  }
+}
+export async function labelState(key: string): Promise<string | null> {
+  const { data } = await sb().from("label_cache_state").select("value").eq("key", key).maybeSingle();
+  return data?.value ?? null;
+}
+export async function setLabelState(key: string, value: string): Promise<void> {
+  const { error } = await sb().from("label_cache_state").upsert({ key, value });
+  if (error) throw new Error(`[labels] state failed: ${error.message}`);
+}
+
 /** Thrown when a save starts from an older version than the record's current one. */
 export class VersionConflictError extends Error {
   constructor(readonly currentVersion: number) {

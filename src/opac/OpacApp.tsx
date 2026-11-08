@@ -38,6 +38,7 @@ import { whatItIs, formatChips, editionLines, exactMatch, alphaIndex, letterOf, 
 import { usePreferredForms } from '../app/utils/preferredNames';
 import { bookScript } from '../services/nameForms';
 import { MARK_KINDS, ITEM_ACTIONS, maqamOf } from '../services/specialVocab';
+import { canonical as canonicalOutside, sourceOf as outsideSource, pickLabel, type Label as OutsideLabel } from '../../supabase/functions/server/labelCache.tsx';
 import { whoOf, aboutPerson, teachersAndStudents, personPlaces, shelfNeighbours, subjectsAlongside, type Link as KnowledgeLink } from './knowledge';
 import './opac.css';
 
@@ -1490,9 +1491,26 @@ const SAME_AS_LABEL = (u: string) =>
   /viaf\.org/.test(u) ? 'VIAF' : /id\.loc\.gov/.test(u) ? t('مكتبة الكونغرس', 'Library of Congress') : /wikidata\.org/.test(u) ? t('ويكي بيانات', 'Wikidata') : /isni/.test(u) ? 'ISNI' : new URL(u).hostname;
 
 /** The entity's own address and data, and where it links out to (owl:sameAs). */
+/** What LC and Wikidata call these addresses, from Moon's label cache (S19); empty until it answers. */
+function useOutsideLabels(uris: string[]): Record<string, OutsideLabel[]> {
+  const wanted = [...new Set(uris.filter(u => outsideSource(canonicalOutside(u))).map(canonicalOutside))].sort().join(' ');
+  const [labels, setLabels] = useState<Record<string, OutsideLabel[]>>({});
+  useEffect(() => {
+    if (!wanted) { setLabels({}); return; }
+    let live = true;
+    const qs = wanted.split(' ').map(u => `uri=${encodeURIComponent(u)}`).join('&');
+    fetch(`${MOON_API}/labels?${qs}`, { headers: moonHeaders() }).then(r => (r.ok ? r.json() : null))
+      .then(j => { if (live && j?.labels) setLabels(Object.fromEntries(Object.entries<any>(j.labels).map(([u, v]) => [u, v.labels || []]))); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [wanted]);
+  return labels;
+}
+
 function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; note?: string }) {
   const own = uri && uri.startsWith('https://mooon.site/resource/') ? uri : undefined;
   const links = [...new Set(sameAs.filter(u => /^https?:\/\//.test(u)))];
+  const outside = useOutsideLabels(links);
   if (!own && !links.length) return null;
   return (
     <section className="panel glass rise linked" aria-labelledby="h-ld">
@@ -1513,6 +1531,13 @@ function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; no
         <div className="dl-links">
           <span className="lbl">{t('الكيان نفسه في', 'Same entity in')}</span>
           {links.map(u => <a key={u} href={u} target="_blank" rel="noreferrer">{SAME_AS_LABEL(u)} <ArrowUpRight size={13} /></a>)}
+        </div>
+      )}
+      {links.some(u => outside[canonicalOutside(u)]?.length) && (
+        <div className="muted" style={{ fontSize: 13 }}>
+          {links.filter(u => outside[canonicalOutside(u)]?.length).map(u => (
+            <div key={u} dir="auto">{t(`تسمّيه ${SAME_AS_LABEL(u)}: `, `${SAME_AS_LABEL(u)} calls it: `)}<b>{pickLabel(outside[canonicalOutside(u)], opacLang() === 'ar' ? 'ar' : 'en')}</b></div>
+          ))}
         </div>
       )}
       {note && <p className="muted">{note}</p>}

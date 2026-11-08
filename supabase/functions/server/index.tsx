@@ -40,6 +40,26 @@ import { oaiResponse } from "./oaiPmh.tsx";
 import { changeFeed } from "./changeFeed.tsx";
 import { handleMcp } from "./mcp.tsx";
 import { vocabDocument } from "./specialVocab.tsx";
+import * as labelCache from "./labelCache.tsx";
+
+/** One run of the label cache refresh (S19): LC's change feed and Wikidata's modified times since the last run. */
+async function refreshLabelCache() {
+  const [records, entities, cachedRows] = await Promise.all([recordStore.listPublishedRecords(), recordStore.listAllAuthorities(), recordStore.allCachedLabels()]);
+  const uris = labelCache.outsideUris([...records.map((r: any) => r.document), ...entities.map((e: any) => e.sameAs || [])]);
+  const cached = new Map(cachedRows.map((r) => [r.uri, r]));
+  const now = new Date();
+  const since = (await recordStore.labelState("lc-feed-read")) || new Date(now.getTime() - labelCache.STALE_DAYS * 86_400_000).toISOString();
+  const fetchJson = async (url: string) => {
+    try {
+      const r = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "Moon/1 (https://mooon.site; catalogue label cache)" }, signal: AbortSignal.timeout(10_000) });
+      return r.ok ? await r.json() : r.status === 404 ? [] : null;
+    } catch { return null; }
+  };
+  const result = await labelCache.refreshLabels(uris, cached, { fetchJson, now, since });
+  await recordStore.storeLabels(result.rows);
+  await recordStore.setLabelState("lc-feed-read", now.toISOString());
+  return { addresses: uris.length, cachedBefore: cachedRows.length, fetched: result.rows.length, lcFeedPages: result.lcFeedRead, wikidataChanged: result.wikidataChanged, at: now.toISOString() };
+}
 import * as webhooks from "./webhooks.tsx";
 
 /** Tells the webhooks (S19) about a record event, in the background; a failing hook never fails the save. */
@@ -1612,6 +1632,41 @@ app.post("/make-server-49c0e13c/authorities/link-records", async (c) => {
   } catch (error) {
     console.error('Authority link-records error:', error);
     return c.json({ error: 'Failed to link records to authorities' }, 500);
+  }
+});
+
+// The label cache (Phase 13 S19): refreshed by the nightly job (MOON_JOB_TOKEN) or by the Super Admin; read
+// by anyone. No route writes a label by hand.
+app.post("/make-server-49c0e13c/jobs/label-cache", async (c) => {
+  const expected = Deno.env.get('MOON_JOB_TOKEN') || '';
+  const given = c.req.header('X-Moon-Job-Token') || '';
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([given, expected].map((x) => crypto.subtle.digest('SHA-256', enc.encode(x))));
+  if (!(expected.length >= 32 && new Uint8Array(a).every((x, i) => x === new Uint8Array(b)[i]))) return c.json({ error: 'Job token required' }, 403);
+  try { return c.json(await refreshLabelCache()); } catch (error) {
+    console.error('Label cache refresh error:', error);
+    return c.json({ error: 'Label cache refresh failed' }, 500);
+  }
+});
+app.post("/make-server-49c0e13c/admin/label-cache/refresh", async (c) => {
+  const session = await getSession(c);
+  if (session?.role !== 'admin') return c.json({ error: 'Only the Super Admin refreshes the label cache' }, 403);
+  try { return c.json(await refreshLabelCache()); } catch (error) {
+    console.error('Label cache refresh error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+// What LC and Wikidata call things: ?uri=… (repeatable, up to 50). Public, as id.loc.gov and Wikidata are.
+app.get("/make-server-49c0e13c/labels", async (c) => {
+  const uris = [...new Set((c.req.queries('uri') || []).map((u) => labelCache.canonical(u)).filter((u) => labelCache.sourceOf(u)))].slice(0, 50);
+  if (!uris.length) return c.json({ error: 'uri: one or more LC or Wikidata addresses' }, 400, { 'Access-Control-Allow-Origin': '*' });
+  try {
+    const rows = await recordStore.cachedLabels(uris);
+    return c.json({ labels: Object.fromEntries(rows.filter((r) => !r.missing).map((r) => [r.uri, { source: r.source, labels: r.labels, fetchedAt: r.fetchedAt }])) }, 200,
+      { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=3600' });
+  } catch (error) {
+    console.error('Label lookup error:', error);
+    return c.json({ labels: {} }, 200, { 'Access-Control-Allow-Origin': '*' });
   }
 });
 
