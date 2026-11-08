@@ -48,6 +48,7 @@ import { buildFolioInstance, folioClient, loadReference, sendInstance, instanceH
 import { marcProblems, sendMarc } from "./folioMarc.tsx";
 import { applyTemplateSave, type Template } from "./templatePolicy.tsx";
 import { applyDecision, parseDecisions, DECISIONS_KEY } from "./workDecisions.tsx";
+import { withoutPrivateData, cleanPreferred } from "./nameForms.tsx";
 import { auditNTriples } from "./ldAudit.tsx";
 import { upgradeLegacyTerms } from "./publishedOutput.tsx";
 import * as BF_TERMS from "./bibframeTerms.generated.tsx";
@@ -1397,8 +1398,20 @@ function entityDetails(kind: string, raw: unknown): { data?: Record<string, unkn
   if (kind === 'agent' && data.agentType !== undefined && !(AGENT_TYPES as readonly string[]).includes(String(data.agentType))) {
     return { error: `agentType must be one of: ${AGENT_TYPES.join(', ')}` };
   }
+  // Agent records keep only public facts (S10): contact details and identity documents are refused.
+  if (kind === 'agent') {
+    const { removed } = withoutPrivateData(data);
+    if (removed.length) return { error: `Agent records keep no private details (contact details, identity documents): remove ${removed.join(', ')}` };
+  }
   return { data };
 }
+/** The preferred form for each script (S10), kept only when it is one of the entity's names in that script. */
+const withPreferred = (data: Record<string, unknown>, label: string, variants: string[]) => {
+  if (data.preferredForms === undefined) return data;
+  const p = cleanPreferred(data.preferredForms, label, variants);
+  const { preferredForms: _p, ...rest } = data;
+  return Object.keys(p).length ? { ...rest, preferredForms: p } : rest;
+};
 const withUri = (a: any) => ({ ...a, uri: `${linkedData.BASE_URI}/${a.kind}/${a.id}` });
 
 app.get("/make-server-49c0e13c/authorities", async (c) => {
@@ -1441,9 +1454,10 @@ app.post("/make-server-49c0e13c/authorities", async (c) => {
     if (!label || label.length > 300) return c.json({ error: 'A name (label) of up to 300 characters is required' }, 400);
     const { data, error: detailsError } = entityDetails(body.kind, body.data);
     if (!data) return c.json({ error: detailsError }, 400);
+    const variants = entityStrings(body.variants, 50);
     const result = await recordStore.addAuthority({
-      kind: body.kind, label, variants: entityStrings(body.variants, 50), sameAs: entityStrings(body.sameAs, 20),
-      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : undefined, data,
+      kind: body.kind, label, variants, sameAs: entityStrings(body.sameAs, 20),
+      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : undefined, data: withPreferred(data, label, variants),
     }, session.username);
     return c.json({ existing: result.existing, authority: withUri(result.authority) }, result.existing ? 200 : 201);
   } catch (error) {
@@ -1640,9 +1654,10 @@ app.put("/make-server-49c0e13c/authorities/:id", async (c) => {
     if (badLink) return c.json({ error: `Not an LC, VIAF, Wikidata, FAST, ISNI or ORCID link: ${badLink}` }, 400);
     const { data, error: detailsError } = entityDetails(current.kind, body.data);
     if (!data) return c.json({ error: detailsError }, 400);
+    const variants = entityStrings(body.variants, 50).filter((v) => v !== label);
     const result = await recordStore.updateAuthority(id, {
-      label, variants: entityStrings(body.variants, 50).filter((v) => v !== label), sameAs,
-      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : null, data,
+      label, variants, sameAs,
+      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : null, data: withPreferred(data, label, variants),
     }, session.username, Number.isInteger(body.version) ? body.version : undefined);
     if (result.status === 'conflict') return c.json({ error: 'Someone saved this entity since you opened it', authority: result.authority && withUri(result.authority) }, 409);
     if (result.status === 'duplicate') return c.json({ error: 'Another entity of this kind already has this name', other: result.other && withUri(result.other) }, 409);

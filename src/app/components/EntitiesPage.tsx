@@ -14,6 +14,7 @@ import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users,
 import { moonFetch, moonHeaders, MOON_API } from '../utils/moonApi';
 import { romanizeAll } from '../../services/romanize';
 import { parseArabicName, nameVariants } from '../../services/arabicNames';
+import { taggedForms } from '../../services/nameForms';
 import { ReconcilePanel } from './ReconcilePanel';
 import { searchLOCAuthorities, searchWikidata, searchVIAF, type AuthorityResult } from '../../services/authoritySearch';
 import { outsideRef, fetchOutsideEntity, formFromDraft, mergeDraftIntoForm, type OutsideSource } from '../../services/entityImport';
@@ -535,6 +536,29 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
                 <Field label={t('أشكال أخرى للاسم (شكل في كل سطر)', 'Other forms of the name (one per line)')}>
                   <textarea className={INPUT} dir="auto" rows={3} value={form.variants} onChange={(e) => set({ variants: e.target.value })} />
                 </Field>
+                {form.kind === 'agent' && form.label.trim() && (() => {
+                  // Each form with its script tag; a person marks the preferred one for each script (S10). The OPAC
+                  // and the MARC export use the Arabic-script form for books in Arabic script, the romanized one otherwise.
+                  const forms = taggedForms(form.label, form.variants.split('\n'), form.preferred);
+                  if (forms.length < 2) return null;
+                  const choose = (script: 'arabic' | 'latin', value: string) => set({ preferred: { ...(form.preferred || {}), [script]: form.preferred?.[script] === value ? undefined : value } });
+                  return (
+                    <div className="rounded-xl bg-white/60 border border-white p-3 text-sm">
+                      <div className="text-xs font-semibold text-slate-600 mb-1">{t('الشكل المفضّل لكل خط', 'Preferred form for each script')}</div>
+                      <p className="text-[11px] text-slate-500 mb-2">{t('يظهر الشكل العربي المختار في الكتب العربية (وفي حقل 880 في مارك)، والشكل اللاتيني في غيرها.', 'The chosen Arabic-script form shows in books in Arabic script (and in the MARC 880); the romanized form elsewhere.')}</p>
+                      <ul className="space-y-1">
+                        {forms.map((f) => (
+                          <li key={f.form} className="flex items-center gap-2">
+                            <input type="radio" name={`pref-${f.script}`} checked={f.preferred} onChange={() => {}} onClick={() => choose(f.script, f.form)}
+                              aria-label={t(`المفضّل بالخط ${f.script === 'arabic' ? 'العربي' : 'اللاتيني'}`, `Preferred in ${f.script === 'arabic' ? 'Arabic' : 'Latin'} script`)} />
+                            <span dir="auto" className={f.preferred ? 'font-bold text-slate-900' : 'text-slate-700'}>{f.form}</span>
+                            <span dir="ltr" className="ms-auto rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-500">{f.tag}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })()}
                 {form.kind === 'agent' && form.agentType === 'person' && form.label.trim() && (() => {
                   // The parts of an Arabic name (kunya, ism, nasab, laqab, nisba), and the forms people search it by.
                   const p = parseArabicName(form.label);

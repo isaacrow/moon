@@ -41,7 +41,7 @@ test('a person: the thing at its address, the MADS authority at #authority, link
   assert.deepEqual(auth['@type'], ['madsrdf:Authority', 'madsrdf:PersonalName']);
   assert.equal(auth['madsrdf:authoritativeLabel'], 'الوردي، علي، 1913-1995');
   assert.deepEqual(auth['madsrdf:identifiesRWO'], { '@id': uri });
-  assert.deepEqual(auth['madsrdf:hasVariant'], [{ '@type': ['madsrdf:Variant', 'madsrdf:PersonalName'], 'madsrdf:variantLabel': 'Wardi, Ali, 1913-1995' }]);
+  assert.deepEqual(auth['madsrdf:hasVariant'], [{ '@type': ['madsrdf:Variant', 'madsrdf:PersonalName'], 'madsrdf:variantLabel': { '@value': 'Wardi, Ali, 1913-1995', '@language': 'und-Latn' } }], 'variants carry their script tag (S10)');
   assert.deepEqual(auth['madsrdf:hasExactExternalAuthority'], [{ '@id': 'http://id.loc.gov/authorities/names/n80000001' }]);
   assert.equal(auth['madsrdf:editorialNote'], 'Iraqi sociologist');
 });

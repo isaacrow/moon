@@ -13,6 +13,7 @@ import { toIso2709 } from '../../services/marc/marcRecord';
 import { Send, Download, X, ExternalLink, RefreshCw, Settings2, CheckCircle2, FileCode2, Database } from 'lucide-react';
 import { moonFetch } from '../utils/moonApi';
 import { bibframeToMarc } from '../../services/marc/bibframeToMarc';
+import { usePreferredNames } from '../utils/preferredNames';
 import { marcToText } from '../../services/marc/marcEditing';
 
 interface Link { instanceId: string; hrid?: string; sentAt: string; mode?: 'marc' | 'instance' }
@@ -83,10 +84,12 @@ export function FolioSendDialog({ recordId, rtl, onClose, onDownloadMarc }: {
   };
 
   // The record as MARC, from the same published BIBFRAME FOLIO gets.
+  // Linked people named by the forms a cataloguer preferred for the book's script (S10).
+  const named = usePreferredNames(preview?.document);
   const marc = useMemo(() => {
-    if (!preview?.document) return null;
-    try { return bibframeToMarc(preview.document, { recordId }); } catch { return null; }
-  }, [preview?.document, recordId]);
+    if (!named) return null;
+    try { return bibframeToMarc(named, { recordId }); } catch { return null; }
+  }, [named, recordId]);
 
   const send = async (opts: { linkTo?: string; createAnyway?: boolean } = {}) => {
     setBusy(true);
