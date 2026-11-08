@@ -53,15 +53,16 @@ const RELATION_LABELS: Record<string, [string, string]> = {
 const sourceOf = (uri: string) => (/id\.loc\.gov/.test(uri) ? 'LC' : /viaf\.org/.test(uri) ? 'VIAF' : /wikidata/.test(uri) ? 'Wikidata' : '');
 interface Version { version: number; label: string; changedBy?: string; changedAt: string }
 
+/** The css.glass recipe, as on the OPAC. */
 const GLASS: React.CSSProperties = {
-  background: 'rgba(255, 255, 255, 0.58)',
-  borderRadius: '24px',
-  boxShadow: '0 20px 50px -10px rgba(15, 23, 42, 0.08), inset 0 1px 1px 0 rgba(255, 255, 255, 0.9)',
-  backdropFilter: 'blur(24px) saturate(160%)',
-  WebkitBackdropFilter: 'blur(24px) saturate(160%)',
-  border: '1px solid rgba(255, 255, 255, 0.78)',
+  background: 'rgba(255, 255, 255, 0.57)',
+  borderRadius: '16px',
+  boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  border: '1px solid rgba(255, 255, 255, 1)',
 };
-const INPUT = 'w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-300';
+const INPUT = 'w-full rounded-xl border border-white bg-white/70 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:bg-white/90 focus:outline-none focus:ring-2 focus:ring-slate-300';
 
 const isAr = () => typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
 const t = (ar: string, en: string) => (isAr() ? ar : en);
@@ -339,7 +340,7 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
     <div className="min-h-screen px-4 md:px-8 py-6" dir={isAr() ? 'rtl' : 'ltr'}>
       <div className="max-w-7xl mx-auto space-y-5">
         <div className="flex flex-wrap items-center gap-3">
-          <button onClick={onBack} className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/70 border border-white text-sm font-semibold text-slate-700 hover:bg-white">
+          <button onClick={onBack} className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.57] border border-white shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-[20px] text-sm font-semibold text-slate-700 hover:bg-white">
             <ArrowLeft className="h-4 w-4 rtl:rotate-180" /> {t('لوحة التحكم', 'Dashboard')}
           </button>
           <h1 className="text-2xl font-black text-slate-900">{t('الكيانات', 'Entities')}</h1>
@@ -347,21 +348,21 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
           <button
             onClick={() => setCopyOpen((o) => !o)}
             aria-expanded={copyOpen}
-            className="ms-auto flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-white text-sm font-bold text-slate-800 hover:bg-white"
+            className="ms-auto flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.57] border border-white shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-[20px] text-sm font-bold text-slate-800 hover:bg-white"
           >
             <Download className="h-4 w-4" /> {t('انسخ من LC أو VIAF أو ويكي بيانات', 'Copy from LC, VIAF or Wikidata')}
           </button>
           <button
             onClick={() => setReconcileOpen((o) => !o)}
             aria-expanded={reconcileOpen}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-white text-sm font-bold text-slate-800 hover:bg-white"
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.57] border border-white shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-[20px] text-sm font-bold text-slate-800 hover:bg-white"
           >
             <Link2 className="h-4 w-4" /> {t('اربط بـ LC وVIAF وويكي بيانات', 'Link to LC, VIAF, Wikidata')}
           </button>
           <button
             onClick={() => setGroupsOpen((o) => !o)}
             aria-expanded={groupsOpen}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-white text-sm font-bold text-slate-800 hover:bg-white"
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.57] border border-white shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-[20px] text-sm font-bold text-slate-800 hover:bg-white"
           >
             <Layers className="h-4 w-4" /> {t('مجموعات الأعمال', 'Work groups')}
           </button>
@@ -451,7 +452,7 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
               role="tab"
               aria-selected={kind === k}
               onClick={() => setKind(k)}
-              className={`px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-colors ${kind === k ? 'bg-sky-700 text-white border-sky-700' : 'bg-white/70 text-slate-700 border-white hover:bg-white'}`}
+              className={`px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-colors ${kind === k ? 'bg-sky-700 text-white border-sky-700' : 'bg-white/[0.57] text-slate-700 border-white shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-[20px] hover:bg-white'}`}
             >
               {k === 'all' ? t('الكل', 'All') : L(KIND_LABELS[k])}
               {k !== 'all' && kind === 'all' && counts.get(k) ? <span className="ms-1.5 opacity-70">{counts.get(k)}</span> : null}
