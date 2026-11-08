@@ -609,6 +609,74 @@ function Shelf({ title, works, ctx, more }: { title: string; works: OpacWorkEnti
   );
 }
 
+interface AskReply { answer: string; sources: Array<{ id: string; title: string; url: string }>; searched: string[]; noSource: boolean }
+
+/**
+ * Ask Moon (S15): a reader asks in their own words; Moon answers only from its own records, with links to
+ * them and a line saying how it searched. Shown only when the server has it switched on.
+ */
+function AskMoon({ ctx }: { ctx: Ctx }) {
+  const [enabled, setEnabled] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [reply, setReply] = useState<AskReply | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    fetch(`${MOON_API}/ask`, { headers: moonHeaders() }).then(r => (r.ok ? r.json() : null)).then(j => setEnabled(!!j?.enabled)).catch(() => {});
+  }, []);
+  if (!enabled) return null;
+  const ask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (q.trim().length < 3 || busy) return;
+    setBusy(true); setError(''); setReply(null);
+    try {
+      const r = await fetch(`${MOON_API}/ask`, { method: 'POST', headers: moonHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ question: q.trim() }) });
+      const j = await r.json().catch(() => null);
+      if (!r.ok) setError(j?.error || t('تعذّر الجواب الآن.', 'Could not answer just now.'));
+      else setReply(j);
+    } catch { setError(t('تعذّر الاتصال.', 'Could not connect.')); }
+    setBusy(false);
+  };
+  // The answer cites records as [id]: each becomes a link to that record in the catalogue.
+  const withLinks = (text: string) => text.split(/(\[[^\]]+\])/).map((part, i) => {
+    const id = part.match(/^\[([^\]]+)\]$/)?.[1];
+    const src = id && reply?.sources.find(s => s.id === id);
+    return src ? <button key={i} className="inline-link" onClick={() => ctx.go({ mode: 'work', id: src.id })}>[{src.title}]</button> : <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+  if (!open) {
+    return (
+      <div className="quick">
+        <button className="chip" onClick={() => setOpen(true)}>✦ {t('اسأل مون بكلماتك', 'Ask Moon in your own words')}</button>
+      </div>
+    );
+  }
+  return (
+    <section className="glass" style={{ marginTop: 14, padding: '14px 16px', borderRadius: 16, textAlign: 'start' }} aria-label={t('اسأل مون', 'Ask Moon')}>
+      <form onSubmit={ask} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input value={q} onChange={e => setQ(e.target.value)} maxLength={500} dir="auto" autoFocus
+          placeholder={t('مثال: ما الكتب التي عندكم عن تاريخ بغداد؟', 'e.g. What books do you have on the history of Baghdad?')}
+          aria-label={t('سؤالك', 'Your question')}
+          style={{ flex: 1, minWidth: 220, font: 'inherit', padding: '8px 12px', borderRadius: 12, border: '1px solid #fff', background: 'rgba(255,255,255,.85)' }} />
+        <button className="btn-black" type="submit" disabled={busy || q.trim().length < 3}>{busy ? t('أبحث…', 'Searching…') : t('اسأل', 'Ask')}</button>
+      </form>
+      <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>{t('يجيب مون من تسجيلات فهرسه وحدها، بمساعدة Claude، ويذكر مصادره. تحقق دائماً من التسجيلة نفسها.', "Moon answers from its own catalogue records only, with Claude's help, and names its sources. Always check the record itself.")}</p>
+      {error && <p className="muted" role="alert" style={{ marginTop: 8 }}>{error}</p>}
+      {reply && (
+        <div style={{ marginTop: 10 }} aria-live="polite">
+          <p dir="auto" style={{ margin: 0 }}>{withLinks(reply.answer)}</p>
+          {reply.sources.length > 0 && (
+            <ul style={{ margin: '8px 0 0', paddingInlineStart: 18 }}>
+              {reply.sources.map(s => <li key={s.id}><button className="inline-link" dir="auto" onClick={() => ctx.go({ mode: 'work', id: s.id })}>{s.title}</button></li>)}
+            </ul>
+          )}
+          <p className="muted" style={{ fontSize: 12, marginTop: 6 }} dir="auto">{t('كيف بحثت: ', 'How I searched: ')}{reply.searched.map(x => `«${x}»`).join(t('، ', ', '))}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Home({ ctx }: { ctx: Ctx }) {
   const works = useMemo(() => wolfMoonOpacService.getAllWorks(), [ctx.rev]);
   const recent = useMemo(() => [...works].sort((a, b) => (b.modifiedAt || '').localeCompare(a.modifiedAt || '')).slice(0, 12), [works]);
@@ -630,6 +698,7 @@ function Home({ ctx }: { ctx: Ctx }) {
         <h1>{t('اعثر على كتابك التالي', 'Find your next book')}</h1>
         <p className="hero-sub">{t(`ابحث في ${works.length} كتاباً بالعنوان أو المؤلف أو الموضوع، واعرف أين تجده في المكتبة.`, `Search ${works.length} books by title, author or subject, and find where they are in the library.`)}</p>
         <SearchBox ctx={ctx} />
+        <AskMoon ctx={ctx} />
         {categories.length > 0 && (
           <div className="quick" aria-label={t('الفئات', 'Categories')}>
             <span className="quick-lbl">{t('الفئات', 'Categories')}</span>

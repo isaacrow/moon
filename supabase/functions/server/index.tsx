@@ -42,6 +42,8 @@ import { changeFeed } from "./changeFeed.tsx";
 import { handleMcp } from "./mcp.tsx";
 import { vocabDocument } from "./specialVocab.tsx";
 import { openRecords, cleanLicence, voidDocument, voidTurtle } from "./licence.tsx";
+import { askMoon, askRecordOf, dayKey, underCap, MAX_QUESTION } from "./askMoon.tsx";
+import { askEnabled, planWithClaude, answerWithClaude } from "./askClaude.tsx";
 import * as labelCache from "./labelCache.tsx";
 
 /** One run of the label cache refresh (S19): LC's change feed and Wikidata's modified times since the last run. */
@@ -1015,6 +1017,37 @@ async function sparqlEndpoint(c: any) {
   }
 }
 app.get("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
+
+// Ask Moon (Phase 13 S15): readers ask; Claude answers only from Moon's published records, with links.
+// Off until the ANTHROPIC_API_KEY secret is set; at most MOON_ASK_DAILY_LIMIT questions a day (default 200).
+const ASK_CORS = { "Access-Control-Allow-Origin": "*" };
+app.get("/make-server-49c0e13c/ask", (c) => c.json({ enabled: askEnabled() }, 200, ASK_CORS));
+app.post("/make-server-49c0e13c/ask", async (c) => {
+  if (!askEnabled()) return c.json({ error: "Ask Moon is not switched on" }, 503, ASK_CORS);
+  const body = await c.req.json().catch(() => ({}));
+  const question = typeof body.question === "string" ? body.question.trim() : "";
+  if (question.length < 3 || question.length > MAX_QUESTION) return c.json({ error: `A question of 3 to ${MAX_QUESTION} characters` }, 400, ASK_CORS);
+  const key = dayKey(new Date());
+  const count = Number(await kv.get(key).catch(() => 0)) || 0;
+  const limit = Number(Deno.env.get("MOON_ASK_DAILY_LIMIT")) || 200;
+  if (!underCap(count, limit)) return c.json({ error: "Ask Moon has answered all the questions it can today; please try tomorrow or ask a librarian." }, 429, ASK_CORS);
+  await kv.set(key, String(count + 1)).catch(() => {});
+  try {
+    const reply = await askMoon(question, {
+      plan: planWithClaude,
+      answer: answerWithClaude,
+      search: async (query) => {
+        const found = await recordStore.searchRecords({ query, published: true, limit: 6 });
+        return openRecords(found.records as any[]).map((r: any) => askRecordOf(r));
+      },
+    });
+    console.log(`[ask] ${reply.noSource ? "no source" : `${reply.sources.length} sources`} (${count + 1}/${limit} today)`);
+    return c.json(reply, 200, ASK_CORS);
+  } catch (error) {
+    console.error("Ask Moon error:", error);
+    return c.json({ error: "Ask Moon could not answer just now" }, 500, ASK_CORS);
+  }
+});
 
 // The dataset described in VoID (S23): https://mooon.site/resource/void (JSON-LD), void.ttl (Turtle).
 async function voidStats() {
