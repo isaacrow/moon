@@ -366,7 +366,7 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
           >
             <Layers className="h-4 w-4" /> {t('مجموعات الأعمال', 'Work groups')}
           </button>
-          <button onClick={startNew} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm font-bold hover:bg-slate-800">
+          <button onClick={startNew} className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.57] border border-white shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-[20px] text-slate-900 text-sm font-bold hover:bg-white">
             <Plus className="h-4 w-4" /> {t('كيان جديد', 'New entity')}
           </button>
         </div>
@@ -452,7 +452,7 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
               role="tab"
               aria-selected={kind === k}
               onClick={() => setKind(k)}
-              className={`px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-colors ${kind === k ? 'bg-sky-700 text-white border-sky-700' : 'bg-white/[0.57] text-slate-700 border-white shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-[20px] hover:bg-white'}`}
+              className={`px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-colors ${kind === k ? 'bg-white/[0.57] text-slate-900 font-bold border-white shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-[20px] ring-2 ring-slate-900/70' :'bg-white/[0.57] text-slate-700 border-white shadow-[0_4px_30px_rgba(0,0,0,0.1)] backdrop-blur-[20px] hover:bg-white'}`}
             >
               {k === 'all' ? t('الكل', 'All') : L(KIND_LABELS[k])}
               {k !== 'all' && kind === 'all' && counts.get(k) ? <span className="ms-1.5 opacity-70">{counts.get(k)}</span> : null}
