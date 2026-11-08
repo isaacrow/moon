@@ -271,7 +271,7 @@ export function ContributionEditorModal({ value, onChange, onClose, triggerRect 
         </div>
 
         <div className="space-y-3">
-          <AuthoritySelect
+          <AuthoritySelect isLight
             label={t('ont.agent')}
             value={contribution.agent}
             onChange={(agent) => setContribution({ ...contribution, agent })}
@@ -387,7 +387,7 @@ export function ProvisionActivityEditorModal({ value, onChange, onClose, trigger
         </div>
 
         <div className="space-y-3">
-          <AuthoritySelect
+          <AuthoritySelect isLight
             label={t('ont.publisher')}
             value={provision.agent}
             onChange={(agent) => setProvision({ ...provision, agent })}
@@ -398,7 +398,7 @@ export function ProvisionActivityEditorModal({ value, onChange, onClose, trigger
             allowCustom
           />
 
-          <AuthoritySelect
+          <AuthoritySelect isLight
             label={t('ont.publicationPlace')}
             value={provision.place}
             onChange={(place) => setProvision({ ...provision, place })}
@@ -664,7 +664,7 @@ export function DissertationEditorModal({ value, onChange, onClose, triggerRect 
 
         <div>
           <label className="block text-xs font-semibold mb-1.5" style={{ color: "rgba(0,0,0,0.6)" }}>Granting Institution</label>
-          <AuthoritySelect
+          <AuthoritySelect isLight
             label=""
             value={institution}
             onChange={setInstitution}
