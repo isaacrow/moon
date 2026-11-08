@@ -38,6 +38,7 @@ import { profileToDctap, dctapToProfile } from "./dctap.tsx";
 import { findNewSampleBooks } from "./sampleBooks.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
 import { changeFeed } from "./changeFeed.tsx";
+import { handleMcp } from "./mcp.tsx";
 import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
 import { reconcile, manifest } from "./reconcile.tsx";
@@ -960,6 +961,44 @@ async function sparqlEndpoint(c: any) {
   }
 }
 app.get("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
+
+// Moon's MCP server (Phase 13 S20): https://mooon.site/resource/mcp, MCP Streamable HTTP with plain JSON
+// replies. Read tools are open; create_draft needs a cataloguer's X-Moon-Session and only ever saves a draft.
+const instanceUriOf = (r: { id: string; document?: any }) =>
+  (Array.isArray(r.document?.["@graph"]) ? r.document["@graph"] : []).find((n: any) => ([] as any[]).concat(n?.["@type"] || []).some((t: any) => String(t).endsWith("Instance")))?.["@id"]
+  || `${linkedData.BASE_URI}/instance/${r.id}`;
+app.post("/make-server-49c0e13c/resource/mcp", async (c) => {
+  const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "Mcp-Session-Id" };
+  const msg = await c.req.json().catch(() => undefined);
+  if (msg === undefined) return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400, cors);
+  if (Array.isArray(msg)) return c.json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Send one message per request" } }, 400, cors);
+  const session = await getSession(c).catch(() => null);
+  const reply = await handleMcp(msg, {
+    user: session?.username || null,
+    search: async (query, limit) => {
+      const found = await recordStore.searchRecords({ query, published: true, limit });
+      return found.records.map((r: any) => ({ id: r.id, title: r.title, uri: instanceUriOf(r) }));
+    },
+    record: async (id) => {
+      const r = await recordStore.getPublishedRecord(id);
+      return r ? { id: r.id, title: r.title, document: linkedData.publishedDocument(r as any) } : null;
+    },
+    sparql: async (query) => (await sparqlStore.runQuery(query, { format: "json", accept: "application/sparql-results+json", loadNTriples: loadPublishedNTriples })).body,
+    validate: (document) => ({ missing: missingForPublish(document) }),
+    createDraft: async ({ title, document, agent, note }) => {
+      const id = `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const now = new Date().toISOString();
+      const version = await recordStore.saveRecord({
+        id, title, document, status: "pending-review", cataloger: session!.username, createdAt: now, saved: now,
+        metadata: { status: "pending-review", provenance: { via: "mcp", agent, by: session!.username, at: now, note } },
+      }, session!.username, `Draft from ${agent} (MCP): ${note}`.slice(0, 500));
+      return { id, version };
+    },
+  }, String(msg?.params?.clientInfo?.name || c.req.header("User-Agent") || "an MCP client").slice(0, 80));
+  if (reply === null) return c.body(null, 202, cors);
+  return c.json(reply, 200, cors);
+});
+app.get("/make-server-49c0e13c/resource/mcp", (c) => c.json({ error: "Moon's MCP server takes JSON-RPC as POST (Streamable HTTP, no SSE stream). See https://mooon.site/api.html#mcp" }, 405, { Allow: "POST", "Access-Control-Allow-Origin": "*" }));
 app.post("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
 
 // 📦 Data dump: every published record in one file, https://mooon.site/resource/dump.jsonld or dump.nt

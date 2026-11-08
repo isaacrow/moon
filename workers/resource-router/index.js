@@ -15,15 +15,17 @@ export default {
     if (url.pathname.startsWith('/live/')) return handleLive(request, env);
     // The SPARQL endpoint also takes POSTed queries (and the browser's CORS preflight for them).
     const isSparql = url.pathname === '/resource/sparql';
-    if (isSparql && request.method === 'OPTIONS') {
+    // Moon's MCP server for AI agents (JSON-RPC over POST; a cataloguer's X-Moon-Session for drafts).
+    const isMcp = url.pathname === '/resource/mcp';
+    if ((isSparql || isMcp) && request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Accept',
+        'Access-Control-Allow-Headers': isMcp ? 'Content-Type, Accept, X-Moon-Session, Mcp-Protocol-Version, Mcp-Session-Id' : 'Content-Type, Accept',
         'Access-Control-Max-Age': '86400',
       } });
     }
-    const allowed = isSparql ? ['GET', 'HEAD', 'POST'] : ['GET', 'HEAD'];
+    const allowed = isSparql || isMcp ? ['GET', 'HEAD', 'POST'] : ['GET', 'HEAD'];
     if (!allowed.includes(request.method)) {
       return new Response('Method not allowed', { status: 405, headers: { Allow: allowed.join(', ') } });
     }
@@ -42,7 +44,9 @@ export default {
       body: request.method === 'POST' ? await request.text() : undefined,
       headers: {
         Accept: request.headers.get('Accept') || '*/*',
-        ...(request.method === 'POST' ? { 'Content-Type': request.headers.get('Content-Type') || 'application/sparql-query' } : {}),
+        ...(request.method === 'POST' ? { 'Content-Type': request.headers.get('Content-Type') || (isMcp ? 'application/json' : 'application/sparql-query') } : {}),
+        ...(isMcp && request.headers.get('X-Moon-Session') ? { 'X-Moon-Session': request.headers.get('X-Moon-Session') } : {}),
+        ...(isMcp && request.headers.get('Mcp-Protocol-Version') ? { 'Mcp-Protocol-Version': request.headers.get('Mcp-Protocol-Version') } : {}),
         // The public key the website itself uses; the server decides what may be shown (published only).
         Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
         apikey: env.SUPABASE_ANON_KEY,
