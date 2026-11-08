@@ -209,6 +209,7 @@ export function MarcEditor({ workData, instanceData, uriSet, language, onApply }
       <div className="xl:col-span-3 rounded-2xl p-4 space-y-3" style={box}>
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-black text-white me-auto">MARC 21 <span className="text-white/50 font-normal">{t('— فهرسة مع تحويل فوري إلى BIBFRAME', '— cataloguing with instant BIBFRAME')}</span></h3>
+          <a href="/marc.html" target="_blank" rel="noreferrer" className="text-xs text-white/70 hover:text-white underline">{t('أين يذهب كل حقل؟', 'Where does each field go?')}</a>
           <div className="flex gap-1 p-1 text-sm" style={LIQUID}>
             <button type="button" onClick={() => setView('fields')} aria-pressed={view === 'fields'} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white ${view === 'fields' ? 'bg-white/30 font-semibold' : 'opacity-75'}`}><Rows3 className="h-4 w-4" />{t('حقول', 'Fields')}</button>
             <button type="button" onClick={() => setView('text')} aria-pressed={view === 'text'} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white ${view === 'text' ? 'bg-white/30 font-semibold' : 'opacity-75'}`}><FileCode2 className="h-4 w-4" />{t('نص', 'Text')}</button>
