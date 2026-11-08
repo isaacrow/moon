@@ -556,3 +556,12 @@ details.panel[open] > :not(summary) { animation: rise 0.35s var(--ease-out) both
 .chain-person .role { opacity: 0.65; }
 .chain-date { font-size: 13px; margin-top: 2px; }
 .chain-text { margin: 6px 0 0; padding: 8px 12px; border-inline-start: 3px solid rgba(0, 0, 0, 0.2); background: rgba(255, 255, 255, 0.45); border-radius: 8px; font-size: 14px; }
+
+/* S13: A–Z bar in both scripts, and hover cards on names and subjects. */
+.az { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 14px; }
+.az button { min-width: 30px; height: 30px; padding: 0 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.9); background: rgba(255,255,255,.6); font-size: 13px; color: var(--ink-1, #111); cursor: pointer; }
+.az button:hover:not(:disabled) { background: rgba(255,255,255,.95); }
+.az button.on, .az button.on:hover:not(:disabled) { background: #111; color: #fff; border-color: #111; }
+.az button:disabled { opacity: .3; cursor: default; }
+.hc { position: relative; display: inline-block; }
+.hc-card { position: absolute; inset-inline-start: 0; top: calc(100% + 6px); z-index: 40; display: flex; flex-direction: column; gap: 4px; width: max-content; max-width: 280px; padding: 12px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; text-align: start; box-shadow: 0 10px 30px rgba(0,0,0,.12); background: rgba(255,255,255,.94); }

@@ -34,7 +34,7 @@ import { summary as eventSummary, EVENT_KINDS, ROLES, type TransmissionEvent } f
 import { findPersonQid, splitHeading, type PersonClues } from './personPhoto';
 import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, clusterWorks, type InfoCard as InfoCardData } from './linkedEntities';
 import type { WorkDecision } from '../services/workClustering';
-import { whatItIs, formatChips, editionLines, exactMatch } from './plainWords';
+import { whatItIs, formatChips, editionLines, exactMatch, alphaIndex, letterOf, filingKey } from './plainWords';
 import './opac.css';
 
 type View =
@@ -1179,7 +1179,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
                   {people.slice(0, 4).map((p, i) => (
                     <React.Fragment key={p.id || i}>
                       {i > 0 && t('، ', ', ')}
-                      <button onClick={() => ctx.go({ mode: 'person', key: p.id })}>{personName(p)}</button>
+                      <HoverCard kind="person" k={p.id}><button onClick={() => ctx.go({ mode: 'person', key: p.id })}>{personName(p)}</button></HoverCard>
                       {roleLabel(p.role) && <span className="role"> ({roleLabel(p.role)})</span>}
                     </React.Fragment>
                   ))}
@@ -1215,7 +1215,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
                   <div><span className="lbl">{t('الفئة', 'Category')}</span>{work.genreForm.map(g => <button key={g} className="chip" onClick={() => searchFor(g)}>{g}</button>)}</div>
                 )}
                 {work.subjects.filter(s => isReadableLabel(s.label)).length > 0 && (
-                  <div><span className="lbl">{t('الموضوع', 'Subject')}</span>{work.subjects.filter(s => isReadableLabel(s.label)).map(s => <button key={s.id} className="chip" onClick={() => ctx.go({ mode: 'subject', key: s.id })}>{s.label}</button>)}</div>
+                  <div><span className="lbl">{t('الموضوع', 'Subject')}</span>{work.subjects.filter(s => isReadableLabel(s.label)).map(s => <HoverCard key={s.id} kind="subject" k={s.id}><button className="chip" onClick={() => ctx.go({ mode: 'subject', key: s.id })}>{s.label}</button></HoverCard>)}</div>
                 )}
               </div>
             ) : null}
@@ -1734,6 +1734,54 @@ function useFilter<T>(list: T[], text: (t: T) => string) {
   return { q, setQ, out };
 }
 
+/** The headings under one letter (or all), in filing order: without the article, Arabic first. */
+function byLetter<T>(list: T[], label: (x: T) => string, letter: string): T[] {
+  const chosen = letter ? list.filter(x => letterOf(label(x)) === letter) : list;
+  return letter ? [...chosen].sort((a, b) => filingKey(label(a)).localeCompare(filingKey(label(b)), 'ar')) : chosen;
+}
+
+/** The A–Z bar in both scripts (S13): Arabic letters, then Latin; letters with no heading are greyed. */
+function AZBar({ labels, letter, onLetter }: { labels: string[]; letter: string; onLetter: (l: string) => void }) {
+  const idx = useMemo(() => alphaIndex(labels), [labels]);
+  return (
+    <nav className="az" aria-label={t('تصفّح بالحرف', 'Browse by letter')}>
+      <button className={!letter ? 'on' : ''} aria-pressed={!letter} onClick={() => onLetter('')}>{t('الكل', 'All')}</button>
+      {idx.map(({ letter: l, count }) => (
+        <button key={l} className={letter === l ? 'on' : ''} aria-pressed={letter === l} disabled={!count}
+          title={t(`${count} تحت «${l}»`, `${count} under “${l}”`)} onClick={() => onLetter(letter === l ? '' : l)}>{l}</button>
+      ))}
+    </nav>
+  );
+}
+
+/** A short card on a name or subject (S13), shown on hover or keyboard focus, from the catalogue's own data. */
+function HoverCard({ kind, k, children }: { kind: 'person' | 'subject'; k: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const timer = React.useRef<number | undefined>(undefined);
+  const info: any = useMemo(() => (open ? wolfMoonOpacService.getHoverInfo(kind, k) : null), [open, kind, k]);
+  const show = () => { window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(true), 350); };
+  const hide = () => { window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setOpen(false), 150); };
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const facts = info ? [
+    info.subtitle && info.subtitle !== info.title ? info.subtitle : '',
+    info.lifespan || '',
+    kind === 'subject' && info.broader ? t(`أعمّ: ${info.broader}`, `Broader: ${info.broader}`) : '',
+  ].filter(Boolean) : [];
+  return (
+    <span className="hc" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
+      {children}
+      {open && info && (
+        <span className="hc-card glass" role="tooltip">
+          <b dir="auto">{info.title}</b>
+          {facts.map((x: string) => <span key={x} className="muted" dir="auto">{x}</span>)}
+          <span>{info.worksCount === 1 ? t('كتاب واحد في الفهرس', '1 book in the catalogue') : t(`${info.worksCount} كتب في الفهرس`, `${info.worksCount} books in the catalogue`)}</span>
+          {info.bio && <span className="muted" dir="auto">{info.bio}</span>}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function FilterField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
   return (
     <div className="search-field glass">
@@ -1745,7 +1793,10 @@ function FilterField({ value, onChange, label }: { value: string; onChange: (v: 
 
 function AuthorsPage({ ctx }: { ctx: Ctx }) {
   const all = useMemo(() => wolfMoonOpacService.getAllPersons(), [ctx.rev]);
-  const { q, setQ, out } = useFilter(all, p => `${p.nameArabic} ${p.name} ${p.nameEnglish || ''}`);
+  const { q, setQ, out: found } = useFilter(all, p => `${p.nameArabic} ${p.name} ${p.nameEnglish || ''}`);
+  const [letter, setLetter] = useState('');
+  const label = (p: OpacPersonEntity) => p.nameArabic || p.name || '';
+  const out = useMemo(() => byLetter(found, label, letter), [found, letter]);
   return (
     <div className="wrap">
       <div className="page-head">
@@ -1753,6 +1804,7 @@ function AuthorsPage({ ctx }: { ctx: Ctx }) {
         <h1 className="page-title">{t('المؤلفون', 'Authors')}</h1>
         <p className="lede">{t(`${all.length} مؤلفاً ومساهماً في الفهرس`, `${all.length} authors and contributors in the catalogue`)}</p>
         <div className="dir-tools"><FilterField value={q} onChange={setQ} label={t('ابحث عن مؤلف', 'Find an author')} /></div>
+        <AZBar labels={found.map(label)} letter={letter} onLetter={setLetter} />
       </div>
       <section className="section" style={{ marginTop: 28 }}>
         {out.length ? <div className="people">{out.map((p, i) => <PersonCard key={p.id} p={p} ctx={ctx} i={i} />)}</div>
@@ -1764,7 +1816,9 @@ function AuthorsPage({ ctx }: { ctx: Ctx }) {
 
 function SubjectsPage({ ctx }: { ctx: Ctx }) {
   const all = useMemo(() => wolfMoonOpacService.getAllSubjects().filter(s => isReadableLabel(s.label)), [ctx.rev]);
-  const { q, setQ, out } = useFilter(all, s => `${s.label} ${s.labelEnglish || ''}`);
+  const { q, setQ, out: found } = useFilter(all, s => `${s.label} ${s.labelEnglish || ''}`);
+  const [letter, setLetter] = useState('');
+  const out = useMemo(() => byLetter(found, s => s.label, letter), [found, letter]);
   return (
     <div className="wrap">
       <div className="page-head">
@@ -1772,6 +1826,7 @@ function SubjectsPage({ ctx }: { ctx: Ctx }) {
         <h1 className="page-title">{t('الموضوعات', 'Subjects')}</h1>
         <p className="lede">{t(`${all.length} موضوعاً`, `${all.length} subjects`)}</p>
         <div className="dir-tools"><FilterField value={q} onChange={setQ} label={t('ابحث عن موضوع', 'Find a subject')} /></div>
+        <AZBar labels={found.map(s => s.label)} letter={letter} onLetter={setLetter} />
       </div>
       <section className="section" style={{ marginTop: 28 }}>
         {out.length ? (

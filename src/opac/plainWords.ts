@@ -92,3 +92,28 @@ export function exactMatch(w: {
   ].filter(Boolean).join(' ')).split(' ').flatMap((x) => [x, x.replace(/^(و|ف|ب)?ال(?=..)/, ''), x.replace(/^(و|ف|ب)(?=...)/, '')]));
   return words.every((q) => hay.has(q) || hay.has(q.replace(/^ال(?=..)/, '')));
 }
+
+// ---- A–Z browse in both scripts ----
+
+const AR_LETTERS = 'ابتثجحخدذرزسشصضطظعغفقكلمنهوي'.split('');
+const LA_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+/** The word a heading files under: Arabic folded, without "ال", "al-", "the" or a diacritic at the start. */
+export function filingKey(label: string): string {
+  const s = normalizeArabic(String(label || '')).normalize('NFKD').replace(/[̀-ͯʻʼʿʾ'’`"«»(\[]/g, '').trim();
+  return s.replace(/^(ال(?=..)|al-|el-|the\s+|a\s+|an\s+)/i, '').replace(/^[ٱأإآ]/, 'ا').replace(/^ى/, 'ي').replace(/^ة/, 'ه').trim();
+}
+
+/** The letter a heading files under: one of the 28 Arabic letters, A–Z, or "#" for anything else. */
+export function letterOf(label: string): string {
+  const c = filingKey(label).charAt(0).toUpperCase();
+  return AR_LETTERS.includes(c) || LA_LETTERS.includes(c) ? c : '#';
+}
+
+/** The A–Z bar: every letter of both alphabets, with how many headings file under it. */
+export function alphaIndex(labels: string[]): Array<{ letter: string; count: number }> {
+  const n = new Map<string, number>();
+  for (const l of labels) { const k = letterOf(l); n.set(k, (n.get(k) || 0) + 1); }
+  return [...AR_LETTERS, ...LA_LETTERS, '#'].map((letter) => ({ letter, count: n.get(letter) || 0 }))
+    .filter((x) => x.letter !== '#' || x.count > 0);
+}
