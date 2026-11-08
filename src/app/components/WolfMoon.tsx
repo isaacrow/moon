@@ -90,6 +90,7 @@ import { RecordCoverPanel } from "./RecordCoverPanel";
 import { CopiesPanel } from "./CopiesPanel";
 import { RomanizePanel } from "./RomanizePanel";
 import { MajmuPanel } from "./MajmuPanel";
+import { SubjectFinderPanel } from "./SubjectFinderPanel";
 import { MaqamPanel, isMusic } from "./MaqamPanel";
 import { SIMPLE_FIELDS, readSimpleMode, writeSimpleMode, isPractice, keepPractice } from "../utils/editorModes";
 import { LICENCES } from "../../../supabase/functions/server/licence.tsx";
@@ -2024,6 +2025,10 @@ export default function WolfMoon({
             </div>
             <div>
               <MajmuPanel work={workData} language={language} onChange={(w) => { setWorkData(w); setSaveStatus("unsaved"); }} />
+            </div>
+            <div>
+              <SubjectFinderPanel work={workData} instance={instanceData} recordId={storageId} language={language}
+                onAdd={(subject) => { setWorkData((prev: any) => ({ ...prev, "bf:subject": [...(Array.isArray(prev["bf:subject"]) ? prev["bf:subject"] : prev["bf:subject"] ? [prev["bf:subject"]] : []), subject] })); setSaveStatus("unsaved"); }} />
             </div>
             <div>
               <div className="p-3 space-y-1.5" style={{ borderRadius: 16, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.25)' }} dir={language === "ar" ? "rtl" : "ltr"}>
