@@ -152,6 +152,16 @@ https://mooon.site/resource/dump.nt</code></pre>
 https://mooon.site/resource/changes?page=1</code></pre>
   </section>
 
+  <section class="card glass" id="mcp">
+    <h2>خادم MCP للوكلاء الذكيين</h2>
+    <p>يستطيع وكيل ذكي (Claude أو أي عميل يدعم Model Context Protocol) أن يبحث في مون ويقرأ التسجيلات ويشغّل SPARQL ويفحص وصفاً قبل نشره. القراءة مفتوحة كالفهرس. الأداة الوحيدة التي تكتب، <code>create_draft</code>، تحتاج جلسة مفهرس مسجّل (<code>X-Moon-Session</code>) ولا تصنع إلا مسودة تنتظر المراجعة، وتحمل اسم الوكيل ومن طلبها وما فعله؛ لا تنشر أي أداة ولا تحذف ولا تعدّل.</p>
+<pre><code>https://mooon.site/resource/mcp
+
+الأدوات: search_records · get_record · sparql · validate_record · create_draft</code></pre>
+    <p>النقل: Streamable HTTP، طلبات JSON-RPC بـ POST وردود JSON. مثال:</p>
+<pre><code>claude mcp add --transport http moon https://mooon.site/resource/mcp</code></pre>
+  </section>
+
   <section class="card glass" id="web">
     <h2>محركات البحث</h2>
     <p>صفحة كل كتاب في الفهرس تحمل وصفاً بصيغة <code>schema.org/Book</code> بلغة JSON-LD، ورابطاً قانونياً (canonical). وخريطة الموقع تسرد كل الكتب المنشورة:</p>
