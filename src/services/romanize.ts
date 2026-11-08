@@ -113,3 +113,39 @@ export async function romanizeAll(texts: string[], endpoint: string, headers: Re
   }
   return texts.map((t) => results.get(t) || '');
 }
+
+export interface ArabizeCandidate { path: Array<string | number>; node: string; field: string; latin: string }
+
+/**
+ * The other way (S9): every ALA-LC romanized value in the romanized properties that has no Arabic-script
+ * partner yet (records copied from LC or OCLC, MARC without its 880s), so its Arabic can be proposed.
+ */
+export function findArabizable(node: any, nodeName: string): ArabizeCandidate[] {
+  const out: ArabizeCandidate[] = [];
+  const alaLc = (s: string) => /[āīūḥṣḍṭẓʻʼá]/i.test(s) && !ARABIC.test(s);
+  const walk = (v: any, path: Array<string | number>, field: string | null, labelOk: boolean) => {
+    if (Array.isArray(v)) {
+      const hasArabicPartner = field && v.some((x) => { const t = textOf(x); return t !== null && ARABIC.test(t); });
+      v.forEach((x, i) => {
+        const t = textOf(x);
+        if (t !== null) {
+          if (field && !hasArabicPartner && alaLc(t.trim())) out.push({ path: [...path, i], node: nodeName, field, latin: t.trim() });
+        } else walk(x, [...path, i], field, labelOk);
+      });
+      return;
+    }
+    if (!v || typeof v !== 'object') return;
+    for (const [k, x] of Object.entries(v)) {
+      if (k.startsWith('@')) continue;
+      const name = keyName(k);
+      if (SKIPPED_KEYS.has(name)) continue;
+      const f = ROMANIZED_KEYS.has(name) && (name !== 'label' || labelOk) ? name : null;
+      const t = textOf(x);
+      if (t !== null) {
+        if (f && alaLc(t.trim())) out.push({ path: [...path, k], node: nodeName, field: name, latin: t.trim() });
+      } else walk(x, [...path, k], f, labelOk || LABEL_PARENTS.has(name));
+    }
+  };
+  walk(node, [], null, false);
+  return out;
+}
