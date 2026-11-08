@@ -16,6 +16,7 @@
  */
 
 import { AISuggestionProfile, saveAuthorityProfileToMoonSystem } from './authorFinderService';
+import { containedWorks as readContainedWorks, type ContainedWork } from './majmu';
 import { getAllRecords } from '../app/utils/recordStorageBackend';
 import { nodeToCopy, hasCopyData } from './itemCopies';
 import { normalizeForOpac } from '../opac/normalizeGraph';
@@ -258,6 +259,8 @@ export interface OpacWorkEntity {
   notation?: string;
   adminMetadata?: string;
   relatedWorks?: OpacBibframeRelation[];
+  /** The works this volume contains (a majmūʿ, S12), from bf:hasPart. */
+  containedWorks?: ContainedWork[];
   holdingItems?: OpacHoldingItem[];
   rawBibframeTriples?: Array<{ subject: string; predicate: string; object: string; objectUri?: string }>;
 
@@ -1418,6 +1421,7 @@ class WolfMoonOpacService {
         notation: workNode['notation'] || instanceNode['notation'],
         adminMetadata: workNode['adminMetadata'] || 'Wolf Moon OPAC | BIBFRAME 2.0',
         relatedWorks: relatedWorks,
+        containedWorks: readContainedWorks({ 'bf:hasPart': ([] as any[]).concat(workNode['bf:hasPart'] || workNode['hasPart'] || []).map(deref) }),
         holdingItems: workHoldingItems,
         rawBibframeTriples: rawTriples,
         source: recordObj.source || 'wolf-moon',
@@ -1725,6 +1729,12 @@ class WolfMoonOpacService {
         } else if (summaryNorm.includes(qNorm)) {
           reason = `تطابق في الملخص الفكري والمضمون`;
           matchScore = 30;
+        }
+        // A work inside this volume (a majmūʿ) is found by its own title and author (S12).
+        const inside = matchScore === 0 && (w.containedWorks || []).find(c => normalizeArabic(`${c.title} ${c.creator || ''}`).includes(qNorm));
+        if (inside) {
+          reason = `في هذا المجلد: "${inside.title}"`;
+          matchScore = 65;
         }
 
         if (matchScore > 0) {

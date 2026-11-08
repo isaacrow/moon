@@ -1282,6 +1282,23 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
 
           <TransmissionChain copies={copies} />
 
+          {(work.containedWorks || []).length > 0 && (
+            <section className="panel glass rise" aria-labelledby="h-majmu">
+              <h2 id="h-majmu">{t('الأعمال في هذا المجلد', 'Works in this volume')} <span className="count-n">{work.containedWorks!.length}</span></h2>
+              <div className="copies">
+                {work.containedWorks!.map((c, i) => {
+                  const own = wolfMoonOpacService.getAllWorks().find(w => w.id !== work.id && normalizeArabic(w.title) === normalizeArabic(c.title));
+                  return (
+                    <div key={i} className="copy">
+                      <span className="t" dir="auto">{own ? <button className="inline-link" onClick={() => ctx.go({ mode: 'work', id: own.id })}>{c.title}</button> : c.title}</span>
+                      <span className="m" dir="auto">{[c.creator, c.locator].filter(Boolean).join(' · ')}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {work.instances.length > 1 && (
             <section className="panel glass rise" aria-labelledby="h-eds-t" id="h-eds">
               <h2 id="h-eds-t">{t('طبعات هذا العمل', 'Editions of this work')}</h2>

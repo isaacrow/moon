@@ -310,6 +310,18 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     if (!key || !/^(130|240|7(00|10|11|30))$/.test(key.tag)) continue;
     push({ ...key, subfields: [...key.subfields, ...[sf('1', uri(hub))].filter((x): x is Subfield => !!x)] });
   }
+  // Works contained in this volume entered in Moon (a majmūʿ, S12): an analytical added entry for each,
+  // 700 _2 $a author $t title, or 740 02 $a title when no author is given (as LC's bibframe2marc does).
+  for (const h of all(get(work, 'hasPart'))) {
+    const part = resolve(h, graph);
+    if (!part || typeof part !== 'object' || part['bflc:marcKey']) continue;
+    const title = get(get(part, 'title'), 'mainTitle') ?? part['rdfs:label'];
+    if (!text(title)) continue;
+    const agent = resolve(get(all(get(part, 'contribution'))[0], 'agent'), graph);
+    const link = sf('0', uri(agent));
+    if (agent && text(agent)) pfield('700', '1', '2', [ps('a', agent), ps('t', title), link ? [link[0], link[1]] : null]);
+    else pfield('740', '0', '2', [ps('a', title)]);
+  }
 
   // The Work this Instance is an instance of, by its URI (758), as LC's bibframe2marc writes it.
   const workUri = typeof work['@id'] === 'string' && /^https?:\/\//.test(work['@id']) ? work['@id'] : '';

@@ -89,6 +89,7 @@ import { otherPeople, type LivePeer } from "../utils/livePeers";
 import { RecordCoverPanel } from "./RecordCoverPanel";
 import { CopiesPanel } from "./CopiesPanel";
 import { RomanizePanel } from "./RomanizePanel";
+import { MajmuPanel } from "./MajmuPanel";
 import { ItemCopy, nodeToCopy, copyToNode } from "../../services/itemCopies";
 import { findIsbn, uploadCover } from "../utils/recordCovers";
 import { RecordCommentsContext, useRecordComments } from "./FieldComments";
@@ -1958,6 +1959,9 @@ export default function WolfMoon({
             <div>
               <RomanizePanel work={workData} instance={instanceData} language={language}
                 onApply={(w, inst) => { setWorkData(w); setInstanceData(inst); setSaveStatus("unsaved"); }} />
+            </div>
+            <div>
+              <MajmuPanel work={workData} language={language} onChange={(w) => { setWorkData(w); setSaveStatus("unsaved"); }} />
             </div>
           </div>
         )}
