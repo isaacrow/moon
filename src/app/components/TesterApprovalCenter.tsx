@@ -35,58 +35,52 @@ interface TesterApprovalCenterProps {
 
 // ---- Liquid glass surfaces --------------------------------------------------------------
 
+/** The window: the css.glass recipe exactly. */
 const PANEL: React.CSSProperties = {
-  borderRadius: 32,
-  background: 'linear-gradient(145deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.09) 45%, rgba(255,255,255,0.16) 100%)',
-  backdropFilter: 'blur(40px) saturate(185%) brightness(1.05)',
-  WebkitBackdropFilter: 'blur(40px) saturate(185%) brightness(1.05)',
-  border: '1px solid rgba(255,255,255,0.42)',
-  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8), inset 0 -1px 0 rgba(255,255,255,0.12), 0 30px 90px rgba(0,0,0,0.5)',
+  borderRadius: 16,
+  background: 'rgba(255, 255, 255, 0.57)',
+  boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  border: '1px solid rgba(255, 255, 255, 1)',
 };
 
-const SHEEN: React.CSSProperties = {
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.06) 28%, rgba(255,255,255,0) 45%)',
-};
+const SHEEN: React.CSSProperties = { background: 'none' };
 
+/** A row inside it: the same glass, lighter. */
 const ROW: React.CSSProperties = {
-  borderRadius: 22,
-  background: 'linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.05))',
-  border: '1px solid rgba(255,255,255,0.22)',
-  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 6px 20px rgba(0,0,0,0.18)',
-  backdropFilter: 'blur(12px)',
-  WebkitBackdropFilter: 'blur(12px)',
+  borderRadius: 16,
+  background: 'rgba(255, 255, 255, 0.5)',
+  border: '1px solid rgba(255, 255, 255, 1)',
+  boxShadow: '0 2px 16px rgba(0, 0, 0, 0.05)',
 };
 
 const PENDING_ROW: React.CSSProperties = {
   ...ROW,
-  background: 'linear-gradient(135deg, rgba(251,191,36,0.22), rgba(251,191,36,0.06))',
-  border: '1px solid rgba(252,211,77,0.45)',
+  background: 'rgba(254, 243, 199, 0.6)',
 };
 
 const PILL: React.CSSProperties = {
   borderRadius: 999,
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.30), rgba(255,255,255,0.10))',
-  border: '1px solid rgba(255,255,255,0.40)',
-  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7), 0 4px 14px rgba(0,0,0,0.18)',
+  background: 'rgba(255, 255, 255, 0.6)',
+  border: '1px solid rgba(255, 255, 255, 1)',
+  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
 };
 
 const APPROVE_PILL: React.CSSProperties = {
   ...PILL,
-  background: 'linear-gradient(180deg, rgba(110,231,183,0.95) 0%, rgba(16,185,129,0.92) 55%, rgba(5,150,105,0.95) 100%)',
-  border: '1px solid rgba(167,243,208,0.8)',
-  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.85), inset 0 -2px 6px rgba(4,120,87,0.45), 0 6px 18px rgba(16,185,129,0.35)',
+  background: 'rgba(5, 150, 105, 0.92)',
 };
 
 const REJECT_PILL: React.CSSProperties = {
   ...PILL,
-  background: 'linear-gradient(180deg, rgba(254,205,211,0.35), rgba(244,63,94,0.22))',
-  border: '1px solid rgba(253,164,175,0.55)',
+  background: 'rgba(254, 226, 226, 0.75)',
 };
 
 const STATUS_STYLE: Record<AuthUser['status'], React.CSSProperties> = {
-  pending: { background: 'linear-gradient(180deg, #fde68a, #f59e0b)', color: '#451a03', border: '1px solid rgba(254,243,199,0.9)' },
-  approved: { background: 'linear-gradient(180deg, rgba(167,243,208,0.45), rgba(16,185,129,0.35))', color: '#d1fae5', border: '1px solid rgba(110,231,183,0.5)' },
-  rejected: { background: 'linear-gradient(180deg, rgba(254,205,211,0.4), rgba(244,63,94,0.3))', color: '#ffe4e6', border: '1px solid rgba(253,164,175,0.5)' },
+  pending: { background: 'rgba(253, 230, 138, 0.9)', color: '#78350f', border: '1px solid rgba(255, 255, 255, 1)' },
+  approved: { background: 'rgba(209, 250, 229, 0.85)', color: '#065f46', border: '1px solid rgba(255, 255, 255, 1)' },
+  rejected: { background: 'rgba(254, 226, 226, 0.85)', color: '#9f1239', border: '1px solid rgba(255, 255, 255, 1)' },
 };
 
 // ---- Component -------------------------------------------------------------------------
@@ -159,7 +153,7 @@ export function TesterApprovalCenter({
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="absolute inset-0"
-            style={{ background: 'radial-gradient(circle at 50% 20%, rgba(30,58,138,0.45), rgba(2,6,23,0.82))', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
+            style={{ background: 'rgba(15, 23, 42, 0.25)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
             onClick={onClose}
           />
 
@@ -171,7 +165,7 @@ export function TesterApprovalCenter({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: 24 }}
             transition={{ type: 'spring', stiffness: 260, damping: 26 }}
-            className="relative w-full max-w-3xl max-h-[88vh] overflow-hidden flex flex-col z-10 text-white"
+            className="relative w-full max-w-3xl max-h-[88vh] overflow-hidden flex flex-col z-10 text-slate-900"
             style={PANEL}
           >
             <div className="pointer-events-none absolute inset-0" style={SHEEN} />
@@ -180,11 +174,11 @@ export function TesterApprovalCenter({
             <div className="relative px-6 pt-6 pb-4 flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-3 rounded-2xl" style={{ ...PILL, borderRadius: 18 }}>
-                  <ShieldCheck className="h-6 w-6 text-amber-200" />
+                  <ShieldCheck className="h-6 w-6 text-amber-600" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-black tracking-tight drop-shadow">{ar ? 'مركز اعتماد الفاحصين' : 'Tester Approval Center'}</h2>
-                  <p className="text-xs text-white/70">{subtitle || (ar ? 'راجع طلبات الانضمام واعتمدها أو ارفضها' : 'Review, approve or decline tester requests')}</p>
+                  <h2 className="text-xl font-black tracking-tight">{ar ? 'مركز اعتماد الفاحصين' : 'Tester Approval Center'}</h2>
+                  <p className="text-xs text-slate-600">{subtitle || (ar ? 'راجع طلبات الانضمام واعتمدها أو ارفضها' : 'Review, approve or decline tester requests')}</p>
                 </div>
               </div>
               <button type="button" onClick={onClose} className="p-2 hover:scale-105 active:scale-95 transition-all cursor-pointer" style={PILL}
@@ -206,14 +200,14 @@ export function TesterApprovalCenter({
                         <button key={tab.key} type="button" onClick={() => setFilter(tab.key)}
                           className="px-3.5 py-1.5 text-xs font-bold flex items-center gap-2 transition-all hover:scale-[1.03] cursor-pointer"
                           style={active
-                            ? { ...PILL, background: 'linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0.55))', color: '#0f172a' }
-                            : { ...PILL, color: 'rgba(255,255,255,0.85)' }}
+                            ? { ...PILL, background: 'rgba(15, 23, 42, 0.9)', color: '#ffffff' }
+                            : { ...PILL, color: '#334155' }}
                           aria-pressed={active}>
                           {tab.label}
                           <span className="min-w-5 px-1.5 rounded-full text-[10px] font-black"
                             style={tab.key === 'pending' && counts.pending > 0
                               ? { background: '#f59e0b', color: '#451a03' }
-                              : { background: active ? 'rgba(15,23,42,0.12)' : 'rgba(255,255,255,0.18)' }}>
+                              : { background: active ? 'rgba(255,255,255,0.22)' : 'rgba(15,23,42,0.08)' }}>
                             {counts[tab.key]}
                           </span>
                         </button>
@@ -221,31 +215,31 @@ export function TesterApprovalCenter({
                     })}
                     <button type="button" onClick={onRefresh} disabled={loading}
                       className="ms-auto px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-all hover:scale-[1.03] disabled:opacity-60 cursor-pointer"
-                      style={{ ...PILL, color: 'rgba(255,255,255,0.9)' }}>
+                      style={{ ...PILL, color: '#334155' }}>
                       <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
                       {ar ? 'تحديث' : 'Refresh'}
                     </button>
                   </div>
                   <div className="relative">
-                    <Search className="absolute top-1/2 -translate-y-1/2 h-4 w-4 text-white/60 start-3" style={{ insetInlineStart: 12 }} />
+                    <Search className="absolute top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 start-3" style={{ insetInlineStart: 12 }} />
                     <input value={query} onChange={e => setQuery(e.target.value)}
                       placeholder={ar ? 'ابحث بالاسم أو البريد أو المؤسسة' : 'Search by name, email or institution'}
-                      className="w-full h-10 ps-9 pe-3 text-sm text-white placeholder:text-white/55 outline-none focus:ring-2 focus:ring-white/40"
+                      className="w-full h-10 ps-9 pe-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-slate-300"
                       style={{ ...PILL, borderRadius: 16, paddingInlineStart: 36 }} />
                   </div>
                   {error && (
-                    <p className="text-xs px-3 py-2" style={{ ...REJECT_PILL, borderRadius: 14, color: '#ffe4e6' }}>{error}</p>
+                    <p className="text-xs px-3 py-2" style={{ ...REJECT_PILL, borderRadius: 14, color: '#9f1239' }}>{error}</p>
                   )}
                 </div>
 
                 {/* List */}
                 <div className="relative flex-1 overflow-y-auto px-6 pb-6 space-y-3">
                   {loading && users.length === 0 ? (
-                    <div className="py-16 flex items-center justify-center gap-2 text-white/70 text-sm">
+                    <div className="py-16 flex items-center justify-center gap-2 text-slate-500 text-sm">
                       <Loader2 className="h-4 w-4 animate-spin" /> {ar ? 'جارٍ التحميل…' : 'Loading…'}
                     </div>
                   ) : visible.length === 0 ? (
-                    <div className="py-14 text-center text-sm text-white/70">
+                    <div className="py-14 text-center text-sm text-slate-500">
                       {filter === 'pending'
                         ? (ar ? 'لا توجد طلبات بانتظار الموافقة 🎉' : 'No requests waiting for approval 🎉')
                         : (ar ? 'لا توجد حسابات مطابقة.' : 'No matching accounts.')}
@@ -262,7 +256,7 @@ export function TesterApprovalCenter({
                             <UserAvatar username={u.username || '?'} size={44} />
                             {u.online && (
                               <span className="absolute bottom-0 end-0 h-3.5 w-3.5 rounded-full bg-emerald-400"
-                                style={{ border: '2px solid rgba(15,23,42,0.85)', boxShadow: '0 0 8px rgba(52,211,153,0.9)' }}
+                                style={{ border: '2px solid #ffffff', boxShadow: '0 0 6px rgba(16,185,129,0.6)' }}
                                 aria-hidden="true" />
                             )}
                           </span>
@@ -273,21 +267,21 @@ export function TesterApprovalCenter({
                                 {statusLabel(u.status)}
                               </span>
                               {isAdmin && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ ...PILL, color: '#fde68a' }}>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ ...PILL, background: 'rgba(254, 243, 199, 0.85)', color: '#92400e' }}>
                                   {ar ? 'المشرف العام' : 'Super Admin'}
                                 </span>
                               )}
                             </div>
-                            <div className="text-xs text-white/75 flex items-center gap-x-3 gap-y-1 flex-wrap">
-                              <span className="flex items-center gap-1 min-w-0"><Mail className="h-3.5 w-3.5 shrink-0 text-white/50" /><span className="truncate">{u.email}</span></span>
-                              {u.institution && <span className="flex items-center gap-1 min-w-0 text-cyan-100"><Building2 className="h-3.5 w-3.5 shrink-0 text-cyan-200/70" /><span className="truncate">{u.institution}</span></span>}
-                              {!isAdmin && dateOf(u.registeredAt) && <span className="flex items-center gap-1 text-white/55"><CalendarDays className="h-3.5 w-3.5" />{dateOf(u.registeredAt)}</span>}
+                            <div className="text-xs text-slate-700 flex items-center gap-x-3 gap-y-1 flex-wrap">
+                              <span className="flex items-center gap-1 min-w-0"><Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="truncate">{u.email}</span></span>
+                              {u.institution && <span className="flex items-center gap-1 min-w-0 text-sky-800"><Building2 className="h-3.5 w-3.5 shrink-0 text-sky-600/70" /><span className="truncate">{u.institution}</span></span>}
+                              {!isAdmin && dateOf(u.registeredAt) && <span className="flex items-center gap-1 text-slate-500"><CalendarDays className="h-3.5 w-3.5" />{dateOf(u.registeredAt)}</span>}
                             </div>
                             <div className="text-xs flex items-center gap-1.5">
                               {u.online ? (
-                                <span className="font-bold text-emerald-300">{ar ? 'متصل الآن' : 'Online now'}</span>
+                                <span className="font-bold text-emerald-700">{ar ? 'متصل الآن' : 'Online now'}</span>
                               ) : (
-                                <span className="text-white/60">{formatLastSeen(u.lastSeenAt, ar)}</span>
+                                <span className="text-slate-500">{formatLastSeen(u.lastSeenAt, ar)}</span>
                               )}
                             </div>
                           </div>
@@ -300,7 +294,7 @@ export function TesterApprovalCenter({
                                 value={u.role}
                                 onChange={(e) => onSetRole(u.username, e.target.value as 'tester' | 'cataloger' | 'reviewer')}
                                 title={ar ? 'الدور' : 'Role'}
-                                className="h-9 px-2 text-xs font-bold text-white cursor-pointer outline-none"
+                                className="h-9 px-2 text-xs font-bold text-slate-800 cursor-pointer outline-none"
                                 style={PILL}
                               >
                                 <option value="tester" className="text-slate-900">{ar ? 'فاحص' : 'Tester'}</option>
@@ -318,14 +312,14 @@ export function TesterApprovalCenter({
                             )}
                             {u.status !== 'rejected' && (
                               <button type="button" onClick={() => onReject(u.username)}
-                                className="px-3.5 h-9 text-xs font-bold flex items-center gap-1.5 text-rose-50 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                className="px-3.5 h-9 text-xs font-bold flex items-center gap-1.5 text-rose-800 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                                 style={REJECT_PILL}>
                                 {u.status === 'approved' ? <Undo2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
                                 {u.status === 'approved' ? (ar ? 'سحب الصلاحية' : 'Revoke') : (ar ? 'رفض' : 'Decline')}
                               </button>
                             )}
                             <button type="button" onClick={() => onDelete(u.username)}
-                              className="h-9 w-9 flex items-center justify-center text-white/70 hover:text-rose-200 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                              className="h-9 w-9 flex items-center justify-center text-slate-500 hover:text-rose-600 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                               style={PILL} title={ar ? 'حذف الحساب' : 'Delete account'} aria-label={ar ? 'حذف الحساب' : 'Delete account'}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
