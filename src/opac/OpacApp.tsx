@@ -37,6 +37,7 @@ import type { WorkDecision } from '../services/workClustering';
 import { whatItIs, formatChips, editionLines, exactMatch, alphaIndex, letterOf, filingKey } from './plainWords';
 import { usePreferredForms } from '../app/utils/preferredNames';
 import { bookScript } from '../services/nameForms';
+import { whoOf, aboutPerson, teachersAndStudents, personPlaces, shelfNeighbours, subjectsAlongside, type Link as KnowledgeLink } from './knowledge';
 import './opac.css';
 
 type View =
@@ -1310,6 +1311,17 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
             </section>
           )}
 
+          {(() => {
+            const shelf = shelfNeighbours(work, wolfMoonOpacService.getAllWorks(), 6);
+            return shelf.length > 0 ? (
+              <section className="panel glass rise" aria-labelledby="h-shelf">
+                <h2 id="h-shelf">{t('على الرف بجانبه', 'On the shelf nearby')}</h2>
+                <p className="muted">{t('كتب برقم استدعاء أو تصنيف قريب.', 'Books with a call number or class number next to this one.')}</p>
+                <div className="rows">{shelf.map((w, i) => <ResultCard key={w.id} w={w} ctx={ctx} i={i} />)}</div>
+              </section>
+            ) : null;
+          })()}
+
           {siblings.length > 0 && editions.length <= 1 && (
             <section className="panel glass rise" aria-labelledby="h-hub">
               <h2 id="h-hub">{t('من العمل نفسه', 'From the same work')}{work.expressionOfHub?.label ? <>: <button className="inline-link" onClick={() => ctx.go({ mode: 'hub', key: work.expressionOfHub!.uri })}>{work.expressionOfHub.label}</button></> : ''}</h2>
@@ -1497,6 +1509,22 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
   const sameAs = [...new Set([...fromMoon, ...(card?.sameAs || [])])];
   const variants = (moon?.variants || []).filter(v => v !== name);
   const span = yearSpan(works);
+  // Knowledge from the records (S14): books about them, their teachers and students from ijāzāt, places.
+  const everything = wolfMoonOpacService.getAllWorks();
+  const who = whoOf(p, variants, moon?.uri ? [moon.uri] : []);
+  const about = aboutPerson(who, everything).filter(w => !works.some(x => x.id === w.id));
+  const { teachers, students } = teachersAndStudents(who, everything);
+  const places = personPlaces(who, works, everything).slice(0, 8);
+  const openPerson = (l: KnowledgeLink) => {
+    const known = wolfMoonOpacService.getPersonByNameOrUri(l.uri || l.label) || wolfMoonOpacService.getPersonByNameOrUri(l.label);
+    ctx.go(known ? { mode: 'person', key: known.person.id } : { mode: 'search', query: l.label });
+  };
+  const KIND_WORD: Record<string, [string, string]> = { ijazah: ['إجازة', 'ijāzah'], sama: ['سماع', 'samāʿ'], qiraa: ['قراءة', 'qirāʾa'] };
+  const linkChips = (list: KnowledgeLink[]) => (
+    <div className="subjects">{list.map(l => (
+      <button key={l.uri || l.label} className="chip" dir="auto" onClick={() => openPerson(l)} title={[t(...(KIND_WORD[l.kind] || [l.kind, l.kind])), l.date].filter(Boolean).join(' · ')}>{l.label}</button>
+    ))}</div>
+  );
 
   return (
     <div className="wrap">
@@ -1529,10 +1557,36 @@ function PersonPage({ ctx, k }: { ctx: Ctx; k: string }) {
               <WorkRows works={ws} ctx={ctx} />
             </section>
           ))}
+          {about.length > 0 && (
+            <section className="section" style={{ marginTop: 24 }}>
+              <div className="section-head"><h2>{t('كُتب عنه', 'Written about them')} <span className="count-n">{about.length}</span></h2></div>
+              <WorkRows works={about} ctx={ctx} />
+            </section>
+          )}
         </div>
         <aside className="entity-side">
           <WikidataCard sameAs={fromMoon} kind="person" />
           <LinkedPanel uri={moon?.uri} sameAs={sameAs} note={moon ? undefined : t('لهذا الشخص سجل في ملفات الاستناد العالمية؛ يمكن إضافته إلى ملف مون الاستنادي من محرر مون.', 'This person has a record in international authority files; it can be added to Moon’s authority file from the Moon editor.')} />
+          {teachers.length > 0 && (
+            <section className="panel glass rise">
+              <h2>{t('شيوخه', 'Teachers')}</h2>
+              <p className="muted" style={{ fontSize: 12 }}>{t('من الإجازات والسماعات المسجلة على النسخ المخطوطة.', 'From the ijāzāt and samāʿ notes recorded on manuscript copies.')}</p>
+              {linkChips(teachers)}
+            </section>
+          )}
+          {students.length > 0 && (
+            <section className="panel glass rise">
+              <h2>{t('تلاميذه', 'Students')}</h2>
+              <p className="muted" style={{ fontSize: 12 }}>{t('من الإجازات والسماعات المسجلة على النسخ المخطوطة.', 'From the ijāzāt and samāʿ notes recorded on manuscript copies.')}</p>
+              {linkChips(students)}
+            </section>
+          )}
+          {places.length > 0 && (
+            <section className="panel glass rise">
+              <h2>{t('أماكن', 'Places')}</h2>
+              <div className="subjects">{places.map(pl => <button key={pl.label} className="chip" dir="auto" onClick={() => ctx.go(placeName(pl.label) ? { mode: 'place', key: placeName(pl.label) } : { mode: 'search', query: pl.label })}>{pl.label}{pl.count > 1 ? <span className="n"> {pl.count}</span> : null}</button>)}</div>
+            </section>
+          )}
           {subjects.length > 0 && (
             <section className="panel glass rise">
               <h2>{t('يكتب في', 'Writes about')}</h2>
@@ -1551,6 +1605,7 @@ function SubjectPage({ ctx, k }: { ctx: Ctx; k: string }) {
   if (!r) return <NotFound ctx={ctx} what={t('الموضوع', 'subject')} back={{ mode: 'subjects' }} backLabel={t('كل الموضوعات', 'All subjects')} />;
   const { subject: s, works } = r;
   const near = [s.broader, ...(s.narrower || []), ...(s.related || [])].filter(Boolean) as string[];
+  const along = subjectsAlongside(s.label, works).filter(x => !near.includes(x.label) && isReadableLabel(x.label));
   const authors = [...new Map(works.map(w => w.primaryCreator).filter(p => p && personName(p)).map(p => [personName(p), p])).values()].slice(0, 8);
   const span = yearSpan(works);
   const sameAs = [s.uri, ...(moon?.sameAs || [])].filter((u): u is string => !!u && /^https?:\/\//.test(u) && !u.startsWith('https://mooon.site/'));
@@ -1577,6 +1632,12 @@ function SubjectPage({ ctx, k }: { ctx: Ctx; k: string }) {
         </div>
         <aside className="entity-side">
           <LinkedPanel uri={moon?.uri} sameAs={sameAs} />
+          {along.length > 0 && (
+            <section className="panel glass rise">
+              <h2>{t('يأتي معه غالبًا', 'Often given with')}</h2>
+              <div className="subjects">{along.map(x => <button key={x.label} className="chip" dir="auto" onClick={() => ctx.go({ mode: 'subject', key: x.label })}>{x.label}<span className="n"> {x.count}</span></button>)}</div>
+            </section>
+          )}
           {authors.length > 0 && (
             <section className="panel glass rise">
               <h2>{t('كتب فيه', 'Books about it')}</h2>
