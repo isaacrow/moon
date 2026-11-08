@@ -5,6 +5,7 @@
 
 import React, { useState, useRef, useContext } from 'react';
 import { FieldComments } from '../FieldComments';
+import { GlossaryTip } from '../GlossaryTip';
 import { ChevronDown, ChevronUp, Plus, X, Edit2, Link as LinkIcon, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n/config';
@@ -563,6 +564,8 @@ function CategorySection({
                 value={getFieldValue(node, property.shortName)}
                 onChange={(value) => onChange(nodeUri, property.shortName, value)}
               />
+              {/* What the field is, in plain words, and its MARC fields (S22). */}
+              <GlossaryTip term={property.shortName} className="absolute -top-1 z-10" style={{ position: 'absolute', insetInlineEnd: onHideField ? '24px' : '-4px' }} />
               <FieldComments field={`${entityType}:${property.shortName}`} label={property.label} value={getFieldValue(node, property.shortName)} onApply={(value) => onChange(nodeUri, property.shortName, value)} />
               {onHideField && (
                 <button
