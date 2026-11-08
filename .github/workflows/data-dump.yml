@@ -29,6 +29,9 @@ jobs:
           python3 -c "import json; d=json.load(open('moon-published-records.jsonld')); assert isinstance(d.get('@graph'), list)"
           test -s moon-published-records.nt
           echo "COUNT=${count:-?}" >> "$GITHUB_ENV"
+          # The dataset description (VoID) and its licence, CC0, go with the files (S23).
+          curl -fsS --retry 3 --max-time 300 -o moon-void.ttl https://mooon.site/resource/void.ttl
+          test -s moon-void.ttl
           gzip -9 -k moon-published-records.jsonld moon-published-records.nt
           ls -l moon-published-records.*
 
@@ -38,13 +41,13 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          notes="Every published Moon record as linked data (BIBFRAME), dumped $(date -u +'%Y-%m-%d %H:%M UTC'): ${COUNT} records. Always-current files: https://mooon.site/resource/dump.jsonld and https://mooon.site/resource/dump.nt"
+          notes="Every published Moon record as linked data (BIBFRAME), dumped $(date -u +'%Y-%m-%d %H:%M UTC'): ${COUNT} records. Always-current files: https://mooon.site/resource/dump.jsonld and https://mooon.site/resource/dump.nt. Licence: CC0 1.0 (public domain), https://creativecommons.org/publicdomain/zero/1.0/. Dataset description (VoID): https://mooon.site/resource/void"
           if ! gh release view data-dump >/dev/null 2>&1; then
             gh release create data-dump --title "Moon data dump" --notes "$notes" --latest=false
           else
             gh release edit data-dump --notes "$notes"
           fi
-          gh release upload data-dump moon-published-records.jsonld.gz moon-published-records.nt.gz --clobber
+          gh release upload data-dump moon-published-records.jsonld.gz moon-published-records.nt.gz moon-void.ttl --clobber
 
   audit:
     # Phase 12: the dump measured against BIBFRAME 3.0.1 and linked-data rules (supabase/functions/server/ldAudit.tsx).

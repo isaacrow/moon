@@ -23,6 +23,8 @@ export interface AdminFacts {
   createdAt?: string;
   saved?: string;
   approvedBy?: string;
+  /** The description's licence (S23): a URI, or "" when it may not be redistributed. */
+  license?: string;
 }
 
 const list = (v: any): any[] => (Array.isArray(v) ? v : v == null ? [] : [v]);
@@ -103,6 +105,14 @@ export function withLcAdminMetadata(document: any, facts: AdminFacts, base = "ht
     }];
     if (details["identifiedBy"] !== undefined) delete details["identifiedBy"];
   }
+
+  // Open data (S23): the description's licence, and who made and licenses it (Moon, unless MARC said otherwise).
+  if (facts.license !== undefined && get(details, "license") === undefined && details["dcterms:license"] === undefined) {
+    if (facts.license) details["dcterms:license"] = { "@id": facts.license };
+    else details["dcterms:rights"] = "Not for redistribution";
+  }
+  set("bf:assigner", { "@type": "bf:Organization", "rdfs:label": "Moon" });
+  set("bflc:metadataLicensor", { "@type": "bf:Organization", "rdfs:label": "Moon" });
 
   // Events in the record's history, on the Work (as LC's converter writes them): created, then corrected.
   const target = work || instance;
