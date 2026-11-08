@@ -145,6 +145,13 @@ https://mooon.site/resource/dump.nt</code></pre>
     <p>ويمكن تنزيل كل سجل بصيغ MARC 21 (ISO 2709) وMARCXML و<code>.mrk</code> من صفحته في الفهرس.</p>
   </section>
 
+  <section class="card glass" id="changes">
+    <h2>سجل التغييرات (Change feed)</h2>
+    <p>ما نشره مون أو عدّله أو سحبه، الأحدث أولاً، بصيغة ActivityStreams 2.0 كما تنشر مكتبة الكونغرس وOCLC سجلَّيهما. كل نشاط <code>Create</code> أو <code>Update</code> أو <code>Delete</code> يسمّي الـ Instance والعمل وروابط تنزيله. تتبَّعه لتحديث نسختك دون تنزيل كل شيء من جديد؛ الصفحة 1 هي الأحدث، 50 نشاطاً في الصفحة.</p>
+<pre><code>https://mooon.site/resource/changes
+https://mooon.site/resource/changes?page=1</code></pre>
+  </section>
+
   <section class="card glass" id="web">
     <h2>محركات البحث</h2>
     <p>صفحة كل كتاب في الفهرس تحمل وصفاً بصيغة <code>schema.org/Book</code> بلغة JSON-LD، ورابطاً قانونياً (canonical). وخريطة الموقع تسرد كل الكتب المنشورة:</p>

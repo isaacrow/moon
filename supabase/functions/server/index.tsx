@@ -37,6 +37,7 @@ import { PROFILES } from "./profiles.tsx";
 import { profileToDctap, dctapToProfile } from "./dctap.tsx";
 import { findNewSampleBooks } from "./sampleBooks.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
+import { changeFeed } from "./changeFeed.tsx";
 import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
 import { reconcile, manifest } from "./reconcile.tsx";
@@ -1274,6 +1275,25 @@ app.post("/make-server-49c0e13c/folio/send/:id", async (c) => {
 });
 
 app.get("/make-server-49c0e13c/resource/oai", oaiEndpoint);
+
+// The change feed (Phase 13 S19): https://mooon.site/resource/changes (ActivityStreams 2.0, as LC and OCLC
+// publish theirs): what Moon published, changed or withdrawn, newest first; ?page=1 is the newest page.
+app.get("/make-server-49c0e13c/resource/changes", async (c) => {
+  try {
+    const [published, withdrawn] = await Promise.all([recordStore.listPublishedRecords(), recordStore.listWithdrawnRecords().catch(() => [])]);
+    const records = [
+      ...published.map((r: any) => ({ id: r.id, title: r.title, document: r.document, createdAt: r.createdAt, saved: r.saved })),
+      ...withdrawn.filter((w) => !published.some((p: any) => p.id === w.id)),
+    ];
+    const page = Number(c.req.query('page')) || undefined;
+    return c.json(changeFeed(records, linkedData.BASE_URI, page), 200, {
+      'Content-Type': 'application/activity+json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=300',
+    });
+  } catch (error) {
+    console.error('Change feed error:', error);
+    return c.json({ error: 'Failed to build the change feed' }, 500);
+  }
+});
 app.post("/make-server-49c0e13c/resource/oai", oaiEndpoint);
 
 app.get("/make-server-49c0e13c/resource/dump.jsonld", (c) => resourceDump(c, 'jsonld'));
