@@ -35,3 +35,11 @@ test('the report: gone, shared links, name mismatches', () => {
   assert.equal(mismatch.uri, L);
   assert.match(mismatch.detail, /LC calls it: Shariati/);
 });
+
+test('romanized names that differ only in vowels agree; different names still do not', async () => {
+  const { skeleton } = await import('../supabase/functions/server/linkChecker.tsx');
+  assert.equal(skeleton('mahmoud'), skeleton('mahmud'));
+  assert.equal(skeleton('saeed'), skeleton('said'));
+  assert.equal(namesAgree(['Mahmoud Saeed'], ['Saʻīd, Maḥmūd, 1938-']), true);
+  assert.equal(namesAgree(['Austen, Jane, 1775-1817'], ['Twain, Mark, 1835-1910']), false);
+});

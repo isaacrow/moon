@@ -65,7 +65,7 @@ export function nearest(index: ReturnType<typeof buildIndex>, draftText: string,
   return index.items
     .filter((it) => it.r.id !== excludeId)
     .map((it) => ({ r: it.r, score: cosine(q, it.v) }))
-    .filter((x) => x.score > 0.05)
+    .filter((x) => x.score > 0.15) // weaker matches share only common words
     .sort((a, b) => b.score - a.score)
     .slice(0, k);
 }
