@@ -20,6 +20,7 @@ import {
 import { generateMARC } from "../services/marcGenerator";
 import { bibframeToMarc } from "../../services/marc/bibframeToMarc";
 import { toIso2709, toMarcXml, toMrk } from "../../services/marc/marcRecord";
+import { usePreferredNames } from "../utils/preferredNames";
 
 // ===== MARC Field Category Definitions =====
 
@@ -141,7 +142,9 @@ export function Marc21Viewer({ workData, instanceData, theme: BM, isLegacy, w3cJ
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // ===== The MARC record: from the validated BIBFRAME graph when the editor has built it =====
-  const marcRecord = useMemo(() => (w3cJsonLd?.["@graph"] ? bibframeToMarc(w3cJsonLd, { recordId }) : null), [w3cJsonLd, recordId]);
+  // Linked people named by the forms a cataloguer preferred for the book's script (S10).
+  const named = usePreferredNames(w3cJsonLd);
+  const marcRecord = useMemo(() => (named?.["@graph"] ? bibframeToMarc(named as any, { recordId }) : null), [named, recordId]);
   const marcText = useMemo(
     () => (marcRecord ? toMrk(marcRecord) : generateMARC(workData || {}, instanceData || {})),
     [marcRecord, workData, instanceData],

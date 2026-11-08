@@ -85,6 +85,8 @@ export interface EntityForm {
   sameAs: string;
   note: string;
   details: Record<string, string>;
+  /** The preferred form for each script (S10), chosen by a person among the names. */
+  preferred?: { arabic?: string; latin?: string };
 }
 
 export interface StoredEntity {
@@ -117,6 +119,7 @@ export function formFrom(e: StoredEntity): EntityForm {
   return {
     kind: e.kind, agentType, label: e.label || '', variants: (e.variants || []).join('\n'),
     sameAs: (e.sameAs || []).join('\n'), note: e.note || '', details,
+    preferred: data.preferredForms && typeof data.preferredForms === 'object' ? { ...(data.preferredForms as { arabic?: string; latin?: string }) } : {},
   };
 }
 
@@ -151,6 +154,11 @@ export function payloadFrom(f: EntityForm, previousData: Record<string, unknown>
   if (f.kind === 'agent') data.agentType = f.agentType;
   else delete data.agentType;
   const label = f.label.trim();
+  // Preferred forms only while they are still among the names.
+  const names = new Set([label, ...lines(f.variants)]);
+  const preferred = Object.fromEntries(Object.entries(f.preferred || {}).filter(([, v]) => v && names.has(v)));
+  if (f.kind === 'agent' && Object.keys(preferred).length) data.preferredForms = preferred;
+  else delete data.preferredForms;
   return {
     kind: f.kind,
     label,

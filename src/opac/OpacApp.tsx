@@ -35,6 +35,8 @@ import { findPersonQid, splitHeading, type PersonClues } from './personPhoto';
 import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, clusterWorks, type InfoCard as InfoCardData } from './linkedEntities';
 import type { WorkDecision } from '../services/workClustering';
 import { whatItIs, formatChips, editionLines, exactMatch, alphaIndex, letterOf, filingKey } from './plainWords';
+import { usePreferredForms } from '../app/utils/preferredNames';
+import { bookScript } from '../services/nameForms';
 import './opac.css';
 
 type View =
@@ -1052,7 +1054,9 @@ function ResultNav({ ctx, id }: { ctx: Ctx; id: string }) {
 async function downloadMarc(work: OpacWorkEntity, kind: 'mrc' | 'xml' | 'mrk', say: (s: string) => void) {
   try {
     const [{ bibframeToMarc }, marc] = await Promise.all([import('../services/marc/bibframeToMarc'), import('../services/marc/marcRecord')]);
-    const rec = bibframeToMarc(work.document && Array.isArray(work.document['@graph']) ? work.document : { '@graph': [] }, { recordId: work.id });
+    const [{ loadPreferredForms }, { agentUris, withPreferredNames }] = await Promise.all([import('../app/utils/preferredNames'), import('../services/nameForms')]);
+    const doc = work.document && Array.isArray(work.document['@graph']) ? work.document : { '@graph': [] };
+    const rec = bibframeToMarc(withPreferredNames(doc, await loadPreferredForms(agentUris(doc))), { recordId: work.id });
     if (kind === 'mrc') {
       const bytes = marc.toIso2709(rec);
       const a = document.createElement('a');
@@ -1087,6 +1091,11 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
     const group = clusterWorks(wolfMoonOpacService.getAllWorks(), decisions).find(g => g.members.some(m => m.id === work.id));
     return group && group.members.length > 1 ? [work, ...group.members.filter(m => m.id !== work.id)] : [];
   }, [work, decisions]);
+  // People named by the form a cataloguer preferred for the book's script (S10), from their Moon entities.
+  const moonUri = (p?: OpacPersonEntity) => [p?.uri, p?.canonicalMoonUri, ...(p?.authorityLinks || [])].find(u => /\/resource\/agent\/[^/#]+$/.test(String(u || '')));
+  const preferred = usePreferredForms(work ? [work.primaryCreator, ...(work.contributors || [])].map(moonUri).filter((u): u is string => !!u) : []);
+  const script = useMemo(() => bookScript(work?.document), [work]);
+  const shownName = (p: OpacPersonEntity) => { const u = moonUri(p); return (u && preferred.get(u)?.[script]) || personName(p); };
 
   if (!work) {
     return (
@@ -1121,7 +1130,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
       <span className="people">{people.map((p, i) => (
         <React.Fragment key={p.id || i}>
           {i > 0 && t('، ', ', ')}
-          <button className="inline-link" onClick={() => ctx.go({ mode: 'person', key: p.id })}>{personName(p)}</button>
+          <button className="inline-link" dir="auto" onClick={() => ctx.go({ mode: 'person', key: p.id })}>{shownName(p)}</button>
           {roleLabel(p.role) && <span className="role"> ({roleLabel(p.role)})</span>}
           {p.lifespan && <span className="role"> {p.lifespan}</span>}
         </React.Fragment>
@@ -1179,7 +1188,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
                   {people.slice(0, 4).map((p, i) => (
                     <React.Fragment key={p.id || i}>
                       {i > 0 && t('، ', ', ')}
-                      <HoverCard kind="person" k={p.id}><button onClick={() => ctx.go({ mode: 'person', key: p.id })}>{personName(p)}</button></HoverCard>
+                      <HoverCard kind="person" k={p.id}><button onClick={() => ctx.go({ mode: 'person', key: p.id })} dir="auto">{shownName(p)}</button></HoverCard>
                       {roleLabel(p.role) && <span className="role"> ({roleLabel(p.role)})</span>}
                     </React.Fragment>
                   ))}

@@ -1,3 +1,4 @@
+import { formTag, cleanPreferred } from "./nameForms.tsx";
 /**
  * Phase 10, the entities system: how a Moon entity is described as linked data, in two parts as LC does.
  *
@@ -68,6 +69,9 @@ export interface EntityInput {
   data?: any;
 }
 
+/** A name with its language/script tag (S10), so readers and machines know which form is which. */
+const tagged = (form: string, lang: string) => ({ "@value": form, "@language": formTag(form, lang) });
+
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "");
 
 /** The two nodes (the thing, then its authority data) for one entity at `base`/<kind>/<id>. */
@@ -76,6 +80,15 @@ export function entityNodes(a: EntityInput, base: string, expressions: string[] 
   const d = a.data || {};
   const thing: any = { "@id": uri, "@type": [entityClass(a.kind, d)], "rdfs:label": a.label, "skos:prefLabel": a.label };
   if (a.variants.length) thing["skos:altLabel"] = a.variants;
+  if (a.kind === "agent") {
+    // Each form tagged by script; the preferred form for each script (chosen by a person) is its skos:prefLabel.
+    const p = cleanPreferred(d.preferredForms, a.label, a.variants);
+    const prefs = [p.arabic, p.latin].filter((x): x is string => !!x);
+    if (prefs.length) thing["skos:prefLabel"] = prefs.map((f) => tagged(f, "ar"));
+    const others = [a.label, ...a.variants].filter((f, i, all) => all.indexOf(f) === i && !prefs.includes(f));
+    if (prefs.length) thing["skos:altLabel"] = others.map((f) => tagged(f, "ar"));
+    else if (a.variants.length) thing["skos:altLabel"] = a.variants.map((f) => tagged(f, "ar"));
+  }
   if (a.sameAs.length) thing["owl:sameAs"] = a.sameAs.map((s) => ({ "@id": s }));
   if (a.note) thing["skos:note"] = a.note;
 
@@ -121,7 +134,7 @@ export function entityNodes(a: EntityInput, base: string, expressions: string[] 
     "madsrdf:identifiesRWO": { "@id": uri },
   };
   if (a.variants.length) {
-    authority["madsrdf:hasVariant"] = a.variants.map((v) => ({ "@type": ["madsrdf:Variant", madsClass(a.kind, d)], "madsrdf:variantLabel": v }));
+    authority["madsrdf:hasVariant"] = a.variants.map((v) => ({ "@type": ["madsrdf:Variant", madsClass(a.kind, d)], "madsrdf:variantLabel": a.kind === "agent" ? tagged(v, "ar") : v }));
   }
   if (a.sameAs.length) authority["madsrdf:hasExactExternalAuthority"] = a.sameAs.map((s) => ({ "@id": s }));
   if (a.note) authority["madsrdf:editorialNote"] = a.note;
