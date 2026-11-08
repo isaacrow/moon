@@ -39,6 +39,19 @@ import { findNewSampleBooks } from "./sampleBooks.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
 import { changeFeed } from "./changeFeed.tsx";
 import { handleMcp } from "./mcp.tsx";
+import * as webhooks from "./webhooks.tsx";
+
+/** Tells the webhooks (S19) about a record event, in the background; a failing hook never fails the save. */
+function fireHooks(event: webhooks.HookEvent, record: { id: string; title?: string; version?: number; status?: string }) {
+  const job = (async () => {
+    const hooks = webhooks.parseHooks(await kv.get(webhooks.HOOKS_KEY).catch(() => null));
+    if (!hooks.length) return;
+    const results = await webhooks.deliver(hooks, event, webhooks.hookPayload(event, record, linkedData.BASE_URI, new Date().toISOString()));
+    const failed = results.filter((r) => r.status === 0 || r.status >= 400);
+    if (failed.length) console.warn(`[webhooks] ${event} ${record.id}: ${failed.map((r) => `${r.id}=${r.status}`).join(', ')}`);
+  })().catch((e) => console.warn('[webhooks] failed:', e));
+  try { (globalThis as any).EdgeRuntime?.waitUntil?.(job); } catch { /* not on Supabase: the promise still runs */ }
+}
 import { isniSearchUrl, parseIsni } from "./isni.tsx";
 import { sruTargets, sruUrl, sruSummary } from "./sru.tsx";
 import { reconcile, manifest } from "./reconcile.tsx";
@@ -808,6 +821,7 @@ app.post("/make-server-49c0e13c/records/save", async (c) => {
     }
 
     console.log(`[RECORDS] Saved record ${id} v${version} "${title || 'Untitled'}" (${status}) by ${cataloger} with ${document['@graph'].length} nodes`);
+    fireHooks(status === 'complete' ? 'record.published' : 'record.saved', { id, title: title || existing?.title || 'Untitled', version, status });
     // The Super Admin hears about every save that now waits for their review.
     if (status === 'pending-review' && !isAdmin) {
       const waiting = { id, title: title || existing?.title || 'Untitled' };
@@ -961,6 +975,39 @@ async function sparqlEndpoint(c: any) {
   }
 }
 app.get("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
+
+// Webhooks (Phase 13 S19): the Super Admin lists, adds and removes them; the secret is shown once, on adding.
+app.get("/make-server-49c0e13c/webhooks", async (c) => {
+  const session = await getSession(c);
+  if (session?.role !== 'admin') return c.json({ error: 'Only the Super Admin manages webhooks' }, 403);
+  return c.json({ webhooks: webhooks.parseHooks(await kv.get(webhooks.HOOKS_KEY).catch(() => null)).map(webhooks.publicHook), events: webhooks.EVENTS });
+});
+app.post("/make-server-49c0e13c/webhooks", async (c) => {
+  const session = await getSession(c);
+  if (session?.role !== 'admin') return c.json({ error: 'Only the Super Admin manages webhooks' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const url = String(body.url || '').trim();
+  const problem = webhooks.hookUrlProblem(url);
+  if (problem) return c.json({ error: problem }, 400);
+  const events = (Array.isArray(body.events) ? body.events : webhooks.EVENTS).filter((e: any) => webhooks.EVENTS.includes(e));
+  if (!events.length) return c.json({ error: `events: some of ${webhooks.EVENTS.join(', ')}` }, 400);
+  const hooks = webhooks.parseHooks(await kv.get(webhooks.HOOKS_KEY).catch(() => null));
+  if (hooks.length >= webhooks.MAX_HOOKS) return c.json({ error: `Up to ${webhooks.MAX_HOOKS} webhooks` }, 400);
+  const hook = { id: crypto.randomUUID().slice(0, 8), url, secret: webhooks.newSecret(), events, by: session.username, at: new Date().toISOString() };
+  await kv.set(webhooks.HOOKS_KEY, JSON.stringify([...hooks, hook]));
+  // A test message, so the Super Admin sees at once whether the address answers.
+  const [tried] = await webhooks.deliver([{ ...hook, events: ['record.saved'] }], 'record.saved', { event: 'test', at: hook.at, note: 'Moon webhook added' });
+  return c.json({ webhook: webhooks.publicHook(hook), secret: hook.secret, test: tried?.status ?? 0 }, 201);
+});
+app.delete("/make-server-49c0e13c/webhooks/:id", async (c) => {
+  const session = await getSession(c);
+  if (session?.role !== 'admin') return c.json({ error: 'Only the Super Admin manages webhooks' }, 403);
+  const hooks = webhooks.parseHooks(await kv.get(webhooks.HOOKS_KEY).catch(() => null));
+  const rest = hooks.filter((h) => h.id !== c.req.param('id'));
+  if (rest.length === hooks.length) return c.json({ error: 'No such webhook' }, 404);
+  await kv.set(webhooks.HOOKS_KEY, JSON.stringify(rest));
+  return c.json({ success: true });
+});
 
 // Moon's MCP server (Phase 13 S20): https://mooon.site/resource/mcp, MCP Streamable HTTP with plain JSON
 // replies. Read tools are open; create_draft needs a cataloguer's X-Moon-Session and only ever saves a draft.
@@ -1963,6 +2010,7 @@ async function reviewRecord(c: any, decision: 'complete' | 'needs-review') {
       return c.json({ success: false, error: 'Record not found' }, 404);
     }
     console.log(`[RECORDS] ${admin.username} set record ${id} -> ${decision} (v${record.version})`);
+    fireHooks(decision === 'complete' ? 'record.published' : 'record.returned', { id, title: record.title, version: record.version, status: decision });
     if (record.cataloger && record.cataloger !== admin.username) {
       await recordStore.notify(record.cataloger, decision === 'complete' ? 'approved' : 'returned', record, admin.username,
         typeof reason === 'string' ? reason.slice(0, 1000) : undefined);
