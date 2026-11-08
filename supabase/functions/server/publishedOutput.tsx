@@ -72,18 +72,37 @@ function asNode(prop: string, v: string): any {
   return { ...(CLASS_OF[p] ? { "@type": CLASS_OF[p] } : {}), "rdfs:label": v };
 }
 
-/** Strings in two scripts on one property: Arabic @ar, the romanized form @ar-Latn. */
+/**
+ * BCP 47 tags for text in Arabic script (Phase 13 S9). The language is the Work's, so Persian, Urdu, Ottoman
+ * Turkish or Kurdish in Arabic script are not called Arabic; the shortest tag is used (the script is implied
+ * by the language), and a romanized form says how it was romanized: "ar-Latn-t-ar-m0-alaloc" (ALA-LC), as LC
+ * tags it. A record with no Arabic-script language keeps "ar" for Arabic-script text.
+ */
+const SCRIPT_LANGS: Record<string, string> = {
+  ara: "ar", per: "fa", fas: "fa", urd: "ur", ota: "ota", kur: "ku", ckb: "ckb", kmr: "kmr", pus: "ps", snd: "sd", uig: "ug", bal: "bal", kas: "ks", pan: "pa",
+};
+export function scriptLanguage(graph: any[]): string {
+  const codes = graph.filter((n) => all(n?.["@type"]).some((t: any) => /(^|\/|:)Work$/.test(String(t))))
+    .flatMap((w) => all(w?.["bf:language"] ?? w?.["http://id.loc.gov/ontologies/bibframe/language"]))
+    .map((l: any) => String(l?.["@id"] ?? l ?? "").replace(/\/+$/, "").split("/").pop() || "");
+  for (const c of codes) if (SCRIPT_LANGS[c]) return SCRIPT_LANGS[c];
+  return "ar";
+}
+export const romanizedTag = (lang: string) => `${lang}-Latn-t-${lang}-m0-alaloc`;
+let currentLang = "ar";
+
+/** Strings in two scripts on one property: the Arabic-script form in its language, the romanized form tagged as ALA-LC romanization. */
 function tagLiterals(values: any[]): any[] {
   const strings = values.filter((x) => typeof x === "string");
   const parallel = strings.some((s) => ARABIC.test(s)) && strings.some((s) => LATIN.test(s) && !ARABIC.test(s));
   return values.map((x) => {
     if (typeof x === "string") {
-      if (ARABIC.test(x)) return { "@value": x, "@language": "ar" };
-      if (parallel && LATIN.test(x)) return { "@value": x, "@language": "ar-Latn" };
+      if (ARABIC.test(x)) return { "@value": x, "@language": currentLang };
+      if (parallel && LATIN.test(x)) return { "@value": x, "@language": romanizedTag(currentLang) };
       return x;
     }
     if (x && typeof x === "object" && typeof x["@value"] === "string" && !x["@language"] && !x["@type"] && ARABIC.test(x["@value"])) {
-      return { ...x, "@language": "ar" };
+      return { ...x, "@language": currentLang };
     }
     return x;
   });
@@ -220,5 +239,6 @@ export function finishPublished(document: any, options: { title?: string } = {})
   const graph = Array.isArray(document?.["@graph"]) ? document["@graph"] : [];
   // MARC fields kept for the round trip (moonext:marcField) stay in Moon; they are not published.
   const withoutMarc = graph.map((node: any) => { if (!node || !("moonext:marcField" in node)) return node; const { ["moonext:marcField"]: _kept, ...rest } = node; return rest; });
+  currentLang = scriptLanguage(withoutMarc);
   return { ...document, "@graph": completeRecord(withoutMarc.map((node: any) => legacyToBibframe(creatorsToContributions(node))), options.title).map((node: any) => fixNode(node)) };
 }

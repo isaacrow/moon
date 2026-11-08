@@ -14,9 +14,9 @@ const VOCAB = {
 };
 const one = (node: any) => finishPublished({ '@graph': [node] })['@graph'][0];
 
-test('Arabic is tagged @ar, and its romanization beside it @ar-Latn', () => {
+test('Arabic is tagged @ar, and its ALA-LC romanization beside it @ar-Latn-t-ar-m0-alaloc (BCP 47, as LC)', () => {
   const t = one({ '@id': 'w', 'bf:title': { '@type': 'bf:Title', 'bf:mainTitle': ['al-Qabasāt', 'القبسات'] } });
-  assert.deepEqual(t['bf:title']['bf:mainTitle'], [{ '@value': 'al-Qabasāt', '@language': 'ar-Latn' }, { '@value': 'القبسات', '@language': 'ar' }]);
+  assert.deepEqual(t['bf:title']['bf:mainTitle'], [{ '@value': 'al-Qabasāt', '@language': 'ar-Latn-t-ar-m0-alaloc' }, { '@value': 'القبسات', '@language': 'ar' }]);
   const english = one({ '@id': 'w', 'rdfs:label': 'Nineteen eighty-four' });
   assert.equal(english['rdfs:label'], 'Nineteen eighty-four', 'text in one Latin script alone is left as it is');
 });
@@ -96,4 +96,15 @@ test('step 6: a record\'s Work and Instance point at each other, and both carry 
   assert.deepEqual(g2[1]['bf:instanceOf'], [{ '@id': W }]);
   assert.equal(g2[0]['bf:title'][0]['bf:mainTitle'], 'Untitled draft 7');
   assert.equal(g2[1]['bf:title'][0]['bf:mainTitle'], 'Untitled draft 7');
+});
+
+test('Persian, Urdu or Ottoman Turkish in Arabic script are tagged in their own language, not Arabic (S9)', () => {
+  const doc = (lang: string) => finishPublished({ '@graph': [
+    { '@id': 'w', '@type': 'bf:Work', 'bf:language': { '@id': `http://id.loc.gov/vocabulary/languages/${lang}` }, 'bf:title': { '@type': 'bf:Title', 'bf:mainTitle': ['Shāhnāmah', 'شاهنامه'] } },
+  ] })['@graph'][0]['bf:title']['bf:mainTitle'];
+  assert.deepEqual(doc('per'), [{ '@value': 'Shāhnāmah', '@language': 'fa-Latn-t-fa-m0-alaloc' }, { '@value': 'شاهنامه', '@language': 'fa' }]);
+  assert.equal(doc('urd')[1]['@language'], 'ur');
+  assert.equal(doc('ota')[1]['@language'], 'ota');
+  assert.equal(doc('ara')[1]['@language'], 'ar');
+  assert.equal(doc('eng')[1]['@language'], 'ar', 'no Arabic-script language given: Arabic');
 });
