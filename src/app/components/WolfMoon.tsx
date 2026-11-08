@@ -82,6 +82,7 @@ import { EditingWarning } from "./EditingWarning";
 import { LivePresence } from "./LivePresence";
 import { LiveCursors } from "./LiveCursors";
 import { FolioSendDialog } from "./FolioSendDialog";
+import { saveChecks, checksText } from "../../services/saveChecks";
 import { LiveFieldPresence } from "./LiveFieldPresence";
 import { connectLiveRoom, type LiveRoomHandle } from "../utils/liveRoom";
 import { otherPeople, type LivePeer } from "../utils/livePeers";
@@ -459,6 +460,8 @@ export default function WolfMoon({
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showDeriveMenu, setShowDeriveMenu] = useState(false);
   const [showFolio, setShowFolio] = useState(false);
+  // The "should fix" list the cataloger already chose to save with, so the same list is not asked again.
+  const acceptedChecksRef = useRef("");
   const [showIraqiAuthorityModal, setShowIraqiAuthorityModal] = useState(false);
 
   const handleInsertIraqiAuthor = (author: any, targetType: 'author' | 'contributor' | 'subject' = 'author') => {
@@ -1328,6 +1331,31 @@ export default function WolfMoon({
           }
           duplicates.forEach((d) => acceptedDuplicatesRef.current.add(d.id));
         }
+
+        // The checks before a save, in three levels (Phase 13 S17): "must" stops the save, "should" asks
+        // first (once for the same list), "note" is shown and never in the way.
+        const checks = saveChecks(workData, instanceData);
+        const ar = language === "ar";
+        const must = checks.filter((c) => c.level === "must");
+        if (must.length) {
+          toast.error(ar ? "لا يمكن الحفظ بعد" : "Cannot save yet", { description: checksText(must, ar) });
+          setSaveStatus("unsaved");
+          return;
+        }
+        const should = checks.filter((c) => c.level === "should");
+        const shouldKey = should.map((c) => c.field).join(",");
+        if (should.length && shouldKey !== acceptedChecksRef.current) {
+          const ok = window.confirm(ar
+            ? `ينقص التسجيلة ما يُتوقع في كل تسجيلة مشتركة:\n\n${checksText(should, true)}\n\nهل تريد الحفظ على أي حال؟`
+            : `This record is missing what every shared record is expected to have:\n\n${checksText(should, false)}\n\nSave anyway?`);
+          if (!ok) {
+            setSaveStatus("unsaved");
+            return;
+          }
+          acceptedChecksRef.current = shouldKey;
+        }
+        const notes = checks.filter((c) => c.level === "note");
+        if (notes.length) toast.message(ar ? "لجعل التسجيلة أفضل" : "To make the record better", { description: checksText(notes, ar) });
       }
       let saved;
       try {
