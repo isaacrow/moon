@@ -34,6 +34,9 @@ export function nameWords(s: string): string[] {
     .filter((w) => w.length > 2 && !COMMON.has(w));
 }
 
+/** A Latin name word without vowels or doubled letters: "mahmoud" and "mahmud" are both "mhmd". */
+export const skeleton = (w: string) => w.replace(/(.)\1+/g, "$1").replace(/h/g, "").replace(/[aeiouyw]/g, "");
+
 const scriptOf = (s: string) => (ARABIC.test(s) ? "arabic" : "latin");
 
 /** Whether two sets of names, compared script by script, could name the same thing; null when no script is shared. */
@@ -45,6 +48,11 @@ export function namesAgree(ours: string[], theirs: string[]): boolean | null {
     if (!a.size || !b.length) continue;
     judged = true;
     if (b.some((w) => a.has(w))) return true;
+    // Romanizations differ in vowels (Mahmoud / Maḥmūd, Saeed / Saʻīd): compare Latin names by their consonants too.
+    if (script === "latin") {
+      const sk = new Set([...a].map(skeleton).filter((k) => k.length >= 2));
+      if (b.map(skeleton).some((k) => k.length >= 2 && sk.has(k))) return true;
+    }
   }
   return judged ? false : null;
 }
