@@ -35,6 +35,16 @@ export function LinkedDataHealthCard({ isAr }: { isAr: boolean }) {
   const [loading, setLoading] = useState(false);
   const [linking, setLinking] = useState(false);
   const [details, setDetails] = useState(false);
+  const [labelsBusy, setLabelsBusy] = useState(false);
+  // The LC/Wikidata label cache (S19): normally refreshed each night; this runs it now.
+  const refreshLabels = async () => {
+    setLabelsBusy(true);
+    const r = await moonFetch<{ addresses?: number; fetched?: number; lcFeedPages?: number; wikidataChanged?: number; error?: string }>('/admin/label-cache/refresh', { body: {} }).catch(() => null);
+    setLabelsBusy(false);
+    if (!r?.ok) { toast.error(r?.data?.error || t('تعذّر التحديث', 'Could not refresh')); return; }
+    const d = r.data;
+    toast.success(t(`أسماء LC وويكي بيانات: ${d.fetched} من ${d.addresses} رابطاً حُدّثت.`, `LC and Wikidata names: ${d.fetched} of ${d.addresses} links refreshed.`));
+  };
 
   const load = async () => {
     setLoading(true);
@@ -78,6 +88,10 @@ export function LinkedDataHealthCard({ isAr }: { isAr: boolean }) {
         <button type="button" onClick={relinkAll} disabled={linking}
           className="inline-flex items-center gap-2 rounded-full bg-sky-700 px-4 py-2 text-sm font-bold text-white hover:bg-sky-800 disabled:opacity-50">
           <Link2 className="h-4 w-4" /> {linking ? t('جارٍ الربط…', 'Linking…') : t('اربط كل التسجيلات بالكيانات', 'Link every record to entities')}
+        </button>
+        <button type="button" onClick={refreshLabels} disabled={labelsBusy}
+          className="inline-flex items-center gap-2 rounded-full bg-white/80 border border-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-white disabled:opacity-50">
+          <RefreshCw className={`h-4 w-4 ${labelsBusy ? 'animate-spin' : ''}`} /> {labelsBusy ? t('جارٍ التحديث…', 'Refreshing…') : t('حدّث أسماء LC وويكي بيانات', 'Refresh LC and Wikidata names')}
         </button>
         <button type="button" onClick={load} disabled={loading} className="p-2 rounded-full hover:bg-white/60 disabled:opacity-50" aria-label={t('تحديث', 'Refresh')} title={t('تحديث', 'Refresh')}>
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} style={{ color: '#475569' }} />

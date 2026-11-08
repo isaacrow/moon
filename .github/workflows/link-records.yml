@@ -41,4 +41,8 @@ jobs:
             offset=$(echo "$out" | jq -r '.next')
             echo "batch done: $(echo "$out" | jq -c '{processed, changed, linked, failed}')"
           done
+          # Then the LC/Wikidata label cache (Phase 13 S19): what changed at LC and Wikidata since last night.
+          labels=$(curl -fsS --retry 2 --max-time 280 -X POST "https://${project}.supabase.co/functions/v1/make-server-49c0e13c/jobs/label-cache" \
+            -H "Authorization: Bearer ${key}" -H "X-Moon-Job-Token: ${MOON_JOB_TOKEN}" -H 'Content-Type: application/json' -d '{}') || labels='{"error":"failed"}'
+          echo "label cache: $(echo "$labels" | jq -c .)"
           echo "### Entity linking: ${linked} headings linked in ${changed} records" >> "$GITHUB_STEP_SUMMARY"
