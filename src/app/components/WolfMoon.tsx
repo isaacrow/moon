@@ -90,6 +90,7 @@ import { RecordCoverPanel } from "./RecordCoverPanel";
 import { CopiesPanel } from "./CopiesPanel";
 import { RomanizePanel } from "./RomanizePanel";
 import { MajmuPanel } from "./MajmuPanel";
+import { MaqamPanel, isMusic } from "./MaqamPanel";
 import { ItemCopy, nodeToCopy, copyToNode } from "../../services/itemCopies";
 import { findIsbn, uploadCover } from "../utils/recordCovers";
 import { RecordCommentsContext, useRecordComments } from "./FieldComments";
@@ -1963,6 +1964,11 @@ export default function WolfMoon({
             <div>
               <MajmuPanel work={workData} language={language} onChange={(w) => { setWorkData(w); setSaveStatus("unsaved"); }} />
             </div>
+            {isMusic(workData) && (
+              <div>
+                <MaqamPanel work={workData} language={language} onChange={(w) => { setWorkData(w); setSaveStatus("unsaved"); }} />
+              </div>
+            )}
           </div>
         )}
 

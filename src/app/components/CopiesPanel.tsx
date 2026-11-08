@@ -7,6 +7,7 @@ import React from 'react';
 import { Plus, Trash2, Library } from 'lucide-react';
 import { ItemCopy, emptyCopy } from '../../services/itemCopies';
 import { TransmissionPanel } from './TransmissionPanel';
+import { CopyConditionPanel } from './CopyConditionPanel';
 
 interface Props {
   copies: ItemCopy[];
@@ -58,6 +59,10 @@ export function CopiesPanel({ copies, instanceId, language, onChange }: Props) {
           {/* A manuscript's notes: ijāzāt, samāʿāt, ownership, waqf … as events of this copy. */}
           <div className="col-span-2 md:col-span-4">
             <TransmissionPanel itemId={c.id} events={c.events || []} ar={ar} onChange={(events) => set(i, { events })} />
+          </div>
+          {/* Binding, condition, seals and marks, and what was done to the copy (ARM 1.0, S24). */}
+          <div className="col-span-2 md:col-span-4">
+            <CopyConditionPanel ar={ar} value={{ binding: c.binding, condition: c.condition, marks: c.marks, actions: c.actions }} onChange={(next) => set(i, next)} />
           </div>
         </div>
       ))}

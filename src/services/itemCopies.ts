@@ -12,8 +12,9 @@
  *   with ownership and waqf summed up in bf:custodialHistory
  */
 import { type TransmissionEvent, eventToNode, nodeToEvent, custodialHistory } from './transmission';
+import { withCondition, conditionOf, isBindingNote, type CopyCondition } from './specialVocab';
 
-export interface ItemCopy {
+export interface ItemCopy extends CopyCondition {
   /** The Item's URI. */
   id: string;
   library: string;
@@ -66,14 +67,17 @@ export function nodeToCopy(node: any): ItemCopy {
     barcode: barcodeNode ? textOf(barcodeNode) : textOf(node?.['bf:barcode'] ?? node?.['barcode']),
     copyNumber: copyRaw.replace(/^c\.\s*/i, ''),
     referenceOnly: policies.some((p) => /reference|للاطلاع/i.test(textOf(p))) || node?.['status'] === 'reference_only',
-    note: textOf(node?.['bf:note'] ?? node?.['note']),
+    note: textOf(list(node?.['bf:note'] ?? node?.['note']).filter((n) => !isBindingNote(n))),
     ...eventsOf(node),
+    // The copy's physical description from ARM (S24): binding, condition, markings, actions.
+    ...conditionOf(node),
   };
 }
 
 /** Whether a copy says anything a reader could use (an empty Item is not a copy). */
 export function hasCopyData(c: ItemCopy): boolean {
-  return !!(c.library || c.location || c.shelfMark || c.barcode || c.copyNumber || c.note || c.events?.length);
+  return !!(c.library || c.location || c.shelfMark || c.barcode || c.copyNumber || c.note || c.events?.length
+    || c.binding?.trim() || c.condition?.trim() || c.marks?.some((m) => m.text.trim()) || c.actions?.length);
 }
 
 /** Writes a copy as a bf:Item of the Instance. */
@@ -93,7 +97,9 @@ export function copyToNode(c: ItemCopy, instanceId: string): any {
     const history = custodialHistory(events);
     if (history) node['bf:custodialHistory'] = history;
   }
-  return node;
+  // Moon's vocabularies live beside its resources: …/resource/vocab/… (the base is the Instance's).
+  const base = instanceId.match(/^(.*)\/instance\/[^/#]+$/)?.[1] || 'https://mooon.site/resource';
+  return withCondition(node, c, base);
 }
 
 /** A new copy's URI, next to the Instance's: …/resource/instance/<id> → …/resource/item/<id>-<random>. */
