@@ -1509,7 +1509,9 @@ function useOutsideLabels(uris: string[]): Record<string, OutsideLabel[]> {
 
 function LinkedPanel({ uri, sameAs, note }: { uri?: string; sameAs: string[]; note?: string }) {
   const own = uri && uri.startsWith('https://mooon.site/resource/') ? uri : undefined;
-  const links = [...new Set(sameAs.filter(u => /^https?:\/\//.test(u)))];
+  // One link per thing: …/wiki/Q1 and …/entity/Q1, http and https, a trailing slash are the same address.
+  const sameKey = (u: string) => (outsideSource(canonicalOutside(u)) ? canonicalOutside(u) : u.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''));
+  const links = sameAs.filter(u => /^https?:\/\//.test(u)).filter((u, i, all) => all.findIndex(x => sameKey(x) === sameKey(u)) === i);
   const outside = useOutsideLabels(links);
   if (!own && !links.length) return null;
   return (
