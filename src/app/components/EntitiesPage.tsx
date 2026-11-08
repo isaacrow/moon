@@ -7,9 +7,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { describeLinkSource, sourcesByLink, type LinkSource } from '../utils/linkSource';
 import { EntityRequestsInbox, EntityMergeBox } from './EntityRequests';
+import { WorkGroupsReview } from './WorkGroupsReview';
 import { layerFrom, refreshFromSource, type ImportedLayers, type RefreshChange } from '../../services/entityLayers';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network, Link2 } from 'lucide-react';
+import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network, Link2, Layers } from 'lucide-react';
 import { moonFetch, moonHeaders, MOON_API } from '../utils/moonApi';
 import { romanizeAll } from '../../services/romanize';
 import { parseArabicName, nameVariants } from '../../services/arabicNames';
@@ -95,6 +96,7 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
   const [copyOpen, setCopyOpen] = useState(false);
   // Linking every entity to LC, VIAF and Wikidata (Phase 12, step 5).
   const [reconcileOpen, setReconcileOpen] = useState(false);
+  const [groupsOpen, setGroupsOpen] = useState(false);
   const [copyQuery, setCopyQuery] = useState('');
   const [copyResults, setCopyResults] = useState<AuthorityResult[]>([]);
   const [copySearching, setCopySearching] = useState(false);
@@ -346,12 +348,21 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
           >
             <Link2 className="h-4 w-4" /> {t('اربط بـ LC وVIAF وويكي بيانات', 'Link to LC, VIAF, Wikidata')}
           </button>
+          <button
+            onClick={() => setGroupsOpen((o) => !o)}
+            aria-expanded={groupsOpen}
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-white text-sm font-bold text-slate-800 hover:bg-white"
+          >
+            <Layers className="h-4 w-4" /> {t('مجموعات الأعمال', 'Work groups')}
+          </button>
           <button onClick={startNew} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 text-white text-sm font-bold hover:bg-slate-800">
             <Plus className="h-4 w-4" /> {t('كيان جديد', 'New entity')}
           </button>
         </div>
 
         <EntityRequestsInbox ar={isAr()} refreshKey={requestsKey} onDecided={() => { setQuery((q) => q + ''); if (selected) open(selected); }} />
+
+        {groupsOpen && <WorkGroupsReview ar={isAr()} onClose={() => setGroupsOpen(false)} />}
 
         {reconcileOpen && (
           <ReconcilePanel ar={isAr()} onClose={() => setReconcileOpen(false)} onLinked={() => setQuery((q) => q + '')} />
