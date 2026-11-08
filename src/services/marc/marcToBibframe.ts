@@ -6,6 +6,7 @@
  */
 import type { DataField, MarcRecord } from './marcRecord';
 import { isControl } from './marcRecord';
+import { toMarcKey } from './marcKey';
 
 const VOCAB = 'http://id.loc.gov/vocabulary';
 const data = (r: MarcRecord, tag: string) => r.fields.filter((f): f is DataField => f.tag === tag && !isControl(f));
@@ -66,6 +67,9 @@ function hubOf(titleField: DataField, titleCode: 'a' | 't', nameField?: DataFiel
   }
   return hub;
 }
+
+/** Tags Moon reads into BIBFRAME (and 880, read with the field it pairs); every other data field is kept. */
+const MAPPED = /^(010|020|022|024|035|040|043|050|082|1(00|10|11|30)|24[05]|246|250|26[04]|300|33[678]|490|50[0-6]|52[01]|540|546|58[68]|6(00|10|11|30|48|50|51|53|55)|7(00|10|11|30)|8(00|10|11|30)|856|880)$/;
 
 export interface ImportedMarcRecord { work: any; instance: any; item: any; title: string }
 
@@ -130,6 +134,8 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
     if (!name) continue;
     const agent: any = { '@type': NAME_TYPE[f.tag.slice(1)] || 'bf:Agent', 'rdfs:label': both(name, nameOf(linked(f))) };
     if (link(f)) agent['@id'] = link(f);
+    // The name's own MARC (its parts in their subfields), as LC keeps it; roles ($e $4) are rebuilt from bf:role.
+    agent['bflc:marcKey'] = toMarcKey(f, /^[01468e]$/);
     const roles = [...subs(f, '4').filter((c) => /^[a-z]{3}$/.test(c)), ...(subs(f, '4').length ? [] : subs(f, 'e').map(clean))];
     contributions.push({
       '@type': f.tag.startsWith('1') ? ['bf:Contribution', 'bf:PrimaryContribution'] : 'bf:Contribution',
@@ -250,7 +256,7 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
 
   // ---- Description, series, notes ----
   const f300 = data(r, '300')[0];
-  if (sub(f300, 'a')) instance['bf:extent'] = { '@type': 'bf:Extent', 'rdfs:label': clean([sub(f300, 'a'), sub(f300, 'b')].filter(Boolean).join(' : ')) };
+  if (sub(f300, 'a')) instance['bf:extent'] = { '@type': 'bf:Extent', 'rdfs:label': clean([sub(f300, 'a').replace(/\s*:\s*$/, ''), sub(f300, 'b')].filter(Boolean).join(' : ')) };
   if (sub(f300, 'c')) instance['bf:dimensions'] = clean(sub(f300, 'c'));
   const series = data(r, '490').flatMap((f) => {
     const s = (x: DataField | undefined) => [sub(x, 'a'), sub(x, 'v')].filter(Boolean).join(' ; ');
@@ -306,6 +312,7 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
     const heading = f.subfields.filter(([c]) => /[abcdtxyzv]/.test(c)).map(([, v]) => clean(v)).filter(Boolean).join('--');
     const node: any = { '@type': SUBJECT_TYPE[f.tag] === 'bf:Hub' || sub(f, 't') ? 'bf:Topic' : SUBJECT_TYPE[f.tag], 'rdfs:label': heading };
     if (link(f)) node['@id'] = link(f);
+    node['bflc:marcKey'] = toMarcKey(f);
     return heading ? node : null;
   }).filter(Boolean);
   // Chronological terms (648) and uncontrolled index terms (653).
@@ -320,12 +327,18 @@ export function marcToBibframe(r: MarcRecord): ImportedMarcRecord {
   const genres = data(r, '655').map((f) => {
     const node: any = { '@type': 'bf:GenreForm', 'rdfs:label': clean(sub(f, 'a')) };
     if (link(f)) node['@id'] = link(f);
+    node['bflc:marcKey'] = toMarcKey(f);
     return node['rdfs:label'] ? node : null;
   }).filter(Boolean);
   if (genres.length) work['bf:genreForm'] = genres;
 
   const urls = data(r, '856').map((f) => sub(f, 'u')).filter(Boolean);
   if (urls.length) item['bf:electronicLocator'] = urls;
+
+  // Fields Moon has no BIBFRAME for (773 host item, 041 language codes, 340, 56X provenance, local 9XX …)
+  // are kept as they are, so they go back out on export instead of being lost.
+  const kept = r.fields.filter((f): f is DataField => !isControl(f) && !MAPPED.test(f.tag)).map((f) => toMarcKey(f, /^$/));
+  if (kept.length) instance['moonext:marcField'] = kept;
 
   for (const node of [work, instance]) for (const k of Object.keys(node)) if (node[k] === undefined) delete node[k];
   const title = work['bf:title']?.['bf:mainTitle'] || control(r, '001') || 'Untitled';

@@ -7,6 +7,7 @@
 import type { DataField, MarcField, MarcRecord, Subfield } from './marcRecord';
 import { nodeToEvent, eventsToMarc, type TransmissionEvent } from '../transmission';
 import { autoFill008 } from './marc008Auto';
+import { fromMarcKey } from './marcKey';
 
 const BF = 'http://id.loc.gov/ontologies/bibframe/';
 const all = (v: any): any[] => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
@@ -171,6 +172,18 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     if (primary) has1xx = true;
     const roles = all(get(c, 'role'));
     const plain = (s: Subfield | null): PSub | null => (s ? [s[0], s[1]] : null);
+    // The name as it came from MARC (bflc:marcKey), when it is a name field and the name is in one script:
+    // its parts keep their subfields ($a $b $c $d $q …); roles and the link are added as usual.
+    const key = fromMarcKey(agent?.['bflc:marcKey']);
+    if (key && /^[1678](00|10|11)$/.test(key.tag) && !scripts(agent?.['rdfs:label'] ?? agent).alt) {
+      push({ tag: `${primary ? '1' : '7'}${suffix}`, ind1: key.ind1 || ind1, ind2: ' ', subfields: [
+        ...key.subfields,
+        ...roles.map((r) => sf('e', text(r) && !/^[a-z]{3}$/.test(text(r)) ? text(r) : '')).filter((s): s is Subfield => !!s),
+        ...[sf('0', uri(agent))].filter((s): s is Subfield => !!s),
+        ...roles.map((r) => sf('4', codeIn(r, 'relators'))).filter((s): s is Subfield => !!s),
+      ] });
+      continue;
+    }
     pfield(`${primary ? '1' : '7'}${suffix}`, ind1, ' ', [
       ps('a', agent),
       ...roles.map((r) => plain(sf('e', text(r) && !/^[a-z]{3}$/.test(text(r)) ? text(r) : ''))),
@@ -209,7 +222,12 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
       ps('c', text(get(p, 'date')) || text(p['bflc:simpleDate'])),
     ]);
   }
-  push(field('300', ' ', ' ', [sf('a', texts(get(instance, 'extent')).join(' ; ')), sf('c', text(get(instance, 'dimensions')))]));
+  // ISBD punctuation gives the subfields back: '180 pages : illustrations' is $a 180 pages : $b illustrations.
+  const extent = texts(get(instance, 'extent')).join(' ; ');
+  const colon = extent.indexOf(' : ');
+  push(field('300', ' ', ' ', colon > 0
+    ? [sf('a', extent.slice(0, colon) + ' :'), sf('b', extent.slice(colon + 3)), sf('c', text(get(instance, 'dimensions')))]
+    : [sf('a', extent), sf('c', text(get(instance, 'dimensions')))]));
   const rda = (tag: string, v: any, vocab: string, source: string) => {
     for (const x of all(v)) push(field(tag, ' ', ' ', [sf('a', text(x) || codeIn(x, vocab)), sf('b', codeIn(x, vocab)), sf('2', source), sf('0', uri(x))]));
   };
@@ -219,7 +237,11 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
   // A series statement given in both scripts is one series with an 880; otherwise one 490 per statement.
   const series = get(instance, 'seriesStatement');
   if (scripts(series).alt) pfield('490', '0', ' ', [ps('a', series)]);
-  else for (const s of texts(series)) push(field('490', '0', ' ', [sf('a', s)]));
+  // 'Series ; 7' is $a Series ; $v 7 (the last ' ; ' parts the volume from the title).
+  else for (const s of texts(series)) {
+    const semi = s.lastIndexOf(' ; ');
+    push(field('490', '0', ' ', semi > 0 ? [sf('a', s.slice(0, semi) + ' ;'), sf('v', s.slice(semi + 3))] : [sf('a', s)]));
+  }
 
   // ---- Notes ----
   // Typed notes go to their own fields (546 language, 588 source of description, 586 awards); the rest are 500.
@@ -248,12 +270,20 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
     if (/^uncontrolled$/i.test(text(get(node, 'source')))) { push(field('653', ' ', ' ', [sf('a', text(node))])); continue; }
     if (isA(node, 'bf:Temporal')) { push(field('648', ' ', lcsh ? '0' : '4', [sf('a', text(node)), sf('0', link)])); continue; }
     const tag = isA(node, 'bf:Place') ? '651' : isA(node, 'bf:Person') ? '600' : isA(node, 'bf:Organization') ? '610' : '650';
+    // The heading as it came from MARC: its subdivisions keep their subfields ($x $y $z $v).
+    const key = fromMarcKey(node?.['bflc:marcKey']);
+    if (key && /^6\d\d$/.test(key.tag)) {
+      push({ tag: key.tag, ind1: key.ind1, ind2: key.ind2, subfields: [...key.subfields, ...[sf('0', link)].filter((x): x is Subfield => !!x)] });
+      continue;
+    }
     push(field(tag, tag === '600' ? '1' : tag === '610' ? '2' : ' ', lcsh ? '0' : '4', [sf('a', text(node)), sf('0', link)]));
   }
   for (const g of all(get(work, 'genreForm'))) {
     const node = resolve(g, graph);
     const link = uri(node);
     const lcgft = /authorities\/genreForms\//.test(link);
+    const gkey = fromMarcKey(node?.['bflc:marcKey']);
+    if (gkey && gkey.tag === '655') { push({ tag: '655', ind1: gkey.ind1, ind2: gkey.ind2, subfields: [...gkey.subfields, ...[sf('0', link)].filter((x): x is Subfield => !!x)] }); continue; }
     push(field('655', ' ', lcgft ? '7' : '4', [sf('a', text(node)), lcgft ? sf('2', 'lcgft') : null, sf('0', link)]));
   }
 
@@ -274,6 +304,13 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
   // notes and a 700 for each person, placed among the other fields by tag (880s stay where they are).
   const events = graph.filter((n) => isA(n, 'bf:Item')).flatMap((n) => all(n['moon:transmission']).map(nodeToEvent).filter((e): e is TransmissionEvent => !!e));
   for (const f of eventsToMarc(events)) {
+    const at = fields.findIndex((x) => x.tag > f.tag && x.tag !== '880');
+    if (at < 0) fields.push(f); else fields.splice(at, 0, f);
+  }
+
+  // Fields kept from MARC that Moon has no BIBFRAME for (moonext:marcField), placed among the others by tag.
+  for (const f of all(instance['moonext:marcField']).map(fromMarcKey).filter((x): x is DataField => !!x)) {
+    if (fields.some((x) => x.tag === f.tag && 'subfields' in x && JSON.stringify(x.subfields) === JSON.stringify(f.subfields))) continue;
     const at = fields.findIndex((x) => x.tag > f.tag && x.tag !== '880');
     if (at < 0) fields.push(f); else fields.splice(at, 0, f);
   }
