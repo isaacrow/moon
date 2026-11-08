@@ -44,6 +44,8 @@ import { vocabDocument } from "./specialVocab.tsx";
 import { openRecords, cleanLicence, voidDocument, voidTurtle } from "./licence.tsx";
 import { askMoon, askRecordOf, dayKey, underCap, MAX_QUESTION } from "./askMoon.tsx";
 import { askEnabled, planWithClaude, answerWithClaude } from "./askClaude.tsx";
+import { buildIndex, suggestSubjects, finderRecordOf } from "./subjectFinder.tsx";
+import { checkLinks } from "./linkChecker.tsx";
 import * as labelCache from "./labelCache.tsx";
 
 /** One run of the label cache refresh (S19): LC's change feed and Wikidata's modified times since the last run. */
@@ -1021,6 +1023,40 @@ app.get("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
 // Ask Moon (Phase 13 S15): readers ask; Claude answers only from Moon's published records, with links.
 // Off until the ANTHROPIC_API_KEY secret is set; at most MOON_ASK_DAILY_LIMIT questions a day (default 200).
 const ASK_CORS = { "Access-Control-Allow-Origin": "*" };
+// Subject finder (S16): subjects from the 10 nearest published records, for the cataloguer to pick.
+let finderIndex: { at: number; index: ReturnType<typeof buildIndex> } | null = null;
+app.post("/make-server-49c0e13c/subjects/suggest", async (c) => {
+  if (!(await getSession(c))) return c.json({ error: "Sign in to get subject suggestions" }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const text = typeof body.text === "string" ? body.text.slice(0, 5000) : "";
+  if (text.trim().length < 3) return c.json({ suggestions: [] });
+  try {
+    if (!finderIndex || Date.now() - finderIndex.at > 10 * 60_000) {
+      finderIndex = { at: Date.now(), index: buildIndex((await recordStore.listPublishedRecords()).map((r: any) => finderRecordOf(r))) };
+    }
+    const have = (Array.isArray(body.have) ? body.have : []).slice(0, 100).filter((h: any) => h && typeof h.label === "string").map((h: any) => ({ label: String(h.label), ...(typeof h.uri === "string" ? { uri: h.uri } : {}) }));
+    return c.json({ suggestions: suggestSubjects(finderIndex.index, text, have, typeof body.excludeId === "string" ? body.excludeId : undefined) });
+  } catch (error) {
+    console.error("Subject finder error:", error);
+    return c.json({ error: "Subject suggestions failed" }, 500);
+  }
+});
+
+// Link checker (S16): suspect links from entities to LC / VIAF / Wikidata, for a person to look at. Never blocks.
+app.get("/make-server-49c0e13c/entities/link-report", async (c) => {
+  if (!(await getSession(c))) return c.json({ error: "Sign in to see the link report" }, 401);
+  try {
+    const [entities, cached] = await Promise.all([recordStore.listAllAuthorities(), recordStore.allCachedLabels()]);
+    const agents = entities.filter((e: any) => !e.mergedInto && (e.sameAs || []).length && ["agent", "place", "topic"].includes(e.kind))
+      .map((e: any) => ({ id: e.id, kind: e.kind, label: e.label, variants: e.variants || [], sameAs: e.sameAs || [] }));
+    const issues = checkLinks(agents, new Map(cached.map((r) => [r.uri, r])), labelCache.canonical);
+    return c.json({ checked: agents.length, cachedNames: cached.length, issues });
+  } catch (error) {
+    console.error("Link report error:", error);
+    return c.json({ error: "The link report could not be made" }, 500);
+  }
+});
+
 app.get("/make-server-49c0e13c/ask", (c) => c.json({ enabled: askEnabled() }, 200, ASK_CORS));
 app.post("/make-server-49c0e13c/ask", async (c) => {
   if (!askEnabled()) return c.json({ error: "Ask Moon is not switched on" }, 503, ASK_CORS);

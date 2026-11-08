@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { describeLinkSource, sourcesByLink, type LinkSource } from '../utils/linkSource';
 import { EntityRequestsInbox, EntityMergeBox } from './EntityRequests';
 import { WorkGroupsReview } from './WorkGroupsReview';
+import { LinkReportCard } from './LinkReportCard';
 import { layerFrom, refreshFromSource, type ImportedLayers, type RefreshChange } from '../../services/entityLayers';
 import { toast } from 'sonner';
 import { ArrowLeft, Plus, Search, Save, History, Languages, ExternalLink, Users, X, Download, Loader2, Network, Link2, Layers } from 'lucide-react';
@@ -368,6 +369,9 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
             <Plus className="h-4 w-4" /> {t('كيان جديد', 'New entity')}
           </button>
         </div>
+
+        {/* Suspect links to LC, VIAF and Wikidata (S16): a report, never a block. */}
+        <LinkReportCard ar={isAr()} onOpen={async (id) => { const r = await moonFetch<any>(`/authorities/${encodeURIComponent(id)}`).catch(() => null); if (r?.ok && r.data?.authority) open(r.data.authority); }} />
 
         <EntityRequestsInbox ar={isAr()} refreshKey={requestsKey} onDecided={() => { setQuery((q) => q + ''); if (selected) open(selected); }} />
 
