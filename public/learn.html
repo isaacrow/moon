@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تعلّم مون — Learn Moon</title>
+<meta name="description" content="دروس قصيرة (دقيقتان أو ثلاث) في فهرسة BIBFRAME في مون، بمثال واحد: كليلة ودمنة. ومسرد بالعربية والإنجليزية.">
+<link rel="icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1d1d1f;--ink-2:#4a4a4f;--ink-3:#6b6b70;--hair:rgba(0,0,0,.08);--glass-bg:rgba(255,255,255,.6)}
+*{box-sizing:border-box}
+body{margin:0;font-family:'IBM Plex Sans Arabic',system-ui,'Segoe UI',sans-serif;font-size:17px;line-height:1.8;color:var(--ink);background:linear-gradient(180deg,#f5f5f6 0%,#e4e4e6 38%,#c9c9cc 100%) fixed;min-height:100vh}
+a{color:var(--ink)}
+.glass{background:var(--glass-bg);border-radius:16px;box-shadow:0 4px 30px rgba(0,0,0,.1);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid #fff}
+.wrap{max-width:860px;margin:0 auto;padding:0 16px}
+header.bar{position:sticky;top:12px;z-index:5;margin:12px auto 0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px}
+header.bar img{height:36px;width:auto;display:block}
+header.bar button{font:inherit;font-size:14px;border:1px solid #fff;background:rgba(255,255,255,.7);border-radius:999px;padding:4px 14px;cursor:pointer}
+h1{font-family:'Noto Naskh Arabic',serif;font-size:clamp(30px,5vw,46px);line-height:1.25;margin:36px 0 8px}
+.lede{color:var(--ink-2);margin:0 0 20px;max-width:62ch}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.toc a{text-decoration:none;background:rgba(255,255,255,.6);border:1px solid #fff;border-radius:999px;padding:4px 12px;font-size:14px}
+section.lesson{padding:22px 24px;margin:16px 0}
+section.lesson h2{margin:0;font-size:22px}
+.time{font-size:13px;color:var(--ink-3)}
+.ex{border-inline-start:3px solid var(--ink);padding:6px 14px;margin:12px 0;background:rgba(255,255,255,.5);border-radius:0 10px 10px 0}
+.inmoon{font-size:15px;color:var(--ink-2);margin-top:10px}
+.inmoon b{color:var(--ink)}
+code{font-family:ui-monospace,Consolas,monospace;font-size:.86em;background:rgba(0,0,0,.06);padding:1px 6px;border-radius:6px;direction:ltr;unicode-bidi:isolate}
+dl.gl{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:6px 16px;margin:8px 0}
+dl.gl dt{font-weight:700}
+dl.gl dd{margin:0;color:var(--ink-2);font-size:15px}
+.gl-search{width:100%;font:inherit;border:1px solid #fff;background:rgba(255,255,255,.85);border-radius:12px;padding:8px 12px;margin:8px 0}
+.draft{font-size:13px;color:var(--ink-3)}
+footer{margin:28px 0 40px;padding:14px 18px;color:var(--ink-2);font-size:14px}
+@media (max-width:640px){dl.gl{grid-template-columns:1fr}section.lesson{padding:18px 16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar glass">
+    <a href="/opac.html" aria-label="Moon"><img src="/opac-logo.png" alt="مون" width="230" height="120"></a>
+    <button id="lang" type="button">English</button>
+  </header>
+  <h1 id="h1"></h1>
+  <p class="lede" id="lede"></p>
+  <nav class="toc" id="toc" aria-label="Lessons"></nav>
+  <main id="lessons"></main>
+  <section class="lesson glass" id="glossary">
+    <h2 id="glh"></h2>
+    <input class="gl-search" id="glq" type="search" autocomplete="off">
+    <dl class="gl" id="gl"></dl>
+  </section>
+  <footer class="glass" id="foot"></footer>
+</div>
+<script>
+(function () {
+  var lang = (function () { try { return localStorage.getItem('moon-learn-lang') || 'ar'; } catch (e) { return 'ar'; } })();
+  var glossary = [];
+  var L = {
+    ar: {
+      h1: 'تعلّم مون', btn: 'English', glh: 'المسرد', glq: 'ابحث عن كلمة (طبعة، URI، Instance)…', min: 'دقائق',
+      lede: 'دروس قصيرة، كل منها دقيقتان أو ثلاث، في الفهرسة بـ BIBFRAME كما يعملها مون. كلها بمثال واحد يعرفه الجميع: «كليلة ودمنة»، الكتاب الذي نقله ابن المقفع إلى العربية في القرن الثاني الهجري، وله اليوم مئات الطبعات والترجمات والمخطوطات.',
+      foot: 'النص العربي مسودة تنتظر المراجعة. في محرر مون، علامة «؟» بجانب كل حقل تفتح شرحه من هذا المسرد، وصفحة <a href="/marc.html">أين حقل مارك؟</a> تبيّن أين يذهب كل حقل من مارك.',
+      lessons: [
+        { id: 'wemi', t: 'كتاب واحد، طبعات كثيرة', m: 3,
+          body: '<p>في مارك كانت كل طبعة تسجيلة منفصلة تكرر المؤلف والموضوع. في BIBFRAME نفصل ثلاثة أشياء:</p><ul><li><b>العمل (Work)</b>: «كليلة ودمنة» نفسه، بمؤلفه وموضوعه ولغته. يُسجَّل مرة واحدة.</li><li><b>الطبعة (Instance)</b>: طبعة بعينها بناشرها وتاريخها وصفحاتها وردمكها.</li><li><b>النسخة (Item)</b>: النسخة التي على رف مكتبتك، برقم رفها.</li></ul>',
+          ex: 'عمل واحد «كليلة ودمنة» ← طبعات كثيرة (القاهرة، بيروت، باريس…) ← نسخ في مكتبات كثيرة.',
+          moon: 'في مون: المحرر يقسم الحقول إلى العمل والطبعة والنسخ، والفهرس العام يجمع طبعات العمل الواحد تحت نتيجة واحدة («3 طبعات لهذا العمل»).' },
+        { id: 'hub', t: 'الترجمات والمحور', m: 2,
+          body: '<p>«كليلة ودمنة» نُقل إلى الفارسية والعبرية واللاتينية والإنجليزية وغيرها. كل ترجمة عمل قائم بنفسه (فيه المترجم ولغته)، لكنه <b>ترجمة لـ</b> الأصل.</p><p><b>المحور (Hub)</b> يجمع كل هذه الصور تحت اسم واحد، فيجد القارئ الترجمات كلها من أي واحدة منها.</p>',
+          ex: 'الترجمة الإنجليزية ← «ترجمة لـ» ← النص العربي؛ والاثنان من محور «كليلة ودمنة».',
+          moon: 'في مون: حقل «ترجمة لـ» في العمل، وصفحة المحور في الفهرس تعرض الترجمات والطبعات معاً.' },
+        { id: 'names', t: 'الاسم الواحد بشكل واحد', m: 3,
+          body: '<p>يُكتب اسم ابن المقفع بأشكال كثيرة: «عبد الله بن المقفع»، «ابن المقفع»، Ibn al-Muqaffaʿ. لو كتب كل مفهرس شكلاً لتفرقت كتبه.</p><p>لذلك يكون للشخص <b>كيان</b> واحد في ملف الاستناد، له شكل مفضل لكل خط، وأشكال أخرى يُبحث بها، وروابط إلى الشخص نفسه في مكتبة الكونغرس وVIAF وويكي بيانات.</p>',
+          ex: 'كيان واحد: «ابن المقفع» (بالعربية) و Ibn al-Muqaffaʿ (بالكتابة اللاتينية) ← مرتبط بالكونغرس وويكي بيانات.',
+          moon: 'في مون: صفحة «الكيانات»، وزر «اربط بـ LC وVIAF وويكي بيانات». الفهرس العام يعرض ما تسمّيه به مكتبة الكونغرس وويكي بيانات.' },
+        { id: 'scripts', t: 'خطّان معاً', m: 2,
+          body: '<p>الفهارس العالمية تبحث بالحروف اللاتينية، والقارئ العربي يبحث بالعربية. نسجل العنوان والاسم <b>بالصيغتين</b>: العربية، وكتابتها اللاتينية على قواعد مكتبة الكونغرس (ALA-LC).</p>',
+          ex: 'كليلة ودمنة = Kalīlah wa-Dimnah',
+          moon: 'في مون: لوحة «الكتابة اللاتينية» تقترح الصيغة اللاتينية من أداة ScriptShifter لمكتبة الكونغرس، أو الصيغة العربية لما جاء باللاتينية وحدها، فتراجعها قبل إضافتها. وفي مارك تخرج العربية في حقل 880.' },
+        { id: 'subjects', t: 'عمَّ يتحدث، وما هو', m: 2,
+          body: '<p>فرق بين <b>الموضوع</b> (عمَّ يتحدث الكتاب) و<b>النوع</b> (ما هو الكتاب). «كليلة ودمنة» نوعه حكايات على ألسنة الحيوان؛ ودراسة عن «كليلة ودمنة» موضوعها الكتاب نفسه.</p><p>الاثنان من قوائم مضبوطة لا كلمات حرة، حتى يجتمع ما تحتهما.</p>',
+          ex: 'النص: نوعه «حكايات». الدراسة: موضوعها «كليلة ودمنة».',
+          moon: 'في مون: حقل الموضوع وحقل النوع والشكل يبحثان في قوائم مكتبة الكونغرس وملف مون.' },
+        { id: 'manuscripts', t: 'المخطوط ونسخه', m: 3,
+          body: '<p>في المخطوط تكون <b>النسخة</b> هي المهمة: عليها الإجازات والسماعات والتملكات والوقفيات والأختام، وقد تكون مجموعاً يضم رسائل كثيرة.</p><ul><li>الإجازة والسماع تُسجَّل <b>أحداثاً</b> على النسخة بأشخاصها وأدوارهم ومكانها وتاريخها.</li><li>الأختام والتجليد والحالة تُسجَّل في «الوصف المادي للنسخة».</li><li>المجموع: كل رسالة فيه عمل بعنوانه ومؤلفه.</li></ul>',
+          ex: 'نسخة مخطوطة من «كليلة ودمنة» عليها ختم وقف، ضمن مجموع فيه رسالتان أخريان.',
+          moon: 'في مون: لوحة «النسخ» (أحداث النسخة ووصفها المادي) ولوحة «مجموع»، والفهرس العام يعرض الشيوخ والتلاميذ من الإجازات.' },
+        { id: 'marc', t: 'من مارك إلى BIBFRAME', m: 2,
+          body: '<p>إن كنت تعرف مارك فأنت تعرف أكثر مما تظن: الحقل 245 صار عنوان الطبعة، و100 صار المساهمة الرئيسة في العمل، و650 صار الموضوع، و300 صار الامتداد.</p><p>ما لا يحوّله مون بعد لا يضيع: يُحفظ كما هو ويعود عند التصدير إلى مارك.</p>',
+          ex: '245 $a ← Instance › title › mainTitle',
+          moon: 'في مون: صفحة <a href="/marc.html">أين حقل مارك؟</a> لكل حقل وحقل فرعي، ومحرر مارك داخل مون يحوّل فوراً إلى BIBFRAME.' },
+      ],
+    },
+    en: {
+      h1: 'Learn Moon', btn: 'العربية', glh: 'Glossary', glq: 'Find a word (Instance, URI, edition)…', min: 'min',
+      lede: "Short lessons, two or three minutes each, on cataloguing in BIBFRAME the way Moon does it. All with one book everyone knows: Kalīlah wa-Dimnah, which Ibn al-Muqaffaʿ brought into Arabic in the 8th century, and which has hundreds of editions, translations and manuscripts today.",
+      foot: 'The Arabic text is a draft awaiting review. In the Moon editor, the "?" beside each field opens its entry from this glossary, and <a href="/marc.html">Where is my MARC field?</a> shows where each MARC field goes.',
+      lessons: [
+        { id: 'wemi', t: 'One book, many editions', m: 3,
+          body: '<p>In MARC every edition was a separate record repeating the author and subject. BIBFRAME separates three things:</p><ul><li><b>Work</b>: Kalīlah wa-Dimnah itself, with its author, subject and language. Recorded once.</li><li><b>Instance</b>: one edition, with its publisher, date, pages and ISBN.</li><li><b>Item</b>: the copy on your library\'s shelf, with its shelf mark.</li></ul>',
+          ex: 'One work, Kalīlah wa-Dimnah → many editions (Cairo, Beirut, Paris …) → copies in many libraries.',
+          moon: 'In Moon: the editor groups fields into Work, Instance and copies, and the OPAC gathers the editions of one work into one result ("3 editions of this work").' },
+        { id: 'hub', t: 'Translations and the hub', m: 2,
+          body: '<p>Kalīlah wa-Dimnah went into Persian, Hebrew, Latin, English and more. Each translation is a work of its own (with its translator and language), and a <b>translation of</b> the original.</p><p>A <b>Hub</b> gathers all these versions under one name, so a reader finds every translation from any of them.</p>',
+          ex: 'English translation → "translation of" → the Arabic text; both under the Kalīlah wa-Dimnah hub.',
+          moon: 'In Moon: the Work\'s "Translation of" field, and the hub page in the OPAC listing translations and editions together.' },
+        { id: 'names', t: 'One name, one form', m: 3,
+          body: '<p>Ibn al-Muqaffaʿ is written many ways: «عبد الله بن المقفع», «ابن المقفع», Ibn al-Muqaffaʿ. If each cataloguer wrote their own, his books would scatter.</p><p>So the person is one <b>entity</b> in the authority file, with a preferred form for each script, other forms to search by, and links to the same person at LC, VIAF and Wikidata.</p>',
+          ex: 'One entity: «ابن المقفع» (Arabic) and Ibn al-Muqaffaʿ (romanized) → linked to LC and Wikidata.',
+          moon: 'In Moon: the Entities page and "Link to LC, VIAF, Wikidata". The OPAC shows what LC and Wikidata call each person.' },
+        { id: 'scripts', t: 'Two scripts together', m: 2,
+          body: '<p>World catalogues search in Latin letters; Arabic readers search in Arabic. Titles and names are recorded in <b>both</b>: Arabic, and its romanization by LC\'s rules (ALA-LC).</p>',
+          ex: 'كليلة ودمنة = Kalīlah wa-Dimnah',
+          moon: 'In Moon: the Romanization panel suggests the Latin form from LC\'s ScriptShifter, or the Arabic for values that came only romanized, for you to check. In MARC the Arabic goes in an 880.' },
+        { id: 'subjects', t: 'What it is about, and what it is', m: 2,
+          body: '<p><b>Subject</b> (what the book is about) is not <b>genre</b> (what the book is). Kalīlah wa-Dimnah is fables told by animals; a study of Kalīlah wa-Dimnah has the book itself as its subject.</p><p>Both come from controlled lists, not free words, so what is under them comes together.</p>',
+          ex: 'The text: genre "fables". The study: subject "Kalīlah wa-Dimnah".',
+          moon: 'In Moon: the Subject and Genre/form fields search LC\'s lists and Moon\'s own.' },
+        { id: 'manuscripts', t: 'A manuscript and its copies', m: 3,
+          body: '<p>For a manuscript, the <b>copy</b> matters most: it carries ijāzāt, samāʿāt, ownership and waqf notes and seals, and it may be a majmūʿ holding many treatises.</p><ul><li>An ijāzah or samāʿ is recorded as an <b>event</b> on the copy, with its people and their roles, place and date.</li><li>Seals, binding and condition go in the copy\'s "Physical description".</li><li>A majmūʿ: each treatise in it is a work with its own title and author.</li></ul>',
+          ex: 'A manuscript copy of Kalīlah wa-Dimnah with a waqf seal, bound with two other treatises.',
+          moon: 'In Moon: the Copies panel (events and physical description) and the Majmūʿ panel; the OPAC shows teachers and students from the ijāzāt.' },
+        { id: 'marc', t: 'From MARC to BIBFRAME', m: 2,
+          body: '<p>If you know MARC you know more than you think: 245 became the Instance\'s title, 100 the Work\'s primary contribution, 650 the subject, 300 the extent.</p><p>What Moon does not map yet is not lost: it is kept as it is and written back on MARC export.</p>',
+          ex: '245 $a → Instance › title › mainTitle',
+          moon: 'In Moon: <a href="/marc.html">Where is my MARC field?</a> for every field and subfield, and the MARC editor inside Moon that converts to BIBFRAME as you type.' },
+      ],
+    },
+  };
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function renderGlossary() {
+    var q = $('glq').value.trim().toLowerCase();
+    var rows = glossary.filter(function (g) { return !q || (g.ar + ' ' + g.en + ' ' + g.key + ' ' + g.defAr + ' ' + g.defEn).toLowerCase().indexOf(q) >= 0; });
+    $('gl').innerHTML = rows.map(function (g) {
+      return '<dt>' + esc(lang === 'ar' ? g.ar : g.en) + ' <span class="draft">' + esc(lang === 'ar' ? g.en : g.ar) + '</span></dt><dd>' + esc(lang === 'ar' ? g.defAr : g.defEn) + '</dd>';
+    }).join('');
+  }
+  function render() {
+    var t = L[lang];
+    document.documentElement.lang = lang; document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    $('h1').textContent = t.h1; $('lang').textContent = t.btn; $('lede').textContent = t.lede; $('glh').textContent = t.glh;
+    $('glq').placeholder = t.glq; $('foot').innerHTML = t.foot;
+    $('toc').innerHTML = t.lessons.map(function (l, i) { return '<a href="#' + l.id + '">' + (i + 1) + '. ' + esc(l.t) + '</a>'; }).join('') + '<a href="#glossary">' + t.glh + '</a>';
+    $('lessons').innerHTML = t.lessons.map(function (l, i) {
+      return '<section class="lesson glass" id="' + l.id + '"><h2>' + (i + 1) + '. ' + esc(l.t) + '</h2><div class="time">' + (lang === 'ar' ? (l.m === 2 ? 'دقيقتان' : l.m + ' دقائق') : l.m + ' min') + '</div>' + l.body
+        + '<div class="ex">' + esc(l.ex) + '</div><p class="inmoon">' + l.moon + '</p></section>';
+    }).join('');
+    renderGlossary();
+  }
+  $('lang').addEventListener('click', function () { lang = lang === 'ar' ? 'en' : 'ar'; try { localStorage.setItem('moon-learn-lang', lang); } catch (e) {} render(); });
+  $('glq').addEventListener('input', renderGlossary);
+  fetch('/glossary.json').then(function (r) { return r.json(); }).then(function (g) { glossary = g; renderGlossary(); }).catch(function () {});
+  render();
+})();
+</script>
+</body>
+</html>

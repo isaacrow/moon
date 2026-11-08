@@ -1,0 +1,155 @@
+/**
+ * Moon's glossary (Phase 13 S22): the words a cataloguer meets in Moon, in plain Arabic and English, one or
+ * two sentences each, with the BIBFRAME term it stands for. The editor shows them as pop-ups beside its
+ * fields; mooon.site/learn.html lists them. Where a term has MARC fields, the pop-up takes them from the
+ * "Where is my MARC field?" table (public/marc-where.json), which comes from Moon's own converter.
+ * The Arabic wording is a draft for review (S21).
+ */
+
+export interface GlossaryEntry {
+  /** The BIBFRAME property or class it explains (shortName, as the editor's fields use them). */
+  key: string;
+  ar: string;
+  en: string;
+  defAr: string;
+  defEn: string;
+}
+
+export const GLOSSARY: GlossaryEntry[] = [
+  // ---- The model ----
+  { key: 'Work', ar: 'العمل', en: 'Work',
+    defAr: 'الكتاب بوصفه فكرة ونصاً: «كليلة ودمنة» عمل واحد مهما تعددت طبعاته. فيه المؤلف والموضوع واللغة.',
+    defEn: 'The book as an idea and a text: Kalīlah wa-Dimnah is one work however many editions it has. It holds the author, the subject and the language.' },
+  { key: 'Instance', ar: 'الطبعة (الإصدار)', en: 'Instance',
+    defAr: 'صورة منشورة من العمل: طبعة بيروت غير طبعة القاهرة. فيها الناشر والتاريخ وعدد الصفحات والردمك.',
+    defEn: 'One published form of the work: the Beirut edition is not the Cairo one. It holds the publisher, date, pages and ISBN.' },
+  { key: 'Item', ar: 'النسخة', en: 'Item',
+    defAr: 'النسخة التي على الرف في مكتبة بعينها، برقم رفها وباركودها وما عليها من أختام وتملكات.',
+    defEn: 'The copy on a shelf in one library, with its shelf mark, barcode, and the seals and ownership notes on it.' },
+  { key: 'Hub', ar: 'المحور', en: 'Hub',
+    defAr: 'يجمع العمل وترجماته وطبعاته المختلفة: «كليلة ودمنة» بالعربية والفارسية والإنجليزية تحت محور واحد.',
+    defEn: 'Gathers a work with its translations and versions: Kalīlah wa-Dimnah in Arabic, Persian and English under one hub.' },
+  { key: 'Agent', ar: 'الفاعل', en: 'Agent',
+    defAr: 'شخص أو هيئة أو مؤتمر له صلة بالعمل: مؤلف، مترجم، محقق، ناشر.',
+    defEn: 'A person, organization or meeting connected with the work: author, translator, editor, publisher.' },
+  { key: 'AdminMetadata', ar: 'بيانات الإدارة', en: 'Admin metadata',
+    defAr: 'من فهرس التسجيلة ومتى وبأي قواعد (مثل RDA) وبأي لغة.',
+    defEn: 'Who catalogued the record, when, by which rules (such as RDA) and in which language.' },
+  // ---- Work fields ----
+  { key: 'title', ar: 'العنوان', en: 'Title',
+    defAr: 'العنوان كما في صفحة العنوان. العنوان الموازي أو عنوان الغلاف يُسجَّل عنواناً آخر.',
+    defEn: 'The title as on the title page. A parallel title or cover title is recorded as a variant title.' },
+  { key: 'mainTitle', ar: 'العنوان الرئيس', en: 'Main title',
+    defAr: 'الجزء الأول من العنوان، قبل النقطتين. ما بعدهما عنوان فرعي.',
+    defEn: 'The first part of the title, before the colon. What follows is the subtitle.' },
+  { key: 'subtitle', ar: 'العنوان الفرعي', en: 'Subtitle',
+    defAr: 'ما يلي العنوان الرئيس ويشرحه: «كليلة ودمنة : تحقيق ودراسة».',
+    defEn: 'What follows the main title and explains it: "Kalīlah wa-Dimnah : a critical edition".' },
+  { key: 'contribution', ar: 'المساهمة', en: 'Contribution',
+    defAr: 'من أسهم في العمل وبأي دور: ابن المقفع مترجماً، والمحقق محققاً. الدور من قائمة أدوار مكتبة الكونغرس.',
+    defEn: 'Who took part in the work and in what role: Ibn al-Muqaffaʿ as translator, the editor as editor. Roles come from LC\'s relator list.' },
+  { key: 'subject', ar: 'الموضوع', en: 'Subject',
+    defAr: 'عمَّ يتحدث الكتاب، من قائمة مضبوطة (رؤوس موضوعات الكونغرس أو ملف مون) لا بكلمات حرة.',
+    defEn: 'What the book is about, from a controlled list (LC subject headings or Moon\'s file), not free words.' },
+  { key: 'genreForm', ar: 'النوع والشكل', en: 'Genre / form',
+    defAr: 'ما هو الكتاب لا عمَّ يتحدث: حكايات، شعر، رواية، أطروحة.',
+    defEn: 'What the book is, not what it is about: fables, poetry, a novel, a thesis.' },
+  { key: 'language', ar: 'اللغة', en: 'Language',
+    defAr: 'لغة النص، برمز مكتبة الكونغرس (ara للعربية، per للفارسية). الترجمة تذكر لغتها ولغة الأصل.',
+    defEn: 'The language of the text, with LC\'s code (ara for Arabic, per for Persian). A translation gives its own language and the original\'s.' },
+  { key: 'classification', ar: 'التصنيف', en: 'Classification',
+    defAr: 'رقم يضع الكتاب بين أشباهه: تصنيف الكونغرس (PJ للأدب العربي) أو ديوي (892.7).',
+    defEn: 'A number that places the book among its kind: LC Classification (PJ for Arabic literature) or Dewey (892.7).' },
+  { key: 'summary', ar: 'الملخص', en: 'Summary',
+    defAr: 'بضعة أسطر تصف محتوى الكتاب للقارئ.',
+    defEn: 'A few lines describing the book\'s content for the reader.' },
+  { key: 'tableOfContents', ar: 'المحتويات', en: 'Contents',
+    defAr: 'أبواب الكتاب أو الأعمال التي يضمها، كما في فهرس الكتاب.',
+    defEn: 'The book\'s chapters, or the works it contains, as in its table of contents.' },
+  { key: 'hasPart', ar: 'يضم (مجموع)', en: 'Has part',
+    defAr: 'الأعمال التي يجمعها مجلد واحد: رسائل في مجموع، كل منها بعنوانه ومؤلفه.',
+    defEn: 'The works one volume holds: treatises in a majmūʿ, each with its own title and author.' },
+  { key: 'translationOf', ar: 'ترجمة لـ', en: 'Translation of',
+    defAr: 'يربط الترجمة بالعمل الأصل: الترجمة الإنجليزية لكليلة ودمنة ترجمةٌ للنص العربي.',
+    defEn: 'Links a translation to the original work: the English Kalīlah wa-Dimnah is a translation of the Arabic text.' },
+  { key: 'mode', ar: 'المقام', en: 'Mode (maqām)',
+    defAr: 'مقام القطعة الموسيقية، من قائمة مقامات مون (راست، بياتي، صبا…).',
+    defEn: 'The maqām of a piece of music, from Moon\'s maqām list (Rāst, Bayātī, Ṣabā …).' },
+  // ---- Instance fields ----
+  { key: 'responsibilityStatement', ar: 'بيان المسؤولية', en: 'Statement of responsibility',
+    defAr: 'أسماء المؤلفين والمحققين كما كُتبت في صفحة العنوان، حرفياً: «ترجمة عبد الله بن المقفع».',
+    defEn: 'The names of authors and editors as written on the title page, word for word: "translated by ʻAbd Allāh ibn al-Muqaffaʿ".' },
+  { key: 'editionStatement', ar: 'بيان الطبعة', en: 'Edition statement',
+    defAr: '«الطبعة الثانية» أو «طبعة منقحة» كما في الكتاب.',
+    defEn: '"Second edition" or "revised edition", as the book says.' },
+  { key: 'provisionActivity', ar: 'النشر', en: 'Publication',
+    defAr: 'مكان النشر واسم الناشر وتاريخه. التاريخ الهجري يُكتب كما في الكتاب ويُحسب ما يقابله.',
+    defEn: 'Place, publisher and date of publication. A Hijri date is written as in the book, and Moon works out the Gregorian years.' },
+  { key: 'extent', ar: 'عدد الصفحات (الامتداد)', en: 'Extent',
+    defAr: 'كم الكتاب: «320 صفحة» أو «2 مجلد» أو «150 ورقة» للمخطوط.',
+    defEn: 'How much there is: "320 pages", "2 volumes", or "150 leaves" for a manuscript.' },
+  { key: 'dimensions', ar: 'الأبعاد', en: 'Dimensions',
+    defAr: 'ارتفاع الكتاب بالسنتيمتر: «24 سم».',
+    defEn: 'The book\'s height in centimetres: "24 cm".' },
+  { key: 'identifiedBy', ar: 'المعرّف', en: 'Identifier',
+    defAr: 'رقم يدل على هذه الطبعة وحدها: الردمك (ISBN)، أو رقم مكتبة الكونغرس، أو رقم المخطوط.',
+    defEn: 'A number for this edition alone: the ISBN, an LC control number, or a manuscript number.' },
+  { key: 'seriesStatement', ar: 'السلسلة', en: 'Series',
+    defAr: 'السلسلة التي صدر فيها الكتاب ورقمه فيها: «سلسلة التراث ؛ 12».',
+    defEn: 'The series the book came out in and its number there: "Turāth series ; 12".' },
+  { key: 'carrier', ar: 'الحامل', en: 'Carrier',
+    defAr: 'ما الذي تمسكه بيدك: مجلد، أو مصدر على الإنترنت، أو قرص.',
+    defEn: 'What you hold: a volume, an online resource, a disc.' },
+  { key: 'media', ar: 'الوسيط', en: 'Media',
+    defAr: 'هل تحتاج جهازاً لقراءته؟ «دون وسيط» للكتاب المطبوع، «حاسوب» للكتاب الإلكتروني.',
+    defEn: 'Do you need a device to read it? "unmediated" for a printed book, "computer" for an e-book.' },
+  { key: 'content', ar: 'المحتوى', en: 'Content',
+    defAr: 'بأي شكل جاء المحتوى: نص، صور، موسيقى مدونة، صوت.',
+    defEn: 'The form the content takes: text, images, notated music, sound.' },
+  { key: 'issuance', ar: 'طريقة الصدور', en: 'Mode of issuance',
+    defAr: 'مرة واحدة (كتاب) أم على دفعات (دورية) أم مجموعة.',
+    defEn: 'Issued once (a book), in parts over time (a serial), or as a set.' },
+  { key: 'note', ar: 'ملاحظة', en: 'Note',
+    defAr: 'معلومة لا مكان لها في حقل آخر. الأفضل دائماً حقل محدد إن وُجد.',
+    defEn: 'Information that has no other field. A specific field is always better when there is one.' },
+  { key: 'binding', ar: 'التجليد', en: 'Binding',
+    defAr: 'غلاف الكتاب وطريقة جمع أوراقه: جلد، ورق مقوى، مع لسان.',
+    defEn: 'The book\'s covering and how its leaves are held: leather, boards, with a flap.' },
+  { key: 'custodialHistory', ar: 'تاريخ الحيازة', en: 'Custodial history',
+    defAr: 'من ملك النسخة ومن وقفها، من التملكات والوقفيات المسجلة عليها.',
+    defEn: 'Who owned the copy and who endowed it, from the ownership and waqf notes on it.' },
+  // ---- Linked data ----
+  { key: 'uri', ar: 'المعرّف الدائم (URI)', en: 'URI',
+    defAr: 'عنوان على الإنترنت لا يتغير يدل على شيء واحد: كتاب أو شخص أو موضوع. الحواسيب تربط البيانات به.',
+    defEn: 'A web address that never changes and names one thing: a book, a person, a subject. Computers link data through it.' },
+  { key: 'sameAs', ar: 'الشيء نفسه في', en: 'Same as',
+    defAr: 'يقول إن هذا الشخص في مون هو نفسه في مكتبة الكونغرس وVIAF وويكي بيانات، فتجتمع المعلومات عنه.',
+    defEn: 'Says this person in Moon is the same one in LC, VIAF and Wikidata, so what is known about them comes together.' },
+  { key: 'romanization', ar: 'الكتابة اللاتينية (ALA-LC)', en: 'Romanization (ALA-LC)',
+    defAr: 'كتابة العربي بالحروف اللاتينية على قواعد مكتبة الكونغرس: «كليلة ودمنة» = Kalīlah wa-Dimnah. نسجل الصيغتين معاً.',
+    defEn: 'Writing Arabic in Latin letters by LC\'s rules: كليلة ودمنة = Kalīlah wa-Dimnah. Moon keeps both forms together.' },
+  { key: 'authority', ar: 'ملف الاستناد', en: 'Authority file',
+    defAr: 'القائمة الموحدة للأسماء والموضوعات، حتى يُكتب الاسم الواحد بشكل واحد ويُعثر على كل كتبه.',
+    defEn: 'The agreed list of names and subjects, so one name is always written one way and all its books are found.' },
+];
+
+const BY_KEY = new Map(GLOSSARY.map((g) => [g.key.toLowerCase(), g]));
+/** The entry for a field or class, if the glossary has one (bf:mainTitle, mainTitle and Main Title all match). */
+export function glossaryEntry(key: string): GlossaryEntry | undefined {
+  const k = String(key || '').replace(/^.*[:#/]/, '').replace(/\s+/g, '').toLowerCase();
+  return BY_KEY.get(k);
+}
+
+export interface MarcWhereField { tag: string; status: string; subfields: Array<{ code: string; places: string[] }> }
+/** The MARC fields whose words land in a BIBFRAME property, from the "Where is my MARC field?" table. */
+export function marcFieldsFor(key: string, table: MarcWhereField[]): string[] {
+  const k = String(key).replace(/^.*[:#/]/, '');
+  const re = new RegExp(`(^|› )bf:${k}( ›|$)`);
+  const out: string[] = [];
+  for (const f of table) {
+    if (f.status !== 'mapped') continue;
+    const codes = f.subfields.filter((s) => s.places.some((p) => re.test(p))).map((s) => `$${s.code}`);
+    if (codes.length) out.push(`${f.tag} ${codes.slice(0, 4).join('')}`);
+  }
+  return out.slice(0, 8);
+}

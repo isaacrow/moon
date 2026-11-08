@@ -701,6 +701,8 @@ function Home({ ctx }: { ctx: Ctx }) {
               <a href="/resource/dump.jsonld">{t('تنزيل الفهرس (JSON-LD)', 'Download the catalogue (JSON-LD)')}</a>
               <a href="/resource/dump.nt">N-Triples</a>
               <a href="/api.html">واجهة البرمجة (API)</a>
+              <a href="/learn.html">{t('تعلّم الفهرسة في مون', 'Learn cataloguing in Moon')}</a>
+              <a href="/marc.html">{t('أين حقل مارك؟', 'Where is my MARC field?')}</a>
             </div>
           </div>
         </section>
