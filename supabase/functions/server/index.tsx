@@ -28,7 +28,8 @@ import * as jwtAuth from "./jwtAuth.tsx";
 import * as observability from "./observability.tsx";
 import * as loadTesting from "./loadTesting.tsx";
 import recordRoutes from "./recordRoutes.tsx";
-import accountRoutes, { getSession, isAdminSession, canReview, isReviewer, SUPER_ADMIN_USERNAME } from "./accountRoutes.tsx";
+import accountRoutes, { getSession, isAdminSession, canReview, isReviewer, SUPER_ADMIN_USERNAME, libraryOf } from "./accountRoutes.tsx";
+import { applyOwnership, withOwners, withoutOwners, blockedMessage } from "./protectedValues.tsx";
 import * as recordStore from "./recordStore.tsx";
 import * as linkedData from "./linkedData.tsx";
 import * as sparqlStore from "./sparqlEndpoint.tsx";
@@ -1542,6 +1543,8 @@ const withPreferred = (data: Record<string, unknown>, label: string, variants: s
   return Object.keys(p).length ? { ...rest, preferredForms: p } : rest;
 };
 const withUri = (a: any) => ({ ...a, uri: `${linkedData.BASE_URI}/${a.kind}/${a.id}` });
+// What the public sees of an entity: who added which value (S18) stays with signed-in cataloguers.
+const publicAuthority = (a: any) => ({ ...withUri(a), data: withoutOwners(a.data) });
 
 app.get("/make-server-49c0e13c/authorities", async (c) => {
   try {
@@ -1550,7 +1553,8 @@ app.get("/make-server-49c0e13c/authorities", async (c) => {
     if (kind && !AUTHORITY_KINDS.includes(kind)) return c.json({ error: KINDS_ERROR }, 400);
     const limit = Math.min(Math.max(Number(c.req.query('limit')) || 20, 1), 100);
     const found = await recordStore.searchAuthorities(q, kind as any, limit);
-    return c.json({ authorities: found.map(withUri) }, 200, { 'Access-Control-Allow-Origin': '*' });
+    const signedIn = !!(await getSession(c));
+    return c.json({ authorities: found.map(signedIn ? withUri : publicAuthority) }, 200, { 'Access-Control-Allow-Origin': '*' });
   } catch (error) {
     console.error('Authority search error:', error);
     return c.json({ error: 'Authority search failed' }, 500);
@@ -1566,7 +1570,7 @@ app.get("/make-server-49c0e13c/authorities/by-link", async (c) => {
     const kind = c.req.query('kind') || null;
     if (kind && !AUTHORITY_KINDS.includes(kind)) return c.json({ error: KINDS_ERROR }, 400);
     const found = await recordStore.findAuthorityByLinks(uris, kind as any);
-    return c.json({ authority: found ? withUri(found) : null }, 200, { 'Access-Control-Allow-Origin': '*' });
+    return c.json({ authority: found ? publicAuthority(found) : null }, 200, { 'Access-Control-Allow-Origin': '*' });
   } catch (error) {
     console.error('Authority by-link error:', error);
     return c.json({ error: 'Failed to look up the link' }, 500);
@@ -1584,9 +1588,13 @@ app.post("/make-server-49c0e13c/authorities", async (c) => {
     const { data, error: detailsError } = entityDetails(body.kind, body.data);
     if (!data) return c.json({ error: detailsError }, 400);
     const variants = entityStrings(body.variants, 50);
+    const sameAsNew = entityStrings(body.sameAs, 20);
+    const created = { label, variants, sameAs: sameAsNew, data: withPreferred(data, label, variants) };
+    const owned = applyOwnership({ label: '', variants: [], sameAs: [] }, created,
+      { username: session.username, library: await libraryOf(session.username), admin: session.role === 'admin' }, new Date().toISOString());
     const result = await recordStore.addAuthority({
-      kind: body.kind, label, variants, sameAs: entityStrings(body.sameAs, 20),
-      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : undefined, data: withPreferred(data, label, variants),
+      kind: body.kind, label, variants, sameAs: sameAsNew,
+      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : undefined, data: withOwners(created.data, owned.owners),
     }, session.username);
     return c.json({ existing: result.existing, authority: withUri(result.authority) }, result.existing ? 200 : 201);
   } catch (error) {
@@ -1750,7 +1758,8 @@ app.get("/make-server-49c0e13c/authorities/:id", async (c) => {
   try {
     const entry = await recordStore.getAuthority(c.req.param('id'));
     if (!entry) return c.json({ error: 'No entity with this id' }, 404);
-    const withAddress = withUri(entry);
+    const signedIn = !!(await getSession(c));
+    const withAddress = signedIn ? withUri(entry) : publicAuthority(entry);
     // Records that point at the entity, or at the same thing in LC, VIAF or Wikidata.
     const usage = await recordStore.authorityUsage(withAddress.uri, withAddress.sameAs || []);
     // Where each outside link came from, for signed-in catalogers only (it names who added it).
@@ -1842,9 +1851,15 @@ app.put("/make-server-49c0e13c/authorities/:id", async (c) => {
     const { data, error: detailsError } = entityDetails(current.kind, body.data);
     if (!data) return c.json({ error: detailsError }, 400);
     const variants = entityStrings(body.variants, 50).filter((v) => v !== label);
+    // Protected values (S18): what another library added stays unless that library or the Super Admin removes it.
+    const next = { label, variants, sameAs, data: withPreferred(data, label, variants) };
+    const ownership = applyOwnership(
+      { label: current.label, variants: current.variants || [], sameAs: current.sameAs || [], data: current.data || {} },
+      next, { username: session.username, library: await libraryOf(session.username), admin: session.role === 'admin' }, new Date().toISOString());
+    if (ownership.blocked.length) return c.json({ error: blockedMessage(ownership.blocked), protected: ownership.blocked }, 409);
     const result = await recordStore.updateAuthority(id, {
       label, variants, sameAs,
-      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : null, data: withPreferred(data, label, variants),
+      note: typeof body.note === 'string' ? body.note.slice(0, 2000) : null, data: withOwners(next.data, ownership.owners),
     }, session.username, Number.isInteger(body.version) ? body.version : undefined);
     if (result.status === 'conflict') return c.json({ error: 'Someone saved this entity since you opened it', authority: result.authority && withUri(result.authority) }, 409);
     if (result.status === 'duplicate') return c.json({ error: 'Another entity of this kind already has this name', other: result.other && withUri(result.other) }, 409);

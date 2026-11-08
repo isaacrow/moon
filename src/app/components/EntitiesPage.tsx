@@ -287,6 +287,13 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
       setForm(formFrom(res.data.authority));
       return;
     }
+    if (res.status === 409 && Array.isArray(res.data?.protected)) {
+      // Protected values (S18): another library added these; only they or the Super Admin may remove or change them.
+      const list = res.data.protected.slice(0, 6).map((p: any) => `«${p.value}» — ${p.library}`).join(' · ');
+      toast.error(t('قيم أضافتها مكتبة أخرى لا تُحذف ولا تُغيَّر إلا منها أو من المشرف العام', 'Values another library added can only be removed or changed by that library or the Super Admin'),
+        { description: list, duration: 12000 });
+      return;
+    }
     if (res.status === 409 && res.data?.other) {
       toast.error(t(`يوجد كيان آخر بهذا الاسم: ${res.data.other.label}`, `Another entity already has this name: ${res.data.other.label}`));
       return;
@@ -616,6 +623,23 @@ export function EntitiesPage({ onBack }: { onBack: () => void }) {
                     </Field>
                   ))}
                 </div>
+
+                {selected && (() => {
+                  // Protected values (S18): which library added each value. Another library cannot remove or change them.
+                  const owners = Object.entries(((selected.data as any)?._owners || {}) as Record<string, { library: string; by: string; at: string }>);
+                  if (!owners.length) return null;
+                  const byLibrary = new Map<string, string[]>();
+                  for (const [key, o] of owners) byLibrary.set(o.library, [...(byLibrary.get(o.library) || []), key.replace(/^(label|variant|sameAs|data):/, '').replace(/=/, ': ')]);
+                  return (
+                    <details className="rounded-xl bg-white/60 border border-white p-3 text-xs text-slate-700">
+                      <summary className="cursor-pointer font-semibold">{t(`من أضاف ماذا (${owners.length})`, `Who added what (${owners.length})`)}</summary>
+                      <p className="mt-1 text-slate-500">{t('ما أضافته مكتبة لا تحذفه ولا تغيّره مكتبة أخرى؛ تقدر عليه المكتبة نفسها والمشرف العام.', 'What one library added, another cannot remove or change; that library and the Super Admin can.')}</p>
+                      {[...byLibrary].map(([lib, keys]) => (
+                        <div key={lib} className="mt-1"><b>{lib}</b>: <span dir="auto">{keys.slice(0, 12).join(' · ')}{keys.length > 12 ? ` +${keys.length - 12}` : ''}</span></div>
+                      ))}
+                    </details>
+                  );
+                })()}
 
                 <Field label={t('الكيان نفسه في ملفات أخرى (رابط في كل سطر)', 'Same entity elsewhere (one link per line)')} hint={t('مكتبة الكونغرس، VIAF، ويكي بيانات، FAST، ISNI، ORCID', 'Library of Congress, VIAF, Wikidata, FAST, ISNI, ORCID')}>
                   <textarea className={INPUT} dir="ltr" rows={2} value={form.sameAs} onChange={(e) => set({ sameAs: e.target.value })} />
