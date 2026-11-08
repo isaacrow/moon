@@ -715,6 +715,7 @@ function SinglePropertyRenderer({
     return (
       <div className="space-y-2">
         <AuthoritySelect
+          isLight={isLight}
           label={translateLabel(property.label)}
           value={value}
           onChange={onChange}
