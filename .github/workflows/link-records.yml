@@ -46,3 +46,13 @@ jobs:
             -H "Authorization: Bearer ${key}" -H "X-Moon-Job-Token: ${MOON_JOB_TOKEN}" -H 'Content-Type: application/json' -d '{}') || labels='{"error":"failed"}'
           echo "label cache: $(echo "$labels" | jq -c .)"
           echo "### Entity linking: ${linked} headings linked in ${changed} records" >> "$GITHUB_STEP_SUMMARY"
+      # LC refuses the server's shared addresses, so the runner reads LC's change feed and records itself (S19).
+      - name: LC names for the label cache
+        env:
+          MOON_JOB_TOKEN: ${{ secrets.MOON_JOB_TOKEN }}
+        run: |
+          if [ -z "${MOON_JOB_TOKEN}" ]; then exit 0; fi
+          project=$(grep -o 'projectId = "[^"]*"' utils/supabase/info.tsx | cut -d'"' -f2)
+          export MOON_KEY=$(grep -o 'publicAnonKey = "[^"]*"' utils/supabase/info.tsx | cut -d'"' -f2)
+          export MOON_API="https://${project}.supabase.co/functions/v1/make-server-49c0e13c"
+          npx --yes tsx@4.19.2 scripts/label-cache-lc.mts
