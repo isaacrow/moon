@@ -55,10 +55,7 @@ const ROW: React.CSSProperties = {
   boxShadow: '0 2px 16px rgba(0, 0, 0, 0.05)',
 };
 
-const PENDING_ROW: React.CSSProperties = {
-  ...ROW,
-  background: 'rgba(254, 243, 199, 0.6)',
-};
+const PENDING_ROW: React.CSSProperties = ROW;
 
 const PILL: React.CSSProperties = {
   borderRadius: 999,
@@ -67,20 +64,14 @@ const PILL: React.CSSProperties = {
   boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
 };
 
-const APPROVE_PILL: React.CSSProperties = {
-  ...PILL,
-  background: 'rgba(5, 150, 105, 0.92)',
-};
+const APPROVE_PILL: React.CSSProperties = PILL;
 
-const REJECT_PILL: React.CSSProperties = {
-  ...PILL,
-  background: 'rgba(254, 226, 226, 0.75)',
-};
+const REJECT_PILL: React.CSSProperties = PILL;
 
 const STATUS_STYLE: Record<AuthUser['status'], React.CSSProperties> = {
-  pending: { background: 'rgba(253, 230, 138, 0.9)', color: '#78350f', border: '1px solid rgba(255, 255, 255, 1)' },
-  approved: { background: 'rgba(209, 250, 229, 0.85)', color: '#065f46', border: '1px solid rgba(255, 255, 255, 1)' },
-  rejected: { background: 'rgba(254, 226, 226, 0.85)', color: '#9f1239', border: '1px solid rgba(255, 255, 255, 1)' },
+  pending: { background: 'rgba(255, 255, 255, 0.57)', color: '#0f172a', border: '1px solid rgba(255, 255, 255, 1)' },
+  approved: { background: 'rgba(255, 255, 255, 0.57)', color: '#0f172a', border: '1px solid rgba(255, 255, 255, 1)' },
+  rejected: { background: 'rgba(255, 255, 255, 0.57)', color: '#0f172a', border: '1px solid rgba(255, 255, 255, 1)' },
 };
 
 // ---- Component -------------------------------------------------------------------------
@@ -174,7 +165,7 @@ export function TesterApprovalCenter({
             <div className="relative px-6 pt-6 pb-4 flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-3 rounded-2xl" style={{ ...PILL, borderRadius: 18 }}>
-                  <ShieldCheck className="h-6 w-6 text-amber-600" />
+                  <ShieldCheck className="h-6 w-6 text-slate-800" />
                 </div>
                 <div>
                   <h2 className="text-xl font-black tracking-tight">{ar ? 'مركز اعتماد الفاحصين' : 'Tester Approval Center'}</h2>
@@ -206,7 +197,7 @@ export function TesterApprovalCenter({
                           {tab.label}
                           <span className="min-w-5 px-1.5 rounded-full text-[10px] font-black"
                             style={tab.key === 'pending' && counts.pending > 0
-                              ? { background: '#f59e0b', color: '#451a03' }
+                              ? { background: '#0f172a', color: '#ffffff' }
                               : { background: active ? 'rgba(255,255,255,0.22)' : 'rgba(15,23,42,0.08)' }}>
                             {counts[tab.key]}
                           </span>
@@ -228,7 +219,7 @@ export function TesterApprovalCenter({
                       style={{ ...PILL, borderRadius: 16, paddingInlineStart: 36 }} />
                   </div>
                   {error && (
-                    <p className="text-xs px-3 py-2" style={{ ...REJECT_PILL, borderRadius: 14, color: '#9f1239' }}>{error}</p>
+                    <p className="text-xs px-3 py-2" style={{ ...REJECT_PILL, borderRadius: 14, color: '#0f172a' }}>{error}</p>
                   )}
                 </div>
 
@@ -255,8 +246,8 @@ export function TesterApprovalCenter({
                           <span className="relative shrink-0">
                             <UserAvatar username={u.username || '?'} size={44} />
                             {u.online && (
-                              <span className="absolute bottom-0 end-0 h-3.5 w-3.5 rounded-full bg-emerald-400"
-                                style={{ border: '2px solid #ffffff', boxShadow: '0 0 6px rgba(16,185,129,0.6)' }}
+                              <span className="absolute bottom-0 end-0 h-3.5 w-3.5 rounded-full bg-slate-900"
+                                style={{ border: '2px solid #ffffff', boxShadow: '0 2px 6px rgba(0,0,0,0.2)' }}
                                 aria-hidden="true" />
                             )}
                           </span>
@@ -267,19 +258,19 @@ export function TesterApprovalCenter({
                                 {statusLabel(u.status)}
                               </span>
                               {isAdmin && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ ...PILL, background: 'rgba(254, 243, 199, 0.85)', color: '#92400e' }}>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ ...PILL, color: '#0f172a' }}>
                                   {ar ? 'المشرف العام' : 'Super Admin'}
                                 </span>
                               )}
                             </div>
                             <div className="text-xs text-slate-700 flex items-center gap-x-3 gap-y-1 flex-wrap">
                               <span className="flex items-center gap-1 min-w-0"><Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="truncate">{u.email}</span></span>
-                              {u.institution && <span className="flex items-center gap-1 min-w-0 text-sky-800"><Building2 className="h-3.5 w-3.5 shrink-0 text-sky-600/70" /><span className="truncate">{u.institution}</span></span>}
+                              {u.institution && <span className="flex items-center gap-1 min-w-0 text-slate-700"><Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="truncate">{u.institution}</span></span>}
                               {!isAdmin && dateOf(u.registeredAt) && <span className="flex items-center gap-1 text-slate-500"><CalendarDays className="h-3.5 w-3.5" />{dateOf(u.registeredAt)}</span>}
                             </div>
                             <div className="text-xs flex items-center gap-1.5">
                               {u.online ? (
-                                <span className="font-bold text-emerald-700">{ar ? 'متصل الآن' : 'Online now'}</span>
+                                <span className="font-bold text-slate-900">{ar ? 'متصل الآن' : 'Online now'}</span>
                               ) : (
                                 <span className="text-slate-500">{formatLastSeen(u.lastSeenAt, ar)}</span>
                               )}
@@ -304,7 +295,7 @@ export function TesterApprovalCenter({
                             )}
                             {u.status !== 'approved' && (
                               <button type="button" onClick={() => onApprove(u.username)}
-                                className="px-4 h-9 text-xs font-black flex items-center gap-1.5 text-white hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                className="px-4 h-9 text-xs font-black flex items-center gap-1.5 text-slate-900 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                                 style={APPROVE_PILL}>
                                 {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                                 {u.status === 'rejected' ? (ar ? 'إعادة اعتماد' : 'Re-approve') : (ar ? 'اعتماد' : 'Approve')}
@@ -312,14 +303,14 @@ export function TesterApprovalCenter({
                             )}
                             {u.status !== 'rejected' && (
                               <button type="button" onClick={() => onReject(u.username)}
-                                className="px-3.5 h-9 text-xs font-bold flex items-center gap-1.5 text-rose-800 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                className="px-3.5 h-9 text-xs font-bold flex items-center gap-1.5 text-slate-900 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                                 style={REJECT_PILL}>
                                 {u.status === 'approved' ? <Undo2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
                                 {u.status === 'approved' ? (ar ? 'سحب الصلاحية' : 'Revoke') : (ar ? 'رفض' : 'Decline')}
                               </button>
                             )}
                             <button type="button" onClick={() => onDelete(u.username)}
-                              className="h-9 w-9 flex items-center justify-center text-slate-500 hover:text-rose-600 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                              className="h-9 w-9 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                               style={PILL} title={ar ? 'حذف الحساب' : 'Delete account'} aria-label={ar ? 'حذف الحساب' : 'Delete account'}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
