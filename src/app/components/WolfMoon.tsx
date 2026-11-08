@@ -1841,6 +1841,27 @@ export default function WolfMoon({
             <span>{t("import")}</span>
           </button>
 
+          {/* Open this record in the public catalogue (OPAC), as readers see it: its published version. */}
+          {!practice && (
+            <button
+              type="button"
+              disabled={!storageId}
+              onClick={() => {
+                if (!storageId) return;
+                // The site root (mooon.site/ or a subfolder), from the editor's own address (…/moon/).
+                const root = window.location.pathname.replace(/(moon|dashboard|editor)\/.*$/, "").replace(/[^/]*$/, "");
+                window.open(`${root}opac.html?work=${encodeURIComponent(storageId)}`, "_blank", "noopener");
+              }}
+              title={!storageId
+                ? (language === "ar" ? "احفظ التسجيلة أولاً" : "Save the record first")
+                : (language === "ar" ? "افتح التسجيلة في الفهرس العام كما يراها القراء (النسخة المنشورة)" : "Open the record in the public catalogue as readers see it (the published version)")}
+              className="glass-bubble-pill hover:scale-105 active:scale-95 transition-all flex items-center gap-1 px-2.5 py-1 text-xs font-bold cursor-pointer text-white shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+            >
+              <ExternalLink className="h-3 w-3 text-sky-200" />
+              <span>{language === "ar" ? "افتح في الفهرس العام" : "Open in OPAC"}</span>
+            </button>
+          )}
+
           {/* Simple mode (S22): only the fields a language expert needs. */}
           <button
             type="button"
