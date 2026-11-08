@@ -218,5 +218,7 @@ export function completeRecord(graph: any[], fallbackTitle?: string): any[] {
 /** The record as Moon publishes it: strict BIBFRAME 3.0.1, tagged, typed, complete. The input is not changed. */
 export function finishPublished(document: any, options: { title?: string } = {}): any {
   const graph = Array.isArray(document?.["@graph"]) ? document["@graph"] : [];
-  return { ...document, "@graph": completeRecord(graph.map((node: any) => legacyToBibframe(creatorsToContributions(node))), options.title).map((node: any) => fixNode(node)) };
+  // MARC fields kept for the round trip (moonext:marcField) stay in Moon; they are not published.
+  const withoutMarc = graph.map((node: any) => { if (!node || !("moonext:marcField" in node)) return node; const { ["moonext:marcField"]: _kept, ...rest } = node; return rest; });
+  return { ...document, "@graph": completeRecord(withoutMarc.map((node: any) => legacyToBibframe(creatorsToContributions(node))), options.title).map((node: any) => fixNode(node)) };
 }
