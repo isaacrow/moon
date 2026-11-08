@@ -12,6 +12,7 @@ import { ActivityLog } from './ActivityLog';
 import { StorageUsageCard } from './StorageUsageCard';
 import { OpacVisitsCard } from './OpacVisitsCard';
 import { LinkedDataHealthCard } from './LinkedDataHealthCard';
+import { WebhooksCard } from './WebhooksCard';
 import { UserAvatar } from './UserAvatar';
 import { toast } from 'sonner';
 import { 
@@ -460,6 +461,7 @@ Each is a real edition from Open Library; its author is linked to Wikidata, LC a
         {isSuperAdmin && <StorageUsageCard isAr={isAr} />}
 
         {isSuperAdmin && <LinkedDataHealthCard isAr={isAr} />}
+        {isSuperAdmin && <WebhooksCard isAr={isAr} />}
 
         <OpacVisitsCard isAr={isAr} />
 
