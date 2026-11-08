@@ -122,7 +122,7 @@ jobs:
       # the same value. Set from the repository secret when there is one (never printed).
       - name: Hand the job token to the function
         if: env.SUPABASE_ACCESS_TOKEN != '' && env.MOON_JOB_TOKEN != ''
-        run: supabase secrets set "MOON_JOB_TOKEN=$MOON_JOB_TOKEN" --project-ref "$SUPABASE_PROJECT_ID"
+        run: supabase secrets set "MOON_JOB_TOKEN=$MOON_JOB_TOKEN" --project-ref "$SUPABASE_PROJECT_ID" --yes
 
       - name: Skipped (no SUPABASE_ACCESS_TOKEN secret)
         if: env.SUPABASE_ACCESS_TOKEN == ''
