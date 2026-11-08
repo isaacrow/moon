@@ -8,6 +8,7 @@ import type { DataField, MarcField, MarcRecord, Subfield } from './marcRecord';
 import { nodeToEvent, eventsToMarc, type TransmissionEvent } from '../transmission';
 import { autoFill008 } from './marc008Auto';
 import { fromMarcKey } from './marcKey';
+import { conditionOf, ITEM_ACTIONS, MARK_KINDS } from '../specialVocab';
 
 const BF = 'http://id.loc.gov/ontologies/bibframe/';
 const all = (v: any): any[] => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
@@ -334,6 +335,30 @@ export function bibframeToMarc(doc: { '@graph': any[] }, options: { recordId?: s
   for (const f of eventsToMarc(events)) {
     const at = fields.findIndex((x) => x.tag > f.tag && x.tag !== '880');
     if (at < 0) fields.push(f); else fields.splice(at, 0, f);
+  }
+  // Each copy's physical description (ARM, S24): 563 binding, 583 actions (digitised, condition reviewed,
+  // retention committed …) with the copy's condition in the review, 590 for its seals and marks; $3 names the copy.
+  for (const node of graph.filter((n) => isA(n, 'bf:Item'))) {
+    const d = conditionOf(node);
+    const copy = text(node['bf:shelfMark']) || text(node['bf:enumerationAndChronology']);
+    const which = copy ? [sf('3', copy)] : [];
+    const out: Array<MarcField | null> = [];
+    if (d.binding) out.push(field('563', ' ', ' ', [...which, sf('a', d.binding)]));
+    for (const a of d.actions || []) {
+      const label = ITEM_ACTIONS.find((x) => x.id === a.kind)?.en.toLowerCase() || a.kind;
+      out.push(field('583', '1', ' ', [...which, sf('a', label), sf('c', a.date || ''), sf('k', a.by || ''),
+        sf('l', a.kind === 'condition-reviewed' ? d.condition || '' : ''), sf('z', a.note || '')]));
+    }
+    if (d.condition && !(d.actions || []).some((a) => a.kind === 'condition-reviewed')) out.push(field('583', '1', ' ', [...which, sf('a', 'condition reviewed'), sf('l', d.condition)]));
+    for (const m of d.marks || []) {
+      const kind = MARK_KINDS.find((x) => x.id === m.kind)?.en || m.kind;
+      out.push(field('590', ' ', ' ', [...which, sf('a', `${kind}: ${m.text}${m.place ? ` (${m.place})` : ''}`)]));
+    }
+    for (const f of out) {
+      if (!f) continue;
+      const at = fields.findIndex((x) => x.tag > f.tag && x.tag !== '880');
+      if (at < 0) fields.push(f); else fields.splice(at, 0, f);
+    }
   }
 
   // Fields kept from MARC that Moon maps only in part (020, 250, 502, 505): the kept field takes the place of

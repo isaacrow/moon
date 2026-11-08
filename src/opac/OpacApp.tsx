@@ -37,6 +37,7 @@ import type { WorkDecision } from '../services/workClustering';
 import { whatItIs, formatChips, editionLines, exactMatch, alphaIndex, letterOf, filingKey } from './plainWords';
 import { usePreferredForms } from '../app/utils/preferredNames';
 import { bookScript } from '../services/nameForms';
+import { MARK_KINDS, ITEM_ACTIONS, maqamOf } from '../services/specialVocab';
 import { whoOf, aboutPerson, teachersAndStudents, personPlaces, shelfNeighbours, subjectsAlongside, type Link as KnowledgeLink } from './knowledge';
 import './opac.css';
 
@@ -1117,7 +1118,9 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
   const copies = realCopies(work);
   const libraries = [...new Set(copies.map(c => libraryOf(c.heldBy)).filter(Boolean))];
   const online = valuesOf(work, 'avail').includes('online');
-  const kicker = whatItIs(work);
+  // A musical work's maqām (S24) joins the plain "what it is" line.
+  const maqam = maqamOf(work.document?.['@graph']?.find((n: any) => [].concat(n?.['@type'] || []).some((x: any) => /Work$/.test(String(x)))));
+  const kicker = [whatItIs(work), maqam ? t(`مقام ${maqam.ar}`, `Maqām ${maqam.latn}`) : ''].filter(Boolean).join(' · ');
   const fmt = valueLabel('format', valuesOf(work, 'format')[0] || '');
   const year = workYearOf(work);
   const uri = workUri(work);
@@ -1270,6 +1273,20 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
                             <span className="status" data-s={s}>{s === 'not_connected' ? t('اسأل المكتبة عن إتاحتها', 'Ask the library if it is available') : STATUS_LABEL()[s] || s}</span>
                             <span className="m">{[c.copyNumber && t(`نسخة رقم ${c.copyNumber}`, `Copy ${c.copyNumber}`), c.barcode && t(`الباركود ${c.barcode}`, `Barcode ${c.barcode}`), ...(c.notes || [])].filter(Boolean).join(t('، ', ', '))}</span>
                             {c.accessUrl && <a className="link-btn" href={c.accessUrl} target="_blank" rel="noreferrer">{t('افتح النسخة الرقمية', 'Open the digital copy')}</a>}
+                            {(c.binding || c.condition || c.marks?.length || c.actions?.length) ? (
+                              <div className="m" style={{ marginTop: 4 }} dir="auto">
+                                {c.binding && <div>{t('التجليد: ', 'Binding: ')}{c.binding}</div>}
+                                {c.condition && <div>{t('الحالة: ', 'Condition: ')}{c.condition}</div>}
+                                {(c.marks || []).map((m, i) => {
+                                  const k = MARK_KINDS.find(x => x.id === m.kind);
+                                  return <div key={i}>{k ? t(k.ar, k.en) : m.kind}: {m.text}{m.place ? ` (${m.place})` : ''}</div>;
+                                })}
+                                {(c.actions || []).map((a, i) => {
+                                  const k = ITEM_ACTIONS.find(x => x.id === a.kind);
+                                  return <div key={`a${i}`}>{k ? t(k.ar, k.en) : a.kind}{a.date ? ` · ${a.date}` : ''}{a.by ? ` · ${a.by}` : ''}</div>;
+                                })}
+                              </div>
+                            ) : null}
                           </div>
                         );
                       })}

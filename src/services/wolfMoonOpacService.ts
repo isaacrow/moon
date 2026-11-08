@@ -218,6 +218,11 @@ export interface OpacHoldingItem {
   dueDate?: string;
   patronName?: string;
   accessUrl?: string;
+  /** The copy's physical description (S24, ARM): binding, condition, markings (seals, stamps …), actions. */
+  binding?: string;
+  condition?: string;
+  marks?: Array<{ kind: string; text: string; place?: string }>;
+  actions?: Array<{ kind: string; date?: string; by?: string; note?: string }>;
   /** Placeholder copy the OPAC made up for display because the record has no holdings; never exported. */
   synthetic?: boolean;
 }
@@ -1119,6 +1124,10 @@ class WolfMoonOpacService {
             status: itStatus,
             accessUrl: itAccessUrl,
             ...(copy.events?.length ? { events: copy.events } : {}),
+            ...(copy.binding ? { binding: copy.binding } : {}),
+            ...(copy.condition ? { condition: copy.condition } : {}),
+            ...(copy.marks?.length ? { marks: copy.marks } : {}),
+            ...(copy.actions?.length ? { actions: copy.actions } : {}),
           };
 
           instanceItems.push(itemEntity);

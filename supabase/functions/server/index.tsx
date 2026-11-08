@@ -39,6 +39,7 @@ import { findNewSampleBooks } from "./sampleBooks.tsx";
 import { oaiResponse } from "./oaiPmh.tsx";
 import { changeFeed } from "./changeFeed.tsx";
 import { handleMcp } from "./mcp.tsx";
+import { vocabDocument } from "./specialVocab.tsx";
 import * as webhooks from "./webhooks.tsx";
 
 /** Tells the webhooks (S19) about a record event, in the background; a failing hook never fails the save. */
@@ -975,6 +976,19 @@ async function sparqlEndpoint(c: any) {
   }
 }
 app.get("/make-server-49c0e13c/resource/sparql", sparqlEndpoint);
+
+// Moon's own SKOS vocabularies (Phase 13 S24): https://mooon.site/resource/vocab/maqam and …/item-action,
+// and each concept at …/vocab/<scheme>/<id>, as JSON-LD.
+const vocabRoute = (c: any) => {
+  const scheme = c.req.param("scheme");
+  if (scheme !== "maqam" && scheme !== "item-action") return c.json({ error: "Schemes: maqam, item-action" }, 404);
+  const id = (c.req.param("id") || "").replace(/\.jsonld$/, "");
+  const doc = vocabDocument(linkedData.BASE_URI, scheme, id || undefined);
+  if (!doc) return c.json({ error: "No such concept" }, 404);
+  return c.json(doc, 200, { "Content-Type": "application/ld+json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600" });
+};
+app.get("/make-server-49c0e13c/resource/vocab/:scheme", vocabRoute);
+app.get("/make-server-49c0e13c/resource/vocab/:scheme/:id", vocabRoute);
 
 // Webhooks (Phase 13 S19): the Super Admin lists, adds and removes them; the secret is shown once, on adding.
 app.get("/make-server-49c0e13c/webhooks", async (c) => {

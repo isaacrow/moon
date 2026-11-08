@@ -26,6 +26,9 @@ export const CONTEXT: Record<string, string> = {
   // An agent's links to the same person elsewhere (Wikidata, VIAF, LC), kept in the published record.
   owl: "http://www.w3.org/2002/07/owl#",
   moonext: new URL("/ontology/", BASE_URI).toString(),
+  // Copies' markings, condition and actions (Art and Rare Materials 1.0), and Moon's SKOS vocabularies (S24).
+  arm: "https://w3id.org/arm/ontology/1.0/",
+  skos: "http://www.w3.org/2004/02/skos/core#",
 };
 
 export type Format = "jsonld" | "nt" | "ttl" | "rdf" | "html";

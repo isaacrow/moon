@@ -46,6 +46,8 @@ export const BIBFRAME_JSONLD_CONTEXT: Record<string, string> = {
   "contentTypes": "http://id.loc.gov/vocabulary/contentTypes/",
   "issuance": "http://id.loc.gov/vocabulary/issuance/",
   "descriptionConventions": "http://id.loc.gov/vocabulary/descriptionConventions/",
+  // Art and Rare Materials (ARM 1.0) for copies' markings, condition and actions (S24).
+  "arm": "https://w3id.org/arm/ontology/1.0/",
   "moon": `${BASE_URI}/`
 };
 
