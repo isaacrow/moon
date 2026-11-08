@@ -34,6 +34,7 @@ import { summary as eventSummary, EVENT_KINDS, ROLES, type TransmissionEvent } f
 import { findPersonQid, splitHeading, type PersonClues } from './personPhoto';
 import { placeName, placesOf, worksAtPlace, wikidataQid, wikidataApiUrl, parseInfoCard, relationsOf, clusterWorks, type InfoCard as InfoCardData } from './linkedEntities';
 import type { WorkDecision } from '../services/workClustering';
+import { whatItIs, formatChips, editionLines, exactMatch } from './plainWords';
 import './opac.css';
 
 type View =
@@ -739,8 +740,7 @@ function contributorsLine(w: OpacWorkEntity): React.ReactNode[] {
 
 /** One result, as Libris shows it: category · language, the title, who made it (with roles), format · year, holdings. */
 function ResultCard({ w, ctx, i }: { w: OpacWorkEntity; ctx: Ctx; i: number }) {
-  const meta = [w.genreForm?.[0], languageDisplay(languageName(w.languageLabel, w.language))].filter(Boolean).join(' · ');
-  const fmt = valueLabel('format', valuesOf(w, 'format')[0] || '');
+  const meta = whatItIs(w);
   const year = workYearOf(w);
   const h = holdingsSummary(w);
   const who = contributorsLine(w);
@@ -752,7 +752,7 @@ function ResultCard({ w, ctx, i }: { w: OpacWorkEntity; ctx: Ctx; i: number }) {
         <div className="t" dir="auto">{w.title}{w.subtitle ? <span className="sub"> : {w.subtitle}</span> : null}</div>
         {w.expressionOfHub?.label && <div className="hub" dir="auto">{t('من العمل:', 'From the work:')} <span className="inline-link" role="link" tabIndex={0} onClick={(e) => { e.stopPropagation(); ctx.go({ mode: 'hub', key: w.expressionOfHub!.uri }); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); ctx.go({ mode: 'hub', key: w.expressionOfHub!.uri }); } }}>{w.expressionOfHub.label}</span></div>}
         {who.length > 0 && <div className="s" dir="auto">{who.reduce<React.ReactNode[]>((a, n, k) => (k ? [...a, t('، ', ', '), n] : [n]), [])}</div>}
-        <div className="m">{[fmt, year].filter(Boolean).join(' · ')}</div>
+        {year ? <div className="m">{year}</div> : null}
       </div>
       <div className="side">
         <span className="status" data-s={h.s}>{h.text}</span>
@@ -764,16 +764,19 @@ function ResultCard({ w, ctx, i }: { w: OpacWorkEntity; ctx: Ctx; i: number }) {
 /** Under a grouped result: the other records of the same Work (editions, translations), one line each. */
 function ClusterEditions({ members, evidence, ctx }: { members: OpacWorkEntity[]; evidence?: string[]; ctx: Ctx }) {
   const langs = new Set(members.map(w => w.language));
+  const formats = formatChips(members);
+  const lines = editionLines(members);
   const label = langs.size > 1
     ? t(`${members.length} طبعات وترجمات لهذا العمل`, `${members.length} editions and translations of this work`)
     : t(`${members.length} طبعات لهذا العمل`, `${members.length} editions of this work`);
   return (
     <details className="cluster glass" style={{ marginTop: -6, padding: '8px 16px', borderRadius: 14 }}>
-      <summary style={{ cursor: 'pointer', fontSize: 14 }}>{label}</summary>
+      <summary style={{ cursor: 'pointer', fontSize: 14 }}>
+        {label}
+        {formats.length > 1 && formats.map(f => <span key={f} className="chip" style={{ marginInlineStart: 8, padding: '2px 10px', fontSize: 12 }}>{f}</span>)}
+      </summary>
       <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
-        {members.map(w => {
-          const inst = w.instances[0];
-          const line = [languageDisplay(languageName(w.languageLabel, w.language)), [inst?.publicationPlace && placeName(inst.publicationPlace), inst?.publisher].filter(Boolean).join(' : '), workYearOf(w)].filter(Boolean).join(' · ');
+        {lines.map(({ edition: w, line }) => {
           return (
             <li key={w.id} style={{ padding: '4px 0' }}>
               <button className="inline-link" dir="auto" onClick={() => ctx.go({ mode: 'work', id: w.id })}>{w.title}</button>
@@ -853,8 +856,11 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
     () => wolfMoonOpacService.searchWorks(query, 'all', 'all', 'all', 'all', 'relevance', 1, 100000).works,
     [query, ctx.rev],
   );
-  const filtered = useMemo(() => sortWorks(applyFacets(base, sel), sort), [base, sel, sort]);
-  const counts = useMemo(() => facetCounts(base, sel), [base, sel]);
+  // Close matches (a word inside another word) by default; "exact words only" keeps whole words.
+  const [exact, setExact] = useState(() => new URLSearchParams(window.location.search).get('exact') === '1');
+  const matched = useMemo(() => (exact && query.trim() ? base.filter(w => exactMatch(w, query)) : base), [base, exact, query]);
+  const filtered = useMemo(() => sortWorks(applyFacets(matched, sel), sort), [matched, sel, sort]);
+  const counts = useMemo(() => facetCounts(matched, sel), [matched, sel]);
   // One result per Work (Libris): editions, translations and hub members fold under the best-placed record.
   const [grouped, setGrouped] = useState(() => new URLSearchParams(window.location.search).get('group') !== '0');
   const decisions = useWorkDecisions();
@@ -866,10 +872,11 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
   useEffect(() => {
     const p = writeState(new URLSearchParams(window.location.search), { sel, sort, page });
     if (grouped) p.delete('group'); else p.set('group', '0');
+    if (exact) p.set('exact', '1'); else p.delete('exact');
     const url = `${window.location.pathname}?${p.toString()}`;
     if (url !== `${window.location.pathname}${window.location.search}`) history.replaceState(history.state, '', url);
     try { sessionStorage.setItem(RESULTS_KEY, JSON.stringify({ ids: filtered.map(w => w.id), url, query })); } catch { /* private mode */ }
-  }, [sel, sort, page, filtered, query, grouped]);
+  }, [sel, sort, page, filtered, query, grouped, exact]);
 
   const onToggle = (k: FacetKey, v: string) => { setSel(s => toggle(s, k, v)); setPage(1); };
   const clear = () => { setSel({}); setPage(1); };
@@ -910,6 +917,12 @@ function Results({ ctx, query }: { ctx: Ctx; query: string }) {
               <input type="checkbox" checked={grouped} onChange={e => { setGrouped(e.target.checked); setPage(1); }} />
               <span>{t('جمع الطبعات والترجمات', 'Group editions and translations')}</span>
             </label>
+            {query.trim() && (
+              <label className="sort" title={t('المطابقات القريبة تشمل الكلمة داخل كلمة أخرى', 'Close matches include a word inside another word')}>
+                <input type="checkbox" checked={exact} onChange={e => { setExact(e.target.checked); setPage(1); }} />
+                <span>{t('الكلمات كما هي فقط', 'Exact words only')}</span>
+              </label>
+            )}
             <button className="btn-ghost filters-toggle" aria-expanded={showFilters} onClick={() => setShowFilters(s => !s)}>
               {t('الفلاتر', 'Filters')}{activeCount ? ` (${activeCount})` : ''}
             </button>
@@ -1067,6 +1080,13 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
     : []), [work]);
   const [citeOpen, setCiteOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  // The other records of the same Work (S11 clustering): its editions and translations.
+  const decisions = useWorkDecisions();
+  const editions = useMemo(() => {
+    if (!work) return [];
+    const group = clusterWorks(wolfMoonOpacService.getAllWorks(), decisions).find(g => g.members.some(m => m.id === work.id));
+    return group && group.members.length > 1 ? [work, ...group.members.filter(m => m.id !== work.id)] : [];
+  }, [work, decisions]);
 
   if (!work) {
     return (
@@ -1087,7 +1107,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
   const copies = realCopies(work);
   const libraries = [...new Set(copies.map(c => libraryOf(c.heldBy)).filter(Boolean))];
   const online = valuesOf(work, 'avail').includes('online');
-  const kicker = [work.genreForm?.join(t('، ', ', ')), languageDisplay(languageName(work.languageLabel, work.language))].filter(Boolean).join(' · ');
+  const kicker = whatItIs(work);
   const fmt = valueLabel('format', valuesOf(work, 'format')[0] || '');
   const year = workYearOf(work);
   const uri = workUri(work);
@@ -1186,6 +1206,7 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
                   {online ? t('متاح على الإنترنت', 'Available online') : `${t('نسخة ورقية', 'Print copy')} · ${libraries.length > 1 ? t(`${libraries.length} مكتبات`, `${libraries.length} libraries`) : (libraries[0] || t('المكتبة', 'The library'))}`}
                 </a>
               ) : <span className="status" data-s="not_connected">{t('لا نسخ مسجلة بعد', 'No copies recorded yet')}</span>}
+              {editions.length > 1 && <a className="btn-ghost" href="#h-group" onClick={(e) => { e.preventDefault(); document.getElementById('h-group')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{new Set(editions.map(e => e.language)).size > 1 ? t(`${editions.length} طبعات وترجمات`, `${editions.length} editions and translations`) : t(`${editions.length} طبعات`, `${editions.length} editions`)}</a>}
               {work.instances.length > 1 && <a className="btn-ghost" href="#h-eds" onClick={(e) => { e.preventDefault(); document.getElementById('h-eds')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{t(`${work.instances.length} طبعات`, `${work.instances.length} editions`)}</a>}
             </div>
             {(work.genreForm?.length || work.subjects.length) ? (
@@ -1265,7 +1286,22 @@ function WorkPage({ ctx, id }: { ctx: Ctx; id: string }) {
             </section>
           )}
 
-          {siblings.length > 0 && (
+          {editions.length > 1 && (
+            <section className="panel glass rise" aria-labelledby="h-group-t" id="h-group">
+              <h2 id="h-group-t">{new Set(editions.map(e => e.language)).size > 1 ? t('طبعات العمل وترجماته', 'Editions and translations of this work') : t('طبعات هذا العمل', 'Editions of this work')}</h2>
+              <p className="muted">{t('ما يميّز كل طبعة عن الأخرى:', 'What sets each one apart:')}</p>
+              <div className="copies">
+                {editionLines(editions).map(({ edition: e, line }) => (
+                  <div key={e.id} className="copy">
+                    <span className="t" dir="auto">{e.id === work.id ? <b>{e.title} {t('(هذه)', '(this one)')}</b> : <button className="inline-link" onClick={() => ctx.go({ mode: 'work', id: e.id })}>{e.title}</button>}</span>
+                    <span className="m" dir="auto">{line}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {siblings.length > 0 && editions.length <= 1 && (
             <section className="panel glass rise" aria-labelledby="h-hub">
               <h2 id="h-hub">{t('من العمل نفسه', 'From the same work')}{work.expressionOfHub?.label ? <>: <button className="inline-link" onClick={() => ctx.go({ mode: 'hub', key: work.expressionOfHub!.uri })}>{work.expressionOfHub.label}</button></> : ''}</h2>
               <p className="muted">{t('ترجمات وطبعات أخرى مرتبطة بالمحور نفسه (bf:Hub).', 'Other translations and editions linked to the same hub (bf:Hub).')}</p>
