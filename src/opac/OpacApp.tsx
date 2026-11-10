@@ -320,7 +320,7 @@ export function OpacApp({ onOpenEditor }: { onOpenEditor?: () => void }) {
       <div className="ambient" aria-hidden="true" />
       <header className="topbar wrap">
         <div className="topbar-inner glass">
-          <button className="brand" onClick={() => go({ mode: 'home' })} aria-label={t('فهرس مون، الصفحة الرئيسية', 'Moon Catalogue, home')}>
+          <button className="brand" onClick={() => { go({ mode: 'home' }); window.dispatchEvent(new CustomEvent('moon-replay-entrance')); }} aria-label={t('فهرس مون، الصفحة الرئيسية', 'Moon Catalogue, home')}>
             <img className="brand-logo" src="/opac-logo.png" alt={t('مون', 'Moon')} width={230} height={120} />
           </button>
           <nav className={`nav ${navOpen ? 'open glass' : ''}`} aria-label={t('الأقسام', 'Sections')}>

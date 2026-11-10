@@ -1,0 +1,276 @@
+/* OPAC Entrance Preloader: ReactDrops Blueprint Architecture */
+:root {
+  --preloader-canvas: #ffffff;
+  --preloader-guide: rgba(0, 0, 0, 0.12);
+
+  /* Exact ReactDrops Multi-Stop Chromatic Mesh Gradient */
+  --reactdrops-gradient: radial-gradient(ellipse at 12% 88%, #b0b0b0d1 0 5%, transparent 30%),
+    radial-gradient(ellipse at 30% 82%, #9494949e 0 4%, transparent 26%),
+    radial-gradient(ellipse at 42% 22%, #303030db 0 6%, transparent 35%),
+    radial-gradient(ellipse at 82% 20%, #c9c9c9d6 0 7%, transparent 34%),
+    radial-gradient(ellipse at 78% 78%, #c7c7c7db 0 6%, transparent 38%),
+    radial-gradient(ellipse at 88% 60%, #51515194 0 5%, transparent 31%),
+    conic-gradient(from 218deg at 48% 52%, #4a4a4a, #999999 22%, #626262 44%, #b8b8b8 68%, #505050 84%, #4a4a4a),
+    linear-gradient(128deg, #444444 0%, #999999 46%, #666666 100%);
+  --reactdrops-gradient-size: 126% 138%, 148% 132%, 142% 154%, 136% 146%, 154% 142%, 130% 150%, 118% 124%, 126% 126%;
+}
+
+/* 1. Preloader White Background Canvas (z-index: 1, sits below rising page) */
+.opac-preloader-legacy {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+  background: var(--preloader-canvas);
+  overflow: hidden;
+  will-change: transform;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* 2. Page Reveal Scrim (z-index: 4, between white canvas and rising page) */
+.opac-preloader-scrim {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  background: rgba(18, 18, 20, 0.45);
+  will-change: opacity;
+}
+
+/* 3. THE RISING OPAC PAGE SURFACE (z-index: 10, slides UP from bottom with cubic curve) */
+.app.opac-page-surface {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 10 !important;
+  overflow: hidden !important;
+  will-change: transform, clip-path !important;
+  transform-origin: 50% 50% !important;
+  background: #fbfbfd !important;
+  visibility: visible !important;
+  backface-visibility: hidden !important;
+  box-shadow: 0 -25px 70px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(0, 0, 0, 0.05) !important;
+  border-radius: 20px !important;
+}
+
+.app.opac-page-surface.opac-page-revealed {
+  position: relative !important;
+  inset: auto !important;
+  width: auto !important;
+  height: auto !important;
+  z-index: 1 !important;
+  overflow-x: clip !important;
+  overflow-y: visible !important;
+  will-change: auto !important;
+  clip-path: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+/* 4. Floating Animated Lockup (z-index: 40, visibly glides UP-RIGHT on Arabic or UP-LEFT on English!) */
+.opac-preloader-stage {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 40;
+  pointer-events: none;
+  overflow: hidden;
+  direction: ltr;
+}
+
+/* Master Animated Construction Container: Zero-size anchor centered at (50%, 50%) */
+.opac-preloader-construction {
+  z-index: 2;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* 4 SEPARATED PIECES OF JÖÖ MOON LOGO REPLACING THE 4 SQUARES */
+.opac-logo-piece {
+  position: absolute;
+  width: var(--part-w, 140px);
+  height: var(--part-h, 73px);
+  overflow: hidden;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* Top-Left Quadrant: Anchors bottom-right to (0, 0) */
+.piece-tl {
+  right: 0;
+  bottom: 0;
+  -webkit-mask-image: url("/logo-part-tl.png");
+  mask-image: url("/logo-part-tl.png");
+}
+
+/* Top-Right Quadrant: Anchors bottom-left to (0, 0) */
+.piece-tr {
+  left: 0;
+  bottom: 0;
+  -webkit-mask-image: url("/logo-part-tr.png");
+  mask-image: url("/logo-part-tr.png");
+}
+
+/* Bottom-Left Quadrant: Anchors top-right to (0, 0) */
+.piece-bl {
+  right: 0;
+  top: 0;
+  -webkit-mask-image: url("/logo-part-bl.png");
+  mask-image: url("/logo-part-bl.png");
+}
+
+/* Bottom-Right Quadrant: Anchors top-left to (0, 0) */
+.piece-br {
+  left: 0;
+  top: 0;
+  -webkit-mask-image: url("/logo-part-br.png");
+  mask-image: url("/logo-part-br.png");
+}
+
+/* Unified Upright Logo: Cross-fades seamlessly at Fe (reconvergence) */
+.opac-unified-logo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(var(--part-w, 140px) * 2);
+  height: calc(var(--part-h, 73px) * 2);
+  overflow: hidden;
+  -webkit-mask-image: url("/logo.png");
+  mask-image: url("/logo.png");
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  will-change: transform, opacity, filter;
+}
+
+/* Fluid Chromatic Mesh Gradient Field */
+.opac-gradient-field {
+  background: var(--reactdrops-gradient);
+  background-size: var(--reactdrops-gradient-size);
+  filter: blur(20px) contrast(1.1) saturate(0.8);
+  will-change: background-position;
+  animation: 5.833s ease-in-out infinite alternate opac-gradient-drift;
+  position: absolute;
+  inset: -24%;
+}
+
+.opac-noise-mask {
+  z-index: 2;
+  opacity: 0.16;
+  filter: contrast(1.18);
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  display: block;
+  position: absolute;
+  inset: 0;
+}
+
+@keyframes opac-gradient-drift {
+  0% {
+    background-position: 0 100%, 22% 88%, 8% 0, 100% 0, 100% 100%, 88% 62%, 0 40%, 0%;
+  }
+  50% {
+    background-position: 42% 72%, 58% 64%, 54% 30%, 68% 48%, 62% 72%, 44% 40%, 82% 56%, 100%;
+  }
+  to {
+    background-position: 88% 18%, 82% 32%, 100% 74%, 12% 88%, 18% 8%, 4% 82%, 28% 34%, 18%;
+  }
+}
+
+/* Wordmark "moon" */
+.opac-brand-wordmark {
+  z-index: 2;
+  visibility: hidden;
+  opacity: 0;
+  color: #0000;
+  background: var(--reactdrops-gradient);
+  background-size: var(--reactdrops-gradient-size);
+  -webkit-text-fill-color: transparent;
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 32, "wght" 600;
+  letter-spacing: -0.03em;
+  text-align: left;
+  white-space: nowrap;
+  filter: brightness(1) contrast(1.08) saturate(0.72);
+  pointer-events: none;
+  will-change: transform, opacity, filter;
+  -webkit-background-clip: text;
+  background-clip: text;
+  margin: 0;
+  padding-right: 0.12em;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  line-height: 1;
+}
+
+/* Hairline Construction Lines (All 8 exact lines from ReactDrops) */
+.opac-construction-line {
+  z-index: 3;
+  pointer-events: none;
+  background: var(--preloader-guide);
+  will-change: transform, opacity;
+  display: block;
+  position: absolute;
+}
+
+.opac-line-horizontal {
+  transform-origin: 50% 50%;
+  width: 100vw;
+  height: 1px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, 0) scaleX(0);
+}
+
+.line-top,
+.line-bottom,
+.guide-inner-top,
+.guide-inner-bottom {
+  top: 50%;
+}
+
+.opac-line-vertical {
+  transform-origin: 50% 50%;
+  width: 1px;
+  height: 100vh;
+  left: 50%;
+  top: 50%;
+  transform: translate(0, -50%) scaleY(0);
+}
+
+.line-left,
+.line-right,
+.guide-inner-left,
+.guide-inner-right {
+  left: 50%;
+}
