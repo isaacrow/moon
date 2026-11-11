@@ -17,11 +17,26 @@ import {
   CheckCircle2,
   Clock,
   XCircle,
+  Sparkles,
+  ArrowRight,
+  RotateCcw,
+  Mountain,
+  Layers,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsList, TabsTrigger } from './ui/tabs';
 import moonLogoWhite from '../../assets/white.png';
 import { TesterApprovalCenter } from './TesterApprovalCenter';
+import { LiquidGlassLogo } from './liquid-glass-logo';
+import MetallicPaint from './MetallicPaint';
+import Topography from './Topography';
+import GlassSurface from './GlassSurface';
+import TiltedCard from './TiltedCard';
+import LanyardPassOverlay from './LanyardPassOverlay';
+import ClickSpark from './ClickSpark';
+import Magnet from './Magnet';
+import ShinyText from './ShinyText';
+import { moonFetch } from '../utils/moonApi';
 
 // Spline Scene URL - 3D interactive scene
 const SPLINE_SCENE_URL = 'https://my.spline.design/3ddesigntextcopycopy-ICjwUjRH9s8O1NCNqRAWjo5g-5OJ/';
@@ -59,6 +74,13 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
   const [regInstitution, setRegInstitution] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regInviteCode, setRegInviteCode] = useState('');
+  const [lanyardPass, setLanyardPass] = useState<{
+    user: string;
+    role?: string;
+    institution?: string;
+    type: 'login' | 'signup';
+  } | null>(null);
+  const [pendingLoginCredentials, setPendingLoginCredentials] = useState<{ id: string; pass: string } | null>(null);
 
   // Status & Feedback
   const [error, setError] = useState('');
@@ -82,6 +104,42 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
 
   // UI State
   const [isUiVisible, setIsUiVisible] = useState(true);
+
+  // Wallpaper Option State (@react-bits/Topography vs Spline 3D)
+  const [wallpaper, setWallpaper] = useState<'topography' | 'spline'>('topography');
+
+  // Opening Animation State ("added a new anmioshons when open")
+  const [showOpeningAnimation, setShowOpeningAnimation] = useState(true);
+  const [openingKey, setOpeningKey] = useState(1);
+
+  // Expose helper for testing the 3D Lanyard Pass
+  useEffect(() => {
+    (window as any).__triggerLanyardPass = (type: 'login' | 'signup' = 'login', customUser?: string) => {
+      setLanyardPass({
+        user: customUser || (type === 'login' ? 'Isaac Faleh' : 'Sarah Ahmed'),
+        role: type === 'login' ? 'Super Administrator' : 'BIBFRAME Linked Data Tester',
+        institution: isAr ? 'المركز الوطني للبيانات المترابطة' : 'National Library / Research Center',
+        type,
+      });
+    };
+    return () => {
+      delete (window as any).__triggerLanyardPass;
+    };
+  }, [isAr]);
+
+  useEffect(() => {
+    if (showOpeningAnimation) {
+      const timer = setTimeout(() => {
+        setShowOpeningAnimation(false);
+      }, 3400);
+      return () => clearTimeout(timer);
+    }
+  }, [showOpeningAnimation, openingKey]);
+
+  const handleReplayOpening = () => {
+    setOpeningKey(k => k + 1);
+    setShowOpeningAnimation(true);
+  };
 
   const refreshAdminUsers = () => {
     setAdminError('');
@@ -144,22 +202,55 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
     setLoading(true);
 
     try {
-      const res = await login(identifier, password);
-      if (!res.success) {
-        if (res.status === 'pending') {
-          setError(
-            res.message ||
-              'Your account is awaiting approval by administrator Isaac Faleh. Once approved, you can sign in to test the editor.'
-          );
-        } else {
-          setError(res.message || 'Invalid credentials. Please verify your username and password.');
+      // First verify credentials to show 3D Lanyard ID Card
+      const { data } = await moonFetch('/api/accounts/login', {
+        body: { identifier: identifier.trim(), password },
+      });
+
+      if (data?.success && data.token && data.user) {
+        // Successful login! Cache credentials & show 3D Lanyard Pass
+        setPendingLoginCredentials({ id: identifier.trim(), pass: password });
+        setLanyardPass({
+          user: data.user.username,
+          role: data.user.role === 'admin' ? 'Super Administrator' : 'BIBFRAME Linked Data Tester',
+          institution: data.user.institution || (isAr ? 'المركز الوطني للبيانات المترابطة' : 'National Library / Research Center'),
+          type: 'login',
+        });
+      } else {
+        // Standard login error handling
+        const res = await login(identifier, password);
+        if (!res.success) {
+          if (res.status === 'pending') {
+            setError(
+              res.message ||
+                (isAr
+                  ? 'حسابك قيد مراجعة المشرف إسحاق فالح. ستتمكن من تسجيل الدخول فور الموافقة.'
+                  : 'Your account is awaiting approval by administrator Isaac Faleh. Once approved, you can sign in.')
+            );
+          } else {
+            setError(res.message || (isAr ? 'بيانات الدخول غير صحيحة. يرجى التحقق.' : 'Invalid credentials. Please verify your username and password.'));
+          }
         }
       }
     } catch (err) {
-      setError('An unexpected error occurred during login. Please try again.');
-      console.error('Login error:', err);
+      const res = await login(identifier, password);
+      if (!res.success) {
+        setError(res.message || (isAr ? 'حدث خطأ أثناء تسجيل الدخول.' : 'An error occurred during login.'));
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProceedFromLanyard = async () => {
+    if (lanyardPass?.type === 'login' && pendingLoginCredentials) {
+      await login(pendingLoginCredentials.id, pendingLoginCredentials.pass);
+    } else if (lanyardPass?.type === 'signup') {
+      setLanyardPass(null);
+      setActiveTab('login');
+      setIdentifier(regUsername);
+    } else {
+      setLanyardPass(null);
     }
   };
 
@@ -232,198 +323,577 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black text-white">
       {/* Ambient Background Gradients */}
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-950/20 via-purple-950/20 to-pink-950/20 z-0" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/40 via-black to-black z-0" />
 
-      {/* Spline 3D Background */}
-      <div className="absolute inset-0 z-0" style={{ top: '-15%', height: '130%' }}>
-        <iframe
-          src={SPLINE_SCENE_URL}
-          frameBorder="0"
-          width="100%"
-          height="100%"
-          className="w-full h-full"
-          title="Spline 3D Scene"
-          allow="fullscreen; autoplay"
-          style={{
-            pointerEvents: 'auto',
-            border: 'none',
-            background: 'transparent',
-          }}
-        />
+      {/* Dynamic Background: @react-bits/Topography vs Spline 3D Scene */}
+      <div className="absolute inset-0 z-0 overflow-hidden">
+        <AnimatePresence mode="wait">
+          {wallpaper === 'topography' ? (
+            <motion.div
+              key="wallpaper-topography"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6 }}
+              className="absolute inset-0 z-0 pointer-events-auto"
+            >
+              <Topography
+                color="#94a3b8"
+                lineCount={26}
+                lineWidth={0.85}
+                elevation={1.0}
+                tilt={26}
+                speed={0.16}
+                morph={0.2}
+                glow={0.25}
+                brightness={0.75}
+                fog={0.42}
+                mouseInteraction={true}
+                hoverEffect="lift"
+                clickEffect="pulse"
+                className="w-full h-full"
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="wallpaper-spline"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6 }}
+              className="absolute inset-0 z-0"
+              style={{ top: '-15%', height: '130%' }}
+            >
+              <iframe
+                src={SPLINE_SCENE_URL}
+                frameBorder="0"
+                width="100%"
+                height="100%"
+                className="w-full h-full"
+                title="Spline 3D Scene"
+                allow="fullscreen; autoplay"
+                style={{
+                  pointerEvents: 'auto',
+                  border: 'none',
+                  background: 'transparent',
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Grid Overlay Effect */}
       <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30 z-[1] pointer-events-none" />
 
       {/* Corner Accents */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-cyan-500/20 to-transparent blur-3xl z-[1] pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-tl from-purple-500/20 to-transparent blur-3xl z-[1] pointer-events-none" />
+      <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-white/[0.07] to-transparent blur-3xl z-[1] pointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-tl from-white/[0.07] to-transparent blur-3xl z-[1] pointer-events-none" />
 
-      {/* Top Bar - Brand Identity */}
+      {/* ===== OPENING METALLIC PAINT LOGO ANIMATION ("added a new anmioshons when open" & "it go down rather than up") ===== */}
+      <AnimatePresence>
+        {showOpeningAnimation && (
+          <motion.div
+            key={`metallic-opening-${openingKey}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.05, filter: 'blur(16px)' }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/35 backdrop-blur-lg"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: -60 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full max-w-xl p-6 sm:p-8 flex flex-col items-center text-center relative overflow-hidden"
+              style={{
+                /* From https://css.glass */
+                background: 'rgba(255, 255, 255, 0.47)',
+                borderRadius: '16px',
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.96)',
+              }}
+              dir={isAr ? "rtl" : "ltr"}
+            >
+              {/* Specular silver liquid glass top sheen */}
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-white/90 to-transparent" />
+
+              {/* Metallic Paint Logo Canvas */}
+              <div
+                style={{ width: 420, maxWidth: '85vw', aspectRatio: '1 / 1' }}
+                className="relative flex items-center justify-center my-2 pointer-events-auto"
+              >
+                <MetallicPaint
+                  imageSrc={moonLogoWhite}
+                  scale={1}
+                />
+              </div>
+
+              {/* Opening Typography */}
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6, duration: 0.5 }}
+                className="space-y-1.5"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                    {isAr ? "محرر MOON" : "Moon Editor"}
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-900/10 text-slate-800 border border-slate-900/15">
+                    BIBFRAME 3.0.1
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-600 font-medium max-w-md mx-auto">
+                  {isAr ? "بوابة البيانات المترابطة التجريبية • نظام الفهرسة المتطور" : "Linked Data Pilot Platform • Next-Gen Cataloging"}
+                </p>
+              </motion.div>
+
+              {/* Continue / Skip Button */}
+              <motion.button
+                type="button"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.9 }}
+                onClick={() => setShowOpeningAnimation(false)}
+                className="mt-6 px-6 py-2.5 rounded-full text-xs font-black text-slate-800 hover:text-slate-950 bg-white/80 hover:bg-white border border-white/70 shadow-sm transition-all cursor-pointer flex items-center gap-2 hover:scale-105 active:scale-95"
+              >
+                <span>{isAr ? "الدخول إلى المحرر" : "Enter Moon Studio"}</span>
+                <ArrowRight className={`w-3.5 h-3.5 ${isAr ? "rotate-180" : ""}`} />
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ===== TOP CENTER NOTCH (Yellow Annotation) ===== */}
       <AnimatePresence>
         {isUiVisible && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -40 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.4 }}
-            className="absolute top-0 left-0 right-0 z-40 p-6 flex items-center justify-between"
+            exit={{ opacity: 0, y: -40 }}
+            transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+            className="fixed top-0 left-1/2 -translate-x-1/2 z-40 pointer-events-auto"
+            dir={isAr ? "rtl" : "ltr"}
           >
-            <div 
-              className="absolute top-6 right-6 flex items-center gap-3.5 backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-4 shadow-2xl"
-              dir={isAr ? "rtl" : "ltr"}
+            <div
+              className="flex items-center gap-3.5 py-2 px-5 sm:px-6 shadow-[0_8px_32px_rgba(0,0,0,0.18)] transition-all hover:py-2.5 group"
+              style={{
+                /* From https://css.glass */
+                background: 'rgba(255, 255, 255, 0.47)',
+                borderBottomLeftRadius: '20px',
+                borderBottomRightRadius: '20px',
+                borderTopLeftRadius: '0px',
+                borderTopRightRadius: '0px',
+                boxShadow: '0 8px 30px rgba(0, 0, 0, 0.12)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.96)',
+                borderTop: 'none',
+              }}
             >
-              <div className="w-16 h-16 flex items-center justify-center backdrop-blur-md bg-white/20 rounded-xl border border-white/30 shadow-lg shrink-0">
-                <img src={moonLogoWhite} alt="Moon Logo" className="w-full h-full object-contain drop-shadow-2xl" />
+              {/* Moon Logo Jewel */}
+              <div
+                className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden shrink-0 flex items-center justify-center shadow-[0_2px_10px_rgba(0,0,0,0.1)] border border-white/90"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.55) 100%)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                }}
+              >
+                <div className="absolute inset-0 p-0.5 flex items-center justify-center">
+                  <MetallicPaint
+                    imageSrc={moonLogoWhite}
+                    scale={1.1}
+                  />
+                </div>
+                <div className="absolute top-0 inset-x-0 h-1/2 bg-gradient-to-b from-white/60 to-transparent pointer-events-none" />
               </div>
+
+              {/* Title & Description */}
               <div className={isAr ? "text-right" : "text-left"}>
-                <h1 className="text-xl sm:text-2xl font-bold text-white drop-shadow-lg leading-tight">
-                  {isAr ? "تصميم وتطوير: إسحاق فالح" : "DESIGN AND DEVELOPED BY ISAAC FALEH"}
+                <h1 className="text-xs sm:text-sm font-black text-slate-900 leading-tight tracking-tight px-1">
+                  {isAr ? "تصميم وتطوير: إسحاق فالح" : "DESIGN & DEVELOPED BY ISAAC FALEH"}
                 </h1>
-                <p className="text-[11px] text-white/80 mt-1 drop-shadow-md font-medium">
-                  {isAr ? "محرر MOON • منصة البيانات المترابطة التجريبية BIBFRAME 3.0.1" : "Moon Editor • BIBFRAME 3.0.1 Linked Data Pilot Platform"}
-                </p>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Bottom Controls */}
-      <div className="absolute bottom-8 right-8 z-50 flex items-center gap-3">
-        
+      
 
-        {/* Language Switcher */}
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => onLanguageChange(currentLanguage === 'en' ? 'ar' : 'en')}
-            className="bg-black/40 border-white/20 text-white hover:bg-white/10 backdrop-blur-xl rounded-xl w-11 h-11 shadow-[0_0_20px_rgba(0,0,0,0.5)]"
-            title="تبديل اللغة (Language)"
-          >
-            <Languages className="h-4 w-4" />
-          </Button>
-        </motion.div>
+      {/* ===== BOTTOM CENTER CONTROLS DOCK (Orange Annotation) ===== */}
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 pointer-events-auto"
+        >
+          {/* Wallpaper Toggle: One square that switches, no text, just icon */}
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setWallpaper(wallpaper === 'topography' ? 'spline' : 'topography')}
+              className="text-slate-800 hover:text-slate-950 hover:bg-white/80 transition-all duration-200 cursor-pointer w-10 h-10 relative overflow-hidden"
+              style={{
+                /* From https://css.glass */
+                background: 'rgba(255, 255, 255, 0.47)',
+                borderRadius: '14px',
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.96)',
+              }}
+              title={
+                wallpaper === 'topography'
+                  ? (isAr ? "خلفية طبوغرافيا ثلاثية الأبعاد (انقر للتبديل إلى Spline 3D)" : "Topography 3D (Click to switch to Spline 3D)")
+                  : (isAr ? "خلفية Spline 3D (انقر للتبديل إلى الطبوغرافيا)" : "Spline 3D (Click to switch to Topography)")
+              }
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                {wallpaper === 'topography' ? (
+                  <motion.div
+                    key="topography"
+                    initial={{ rotate: -30, opacity: 0, scale: 0.8 }}
+                    animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                    exit={{ rotate: 30, opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Mountain className="h-4 w-4 text-slate-900" />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="spline"
+                    initial={{ rotate: -30, opacity: 0, scale: 0.8 }}
+                    animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                    exit={{ rotate: 30, opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Layers className="h-4 w-4 text-slate-900" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Button>
+          </motion.div>
 
-        {/* Hide/Show UI */}
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setIsUiVisible(!isUiVisible)}
-            className="bg-black/40 border-white/20 text-white hover:bg-white/10 backdrop-blur-xl rounded-xl w-11 h-11 shadow-[0_0_20px_rgba(0,0,0,0.5)]"
-            title={isUiVisible ? 'Hide UI overlay' : 'Show UI overlay'}
-          >
-            {isUiVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </Button>
+          {/* Replay Opening Metallic Paint Animation */}
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleReplayOpening}
+              className="text-slate-800 hover:text-slate-950 hover:bg-white/80 transition-all duration-200 cursor-pointer w-10 h-10"
+              style={{
+                /* From https://css.glass */
+                background: 'rgba(255, 255, 255, 0.47)',
+                borderRadius: '14px',
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.96)',
+              }}
+              title={isAr ? "إعادة تشغيل حركة الشعار المعدني" : "Replay Metallic Paint Reveal"}
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          </motion.div>
+
+          {/* Language Switcher */}
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => onLanguageChange(currentLanguage === 'en' ? 'ar' : 'en')}
+              className="text-slate-800 hover:text-slate-950 hover:bg-white/80 transition-all duration-200 cursor-pointer w-10 h-10"
+              style={{
+                /* From https://css.glass */
+                background: 'rgba(255, 255, 255, 0.47)',
+                borderRadius: '14px',
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.96)',
+              }}
+              title="تبديل اللغة (Language)"
+            >
+              <Languages className="h-4 w-4" />
+            </Button>
+          </motion.div>
+
+          {/* Hide/Show UI */}
+          <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setIsUiVisible(!isUiVisible)}
+              className="text-slate-800 hover:text-slate-950 hover:bg-white/80 transition-all duration-200 cursor-pointer w-10 h-10"
+              style={{
+                /* From https://css.glass */
+                background: 'rgba(255, 255, 255, 0.47)',
+                borderRadius: '14px',
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.96)',
+              }}
+              title={isUiVisible ? 'Hide UI overlay' : 'Show UI overlay'}
+            >
+              {isUiVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </motion.div>
         </motion.div>
-      </div>
+      </AnimatePresence>
 
       {/* Main Authentication Card */}
       <AnimatePresence>
         {isUiVisible && (
           <motion.div
-            initial={{ opacity: 0, x: -100, scale: 0.95 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -100, scale: 0.95 }}
+            initial={{ opacity: 0, y: -50, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -50, scale: 0.96 }}
             transition={{
               type: 'spring',
-              damping: 25,
-              stiffness: 200,
-              opacity: { duration: 0.3 },
+              damping: 24,
+              stiffness: 180,
+              delay: showOpeningAnimation ? 0 : 0.1,
             }}
-            className={`absolute top-1/2 ${isAr ? "right-8 sm:right-12" : "left-8 sm:left-12"} -translate-y-1/2 z-30 pointer-events-none max-h-[92vh] overflow-y-auto`}
+            className="absolute top-[50%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none max-h-[94vh] overflow-y-auto py-3 px-3 w-full flex justify-center"
             dir={isAr ? "rtl" : "ltr"}
           >
-            <Card className="w-[430px] max-w-[94vw] bg-black/55 backdrop-blur-2xl border border-white/15 shadow-[0_8px_32px_rgba(0,0,0,0.7),0_0_1px_rgba(255,255,255,0.15)_inset] pointer-events-auto overflow-hidden rounded-3xl">
-              {/* Animated gradient accent border */}
-              <motion.div
-                className="absolute top-0 left-0 w-full h-[2.5px] bg-gradient-to-r from-blue-500 via-indigo-400 via-amber-400 to-pink-500"
-                animate={{
-                  backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
-                }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: 'linear',
-                }}
+            {/* Outer wrapper */}
+            <div className="relative group/card w-[560px] md:w-[600px] max-w-[95vw]">
+              <GlassSurface
+                width="100%"
+                height="auto"
+                borderRadius={16}
+                blur={20}
+                backgroundOpacity={0.47}
+                brightness={60}
+                className="glass-surface--block w-[580px] max-w-[95vw] pointer-events-auto overflow-hidden relative shadow-[0_12px_45px_rgba(0,0,0,0.18)]"
                 style={{
-                  backgroundSize: '200% 100%',
+                  /* From https://css.glass */
+                  background: 'rgba(255, 255, 255, 0.47)',
+                  borderRadius: '16px',
+                  boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  border: '1px solid rgba(255, 255, 255, 0.96)',
                 }}
-              />
-
-              <CardHeader className="pb-3 pt-6 px-7">
-                <CardTitle className="text-2xl font-black tracking-tight flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <img src={moonLogoWhite} alt="Moon Logo" className="w-12 h-12 object-contain drop-shadow-xl" />
-                    <div>
-                      <span className="text-white block font-black text-xl">
-                        {isAr ? "محرر MOON" : "Moon Editor"}
-                      </span>
-                      <span className="text-[10px] text-blue-300 font-semibold tracking-wider uppercase block">
-                        {isAr ? "بوابة البيانات المترابطة التجريبية ببفريم" : "BIBFRAME Linked Data Pilot Portal"}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onLanguageChange(isAr ? "en" : "ar")}
-                    className="px-3 py-1.5 rounded-full text-xs font-bold text-white bg-white/15 hover:bg-white/25 border border-white/30 backdrop-blur-md transition-all cursor-pointer flex items-center gap-1.5 shadow"
-                  >
-                    <Languages className="w-3.5 h-3.5 text-blue-300" />
-                    <span>{isAr ? "EN" : "عربي"}</span>
-                  </button>
-                </CardTitle>
-                <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/10">
-                  <p className="text-white/60 text-[11px] font-medium tracking-wide">
-                    {activeTab === 'login' 
-                      ? (isAr ? "تسجيل الدخول لتجربة المحرر" : "Sign In to Test Editor")
-                      : (isAr ? "طلب حساب فاحص (يتطلب موافقة)" : "Request Access (Requires Approval)")}
-                  </p>
-                </div>
-              </CardHeader>
-
-              <CardContent className="px-7 pb-7 pt-2">
-                <Tabs
-                  value={activeTab}
-                  onValueChange={(val) => {
-                    setActiveTab(val as 'login' | 'signup');
-                    setError('');
-                    setSuccess('');
-                    setPendingApprovalInfo(null);
+              >
+                
+                {/* Continuous liquid silver specular reflection on top border */}
+                <motion.div
+                  className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-white/95 to-transparent"
+                  animate={{
+                    backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
                   }}
-                  className="w-full"
-                >
-                  <TabsList className="grid w-full grid-cols-2 bg-white/5 border border-white/10 mb-5 p-1 rounded-2xl">
-                    <TabsTrigger
-                      value="login"
-                      className="data-[state=active]:bg-white/20 data-[state=active]:backdrop-blur-xl data-[state=active]:border data-[state=active]:border-white/30 data-[state=active]:shadow-lg data-[state=active]:text-white text-white/60 text-xs font-bold rounded-xl py-2 transition-all duration-300 cursor-pointer"
-                    >
-                      {isAr ? "تسجيل الدخول" : (t('login') || 'Sign In')}
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="signup"
-                      className="data-[state=active]:bg-white/20 data-[state=active]:backdrop-blur-xl data-[state=active]:border data-[state=active]:border-white/30 data-[state=active]:shadow-lg data-[state=active]:text-white text-white/60 text-xs font-bold rounded-xl py-2 transition-all duration-300 cursor-pointer"
-                    >
-                      {isAr ? "طلب حساب فاحص" : "Request Access"}
-                    </TabsTrigger>
-                  </TabsList>
+                  transition={{
+                    duration: 5,
+                    repeat: Infinity,
+                    ease: 'linear',
+                  }}
+                  style={{
+                    backgroundSize: '250% 100%',
+                  }}
+                />
 
-                  {/* ===== SIGN IN FORM ===== */}
-                  {activeTab === 'login' && (
-                    <form onSubmit={handleLoginSubmit} className="space-y-4">
+                {/* Inner specular top sheen */}
+                <div className="absolute top-0 inset-x-0 h-24 bg-gradient-to-b from-white/40 to-transparent pointer-events-none" />
+
+                <CardHeader className="pb-3 pt-6 px-7 relative z-10">
+                  <CardTitle className="text-2xl font-black tracking-tight flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3.5">
+                      <motion.button
+                        type="button"
+                        whileHover={{ scale: 1.07 }}
+                        whileTap={{ scale: 0.94 }}
+                        onClick={handleReplayOpening}
+                        title={isAr ? "شعار قمر التفاعلي - انقر لإعادة حركة الافتتاح" : "Interactive Moon Chrome Emblem (Click to replay)"}
+                        className="relative w-14 h-14 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center cursor-pointer transition-all duration-300 group shadow-[0_8px_24px_rgba(0,0,0,0.12)] border border-white/90"
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.48) 100%)',
+                          backdropFilter: 'blur(30px)',
+                          WebkitBackdropFilter: 'blur(30px)',
+                          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12), inset 0 1.5px 2px rgba(255, 255, 255, 1), inset 0 -1.5px 2px rgba(0, 0, 0, 0.06)',
+                        }}
+                      >
+                        {/* Specular gloss top reflection */}
+                        <div className="absolute top-0 inset-x-0 h-1/2 bg-gradient-to-b from-white/70 to-transparent pointer-events-none rounded-t-2xl z-10" />
+
+                        {/* Interactive Metallic Chrome Logo inside the Glass Jewel */}
+                        <div className="absolute inset-0 p-1 flex items-center justify-center z-0">
+                          <MetallicPaint
+                            imageSrc={moonLogoWhite}
+                            scale={1.2}
+                          />
+                        </div>
+
+                        {/* Dynamic Shimmer Light Sweep across glass */}
+                        <motion.div
+                          className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/50 to-transparent pointer-events-none z-20"
+                          animate={{
+                            transform: ['translateX(-120%) translateY(-120%)', 'translateX(120%) translateY(120%)'],
+                          }}
+                          transition={{
+                            duration: 3.5,
+                            repeat: Infinity,
+                            ease: 'easeInOut',
+                            repeatDelay: 2,
+                          }}
+                        />
+                      </motion.button>
+                      <div>
+                        <span className="text-slate-900 block font-black text-xl tracking-tight leading-tight">
+                          {isAr ? "محرر MOON" : "Moon Editor"}
+                        </span>
+                        <span className="text-[10.5px] text-slate-700 font-bold tracking-wider uppercase block mt-0.5">
+                          {isAr ? "بوابة البيانات المترابطة التجريبية ببفريم" : "BIBFRAME Linked Data Pilot Portal"}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onLanguageChange(isAr ? "en" : "ar")}
+                      className="px-3.5 py-1.5 rounded-full text-xs font-black text-slate-800 bg-white/70 hover:bg-white border border-white/60 backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1.5 shadow-sm hover:border-slate-400 hover:shadow-md"
+                    >
+                      <Languages className="w-3.5 h-3.5 text-slate-800" />
+                      <span>{isAr ? "EN" : "عربي"}</span>
+                    </button>
+                  </CardTitle>
+                  <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-slate-900/10">
+                    <div className="overflow-hidden h-4 flex items-center">
+                      <AnimatePresence mode="wait" initial={false}>
+                        <motion.p
+                          key={activeTab}
+                          initial={{ opacity: 0, y: -8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 8 }}
+                          transition={{ duration: 0.22, ease: "easeOut" }}
+                          className="text-slate-700 text-[11px] font-bold tracking-wide"
+                        >
+                          {activeTab === 'login' 
+                            ? (isAr ? "تسجيل الدخول لتجربة المحرر" : "Sign In to Test Editor")
+                            : (isAr ? "طلب حساب فاحص (يتطلب موافقة)" : "Request Access (Requires Approval)")}
+                        </motion.p>
+                      </AnimatePresence>
+                    </div>
+                    <span className="text-[10.5px] text-slate-700 font-mono font-bold tracking-widest uppercase">
+                      v3.0.1
+                    </span>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="px-7 pb-7 pt-2 relative z-10">
+                  {/* Segmented @react-bits/GlassSurface Tab Switcher */}
+                  <GlassSurface
+                    width="100%"
+                    height="auto"
+                    borderRadius={16}
+                    blur={16}
+                    backgroundOpacity={0.47}
+                    brightness={60}
+                    className="glass-surface--block w-full mb-5"
+                    style={{
+                      /* From https://css.glass */
+                      background: 'rgba(255, 255, 255, 0.47)',
+                      borderRadius: '16px',
+                      boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+                      backdropFilter: 'blur(20px)',
+                      WebkitBackdropFilter: 'blur(20px)',
+                      border: '1px solid rgba(255, 255, 255, 0.96)',
+                    }}
+                  >
+                    <div className="grid grid-cols-2 p-1 relative w-full">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('login');
+                          setError('');
+                          setSuccess('');
+                          setPendingApprovalInfo(null);
+                        }}
+                        className={`relative z-10 py-2.5 px-3 rounded-xl text-xs font-black transition-colors duration-200 cursor-pointer flex items-center justify-center gap-2 ${
+                          activeTab === 'login' ? 'text-slate-950' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {activeTab === 'login' && (
+                          <motion.div
+                            layoutId="cssGlassActiveTabPill"
+                            className="absolute inset-0 bg-white/85 rounded-[12px] border border-white shadow-[0_2px_12px_rgba(0,0,0,0.08)]"
+                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                          />
+                        )}
+                        <span className="relative z-10">{isAr ? "تسجيل الدخول" : "Sign In"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('signup');
+                          setError('');
+                          setSuccess('');
+                          setPendingApprovalInfo(null);
+                        }}
+                        className={`relative z-10 py-2.5 px-3 rounded-xl text-xs font-black transition-colors duration-200 cursor-pointer flex items-center justify-center gap-2 ${
+                          activeTab === 'signup' ? 'text-slate-950' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {activeTab === 'signup' && (
+                          <motion.div
+                            layoutId="cssGlassActiveTabPill"
+                            className="absolute inset-0 bg-white/85 rounded-[12px] border border-white shadow-[0_2px_12px_rgba(0,0,0,0.08)]"
+                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                          />
+                        )}
+                        <span className="relative z-10">{isAr ? "طلب الانضمام" : "Sign Up"}</span>
+                      </button>
+                    </div>
+                  </GlassSurface>
+
+                  {/* ===== TAB CONTENT ANIMATED CONTAINER WITH SMOOTH SLIDE & HEIGHT SPRING ===== */}
+                  <motion.div
+                    layout
+                    transition={{
+                      layout: { type: "spring", stiffness: 350, damping: 32 }
+                    }}
+                    className="relative"
+                  >
+                    <AnimatePresence mode="wait" initial={false}>
+                      {activeTab === 'login' ? (
+                        <motion.form
+                          key="login-form"
+                          onSubmit={handleLoginSubmit}
+                          initial={{ opacity: 0, x: isAr ? 32 : -32, filter: 'blur(4px)' }}
+                          animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                          exit={{ opacity: 0, x: isAr ? -32 : 32, filter: 'blur(4px)' }}
+                          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                          className="space-y-4"
+                        >
                       <div className="space-y-1.5">
-                        <Label className="text-white/85 text-[11px] font-bold block text-right" htmlFor="identifier">
+                        <Label className="text-slate-800 text-[11px] font-bold block" htmlFor="identifier">
                           {isAr ? "اسم المستخدم أو البريد الإلكتروني *" : "User or Email *"}
                         </Label>
                         <div className="relative group">
-                          <User className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3.5 h-4 w-4 text-white/40 group-focus-within:text-blue-400 transition-colors duration-200`} />
+                          <User strokeWidth={2.5} className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3.5 h-4.5 w-4.5 text-slate-950 group-focus-within:text-black transition-colors duration-200`} />
                           <Input
                             id="identifier"
                             value={identifier}
                             onChange={(e) => setIdentifier(e.target.value)}
-                            className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-11 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-400 transition-all rounded-xl`}
+                            className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-11 text-slate-900 placeholder:text-slate-500 font-medium transition-all rounded-xl border focus-within:ring-2 focus-within:ring-slate-900/15`}
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.47)',
+                              borderRadius: '12px',
+                              backdropFilter: 'blur(20px)',
+                              WebkitBackdropFilter: 'blur(20px)',
+                              border: '1px solid rgba(255, 255, 255, 0.96)',
+                              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
+                            }}
                             placeholder={isAr ? "اسم المستخدم أو البريد الإلكتروني" : "Username or email"}
                             disabled={loading}
                             dir={isAr ? "rtl" : "ltr"}
@@ -432,17 +902,25 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                       </div>
 
                       <div className="space-y-1.5">
-                        <Label className="text-white/85 text-[11px] font-bold block text-right" htmlFor="password">
+                        <Label className="text-slate-800 text-[11px] font-bold block" htmlFor="password">
                           {isAr ? "كلمة المرور *" : "Password *"}
                         </Label>
                         <div className="relative group">
-                          <Lock className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3.5 h-4 w-4 text-white/40 group-focus-within:text-purple-400 transition-colors duration-200`} />
+                          <Lock strokeWidth={2.5} className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3.5 h-4.5 w-4.5 text-slate-950 group-focus-within:text-black transition-colors duration-200`} />
                           <Input
                             id="password"
                             type={showPassword ? 'text' : 'password'}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className={`${isAr ? 'pr-10 pl-10 text-right' : 'pl-10 pr-10 text-left'} h-11 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-purple-500/50 focus-visible:border-purple-400 transition-all rounded-xl`}
+                            className={`${isAr ? 'pr-10 pl-11 text-right' : 'pl-10 pr-11 text-left'} h-11 text-slate-900 placeholder:text-slate-500 font-medium transition-all rounded-xl border focus-within:ring-2 focus-within:ring-slate-900/15`}
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.47)',
+                              borderRadius: '12px',
+                              backdropFilter: 'blur(20px)',
+                              WebkitBackdropFilter: 'blur(20px)',
+                              border: '1px solid rgba(255, 255, 255, 0.96)',
+                              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
+                            }}
                             placeholder={isAr ? "أدخل كلمة المرور" : "Enter password"}
                             disabled={loading}
                             dir={isAr ? "rtl" : "ltr"}
@@ -450,7 +928,7 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                           <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className={`absolute ${isAr ? 'left-3' : 'right-3'} top-3.5 text-white/40 hover:text-white/70 transition-colors cursor-pointer`}
+                            className={`absolute ${isAr ? 'left-3.5' : 'right-3.5'} top-3.5 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer`}
                             disabled={loading}
                           >
                             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -464,149 +942,214 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                             initial={{ opacity: 0, y: -6 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0 }}
-                            className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs backdrop-blur-md leading-relaxed"
+                            className="p-3.5 rounded-xl bg-rose-50/85 border border-rose-300/80 text-rose-900 text-xs backdrop-blur-xl leading-relaxed shadow-sm"
                           >
-                            <div className="flex items-start gap-2">
-                              <XCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                              <span>{error}</span>
+                            <div className="flex items-start gap-2.5">
+                              <XCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                              <span className="font-medium">{error}</span>
                             </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
 
-                      <motion.div whileHover={{ scale: loading ? 1 : 1.01 }} whileTap={{ scale: loading ? 1 : 0.98 }} className="pt-2">
+                      {/* Sign In Submit Button */}
+                      <motion.div whileHover={{ scale: loading ? 1 : 1.015 }} whileTap={{ scale: loading ? 1 : 0.98 }} className="pt-2">
                         <Button
                           type="submit"
-                          className="w-full h-12 text-white font-black text-sm uppercase tracking-wider transition-all cursor-pointer relative overflow-hidden group"
+                          disabled={loading}
+                          className="w-full h-12 text-slate-950 font-black text-sm tracking-wider rounded-2xl shadow-none flex items-center justify-center gap-2.5 transition-all cursor-pointer hover:bg-white/70 active:scale-[0.99]"
                           style={{
-                            background: 'rgba(255, 255, 255, 0.28)',
+                            /* From https://css.glass */
+                            background: 'rgba(255, 255, 255, 0.47)',
                             borderRadius: '16px',
                             boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
-                            backdropFilter: 'blur(13.4px)',
-                            WebkitBackdropFilter: 'blur(13.4px)',
-                            border: '1px solid rgba(255, 255, 255, 0.88)',
-                            color: '#ffffff',
+                            backdropFilter: 'blur(20px)',
+                            WebkitBackdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(255, 255, 255, 0.96)',
                           }}
-                          disabled={loading}
                         >
-                          <span className="relative z-10 flex items-center justify-center gap-2.5">
-                            {loading ? (
-                              <span>Authenticating...</span>
-                            ) : (
-                              <>
-                                <span>{isAr ? "تسجيل الدخول إلى محرر MOON" : "SIGN IN TO TEST MOON"}</span>
-                                <img src={moonLogoWhite} alt="Moon" className="w-5 h-5 object-contain drop-shadow" />
-                              </>
-                            )}
-                          </span>
+                          {loading ? (
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin" />
+                              <span>{isAr ? "جارٍ التحقق..." : "Authenticating..."}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <ShinyText
+                                text={isAr ? "تسجيل الدخول إلى محرر MOON" : "SIGN IN TO TEST MOON"}
+                                color="#020617"
+                                shineColor="#64748b"
+                                speed={3}
+                                className="font-black text-slate-950 text-sm tracking-wider"
+                              />
+                              <ArrowRight className={`w-4 h-4 ${isAr ? 'rotate-180' : ''}`} />
+                            </div>
+                          )}
                         </Button>
                       </motion.div>
-                    </form>
-                  )}
-
-                  {/* ===== SIGN UP / REQUEST ACCESS FORM ===== */}
-                  {activeTab === 'signup' && (
-                    <form onSubmit={handleSignupSubmit} className="space-y-3.5">
+                    </motion.form>
+                      ) : (
+                        <motion.form
+                          key="signup-form"
+                          onSubmit={handleSignupSubmit}
+                          initial={{ opacity: 0, x: isAr ? -32 : 32, filter: 'blur(4px)' }}
+                          animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                          exit={{ opacity: 0, x: isAr ? 32 : -32, filter: 'blur(4px)' }}
+                          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                          className="space-y-3"
+                        >
                       {/* Username */}
-                      <div className="space-y-1">
-                        <Label className="text-white/85 text-[11px] font-bold block text-right" htmlFor="regUsername">
-                          {isAr ? "اسم المستخدم *" : "User / Username *"}
-                        </Label>
-                        <div className="relative group">
-                          <User className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3 h-4 w-4 text-white/40 group-focus-within:text-blue-400 transition-colors`} />
-                          <Input
-                            id="regUsername"
-                            value={regUsername}
-                            onChange={(e) => setRegUsername(e.target.value)}
-                            className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-10 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-blue-500/50 rounded-xl text-sm`}
-                            placeholder={isAr ? "مثال: سارة أحمد أو sahmed" : "e.g. Sarah Ahmed or sahmed"}
-                            disabled={loading}
-                            dir={isAr ? "rtl" : "ltr"}
-                            required
-                          />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Username */}
+                        <div className="space-y-1">
+                          <Label className="text-slate-800 text-[10.5px] font-bold block" htmlFor="regUsername">
+                            {isAr ? "اسم المستخدم *" : "User / Username *"}
+                          </Label>
+                          <div className="relative group">
+                            <User strokeWidth={2.5} className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-2.5 h-4.5 w-4.5 text-slate-950 group-focus-within:text-black transition-colors`} />
+                            <Input
+                              id="regUsername"
+                              value={regUsername}
+                              onChange={(e) => setRegUsername(e.target.value)}
+                              className={`${isAr ? 'pr-11 pl-4 text-right' : 'pl-11 pr-4 text-left'} h-10 text-slate-900 placeholder:text-slate-500 font-medium transition-all rounded-xl border focus-within:ring-2 focus-within:ring-slate-900/15`}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.47)',
+                                borderRadius: '12px',
+                                backdropFilter: 'blur(20px)',
+                                WebkitBackdropFilter: 'blur(20px)',
+                                border: '1px solid rgba(255, 255, 255, 0.96)',
+                                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
+                              }}
+                              placeholder={isAr ? "مثال: سارة أحمد أو sahmed" : "e.g. Sarah Ahmed"}
+                              disabled={loading}
+                              dir={isAr ? "rtl" : "ltr"}
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        {/* Email */}
+                        <div className="space-y-1">
+                          <Label className="text-slate-800 text-[10.5px] font-bold block" htmlFor="regEmail">
+                            {isAr ? "البريد الإلكتروني *" : "EMAIL ADDRESS *"}
+                          </Label>
+                          <div className="relative group">
+                            <Mail strokeWidth={2.5} className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-2.5 h-4.5 w-4.5 text-slate-950 group-focus-within:text-black transition-colors`} />
+                            <Input
+                              id="regEmail"
+                              type="email"
+                              value={regEmail}
+                              onChange={(e) => setRegEmail(e.target.value)}
+                              className={`${isAr ? 'pr-11 pl-4 text-right' : 'pl-11 pr-4 text-left'} h-10 text-slate-900 placeholder:text-slate-500 font-medium transition-all rounded-xl border focus-within:ring-2 focus-within:ring-slate-900/15`}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.47)',
+                                borderRadius: '12px',
+                                backdropFilter: 'blur(20px)',
+                                WebkitBackdropFilter: 'blur(20px)',
+                                border: '1px solid rgba(255, 255, 255, 0.96)',
+                                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
+                              }}
+                              placeholder={isAr ? "مثال: sarah@library.iq" : "e.g. sarah@library.edu"}
+                              disabled={loading}
+                              dir={isAr ? "rtl" : "ltr"}
+                              required
+                            />
+                          </div>
                         </div>
                       </div>
 
-                      {/* Email */}
-                      <div className="space-y-1">
-                        <Label className="text-white/85 text-[11px] font-bold block text-right" htmlFor="regEmail">
-                          {isAr ? "البريد الإلكتروني *" : "EMAIL ADDRESS *"}
-                        </Label>
-                        <div className="relative group">
-                          <Mail className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3 h-4 w-4 text-white/40 group-focus-within:text-indigo-400 transition-colors`} />
-                          <Input
-                            id="regEmail"
-                            type="email"
-                            value={regEmail}
-                            onChange={(e) => setRegEmail(e.target.value)}
-                            className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-10 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-indigo-500/50 rounded-xl text-sm`}
-                            placeholder={isAr ? "مثال: sarah@library.iq" : "e.g. sarah@library.edu"}
-                            disabled={loading}
-                            dir={isAr ? "rtl" : "ltr"}
-                            required
-                          />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Institution */}
+                        <div className="space-y-1">
+                          <Label className="text-slate-800 text-[10.5px] font-bold block" htmlFor="regInstitution">
+                            {isAr ? "المؤسسة أو المكتبة أو الجامعة *" : "INSTITUTION / ORGANIZATION *"}
+                          </Label>
+                          <div className="relative group">
+                            <Building2 strokeWidth={2.5} className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-2.5 h-4.5 w-4.5 text-slate-950 group-focus-within:text-black transition-colors`} />
+                            <Input
+                              id="regInstitution"
+                              value={regInstitution}
+                              onChange={(e) => setRegInstitution(e.target.value)}
+                              className={`${isAr ? 'pr-11 pl-4 text-right' : 'pl-11 pr-4 text-left'} h-10 text-slate-900 placeholder:text-slate-500 font-medium transition-all rounded-xl border focus-within:ring-2 focus-within:ring-slate-900/15`}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.47)',
+                                borderRadius: '12px',
+                                backdropFilter: 'blur(20px)',
+                                WebkitBackdropFilter: 'blur(20px)',
+                                border: '1px solid rgba(255, 255, 255, 0.96)',
+                                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
+                              }}
+                              placeholder={isAr ? "مثال: مكتبة العتبة، جامعة بغداد" : "e.g. Library of Congress"}
+                              disabled={loading}
+                              dir={isAr ? "rtl" : "ltr"}
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        {/* Password */}
+                        <div className="space-y-1">
+                          <Label className="text-slate-800 text-[10.5px] font-bold block" htmlFor="regPassword">
+                            {isAr ? "كلمة المرور (٦ خانات على الأقل) *" : "PASSWORD (MIN 6 CHARS) *"}
+                          </Label>
+                          <div className="relative group">
+                            <Lock strokeWidth={2.5} className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-2.5 h-4.5 w-4.5 text-slate-950 group-focus-within:text-black transition-colors`} />
+                            <Input
+                              id="regPassword"
+                              type="password"
+                              value={regPassword}
+                              onChange={(e) => setRegPassword(e.target.value)}
+                              className={`${isAr ? 'pr-11 pl-4 text-right' : 'pl-11 pr-4 text-left'} h-10 text-slate-900 placeholder:text-slate-500 font-medium transition-all rounded-xl border focus-within:ring-2 focus-within:ring-slate-900/15`}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.47)',
+                                borderRadius: '12px',
+                                backdropFilter: 'blur(20px)',
+                                WebkitBackdropFilter: 'blur(20px)',
+                                border: '1px solid rgba(255, 255, 255, 0.96)',
+                                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
+                              }}
+                              placeholder={isAr ? "أنشئ كلمة المرور" : "Create password"}
+                              disabled={loading}
+                              dir={isAr ? "rtl" : "ltr"}
+                              required
+                            />
+                          </div>
                         </div>
                       </div>
 
-                      {/* Institution */}
-                      <div className="space-y-1">
-                        <Label className="text-white/85 text-[11px] font-bold block text-right" htmlFor="regInstitution">
-                          {isAr ? "المؤسسة أو المكتبة أو الجامعة *" : "INSTITUTION / ORGANIZATION *"}
-                        </Label>
-                        <div className="relative group">
-                          <Building2 className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3 h-4 w-4 text-white/40 group-focus-within:text-cyan-400 transition-colors`} />
-                          <Input
-                            id="regInstitution"
-                            value={regInstitution}
-                            onChange={(e) => setRegInstitution(e.target.value)}
-                            className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-10 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-cyan-500/50 rounded-xl text-sm`}
-                            placeholder={isAr ? "مثال: مكتبة العتبة العباسية، دار الكتب، جامعة بغداد" : "e.g. Library of Congress, Cairo Univ, Sinopia Partner"}
-                            disabled={loading}
-                            dir={isAr ? "rtl" : "ltr"}
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      {/* Password */}
-                      <div className="space-y-1">
-                        <Label className="text-white/85 text-[11px] font-bold block text-right" htmlFor="regPassword">
-                          {isAr ? "كلمة المرور (٨ خانات على الأقل) *" : "PASSWORD (MIN 8 CHARS) *"}
-                        </Label>
-                        <div className="relative group">
-                          <Lock className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3 h-4 w-4 text-white/40 group-focus-within:text-purple-400 transition-colors`} />
-                          <Input
-                            id="regPassword"
-                            type="password"
-                            value={regPassword}
-                            onChange={(e) => setRegPassword(e.target.value)}
-                            className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-10 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-purple-500/50 rounded-xl text-sm`}
-                            placeholder={isAr ? "أنشئ كلمة المرور" : "Create password"}
-                            disabled={loading}
-                            dir={isAr ? "rtl" : "ltr"}
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      {/* Fast-Approval Code (Optional) */}
+                      {/* Fast-Approval Bypass / Invite Code (Optional) */}
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-2">
-                          <Label className="text-white/85 text-[11px] font-bold" htmlFor="regInviteCode">
-                            {isAr ? "رمز الدعوة (اختياري)" : "INVITE CODE (OPTIONAL)"}
+                          <Label className="text-slate-800 text-[10.5px] font-bold flex items-center gap-1.5" htmlFor="regInviteCode">
+                            <KeyRound className="w-3.5 h-3.5 text-slate-700" />
+                            <span>{isAr ? "رمز الدعوة والتجاوز الفوري (اختياري)" : "INVITE / BYPASS CODE (OPTIONAL)"}</span>
                           </Label>
-                          <span className="text-[10px] text-amber-300 font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30">
-                            {isAr ? "يعتمد الحساب فوراً" : "Approves the account at once"}
+                          <span className="text-[9.5px] text-slate-700 font-bold px-2 py-0.5 rounded-full bg-white/70 border border-white shadow-xs">
+                            {isAr ? "يعتمد الحساب فوراً" : "Approves account at once"}
                           </span>
                         </div>
                         <div className="relative group">
-                          <KeyRound className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3 h-4 w-4 text-white/40 group-focus-within:text-amber-400 transition-colors`} />
+                          <KeyRound strokeWidth={2.5} className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-2.5 h-4.5 w-4.5 text-slate-950 group-focus-within:text-black transition-colors`} />
                           <Input
                             id="regInviteCode"
                             value={regInviteCode}
                             onChange={(e) => setRegInviteCode(e.target.value)}
-                            className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-10 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded-xl text-sm`}
-                            placeholder={isAr ? "الرمز الذي أعطاك إياه المشرف، إن وُجد" : "The code the admin gave you, if any"}
+                            className={`${isAr ? 'pr-11 pl-4 text-right' : 'pl-11 pr-4 text-left'} h-10 text-slate-900 placeholder:text-slate-500 font-medium transition-all rounded-xl border focus-within:ring-2 focus-within:ring-slate-900/15`}
+                            style={{
+                              /* From https://css.glass */
+                              background: 'rgba(255, 255, 255, 0.47)',
+                              borderRadius: '12px',
+                              backdropFilter: 'blur(20px)',
+                              WebkitBackdropFilter: 'blur(20px)',
+                              border: '1px solid rgba(255, 255, 255, 0.96)',
+                              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
+                            }}
+                            placeholder={isAr ? "رمز الدعوة أو التجاوز إن كان متوفراً لديك" : "Invite or bypass code if available"}
+                            disabled={loading}
+                            dir={isAr ? "rtl" : "ltr"}
+                          />
+                        </div>
+                      </div>
                             disabled={loading}
                             dir={isAr ? "rtl" : "ltr"}
                           />
@@ -619,11 +1162,11 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                             initial={{ opacity: 0, y: -6 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0 }}
-                            className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs backdrop-blur-md"
+                            className="p-3.5 rounded-xl bg-rose-50/85 border border-rose-300/80 text-rose-900 text-xs backdrop-blur-xl leading-relaxed shadow-sm"
                           >
-                            <div className="flex items-start gap-2">
-                              <XCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                              <span>{error}</span>
+                            <div className="flex items-start gap-2.5">
+                              <XCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                              <span className="font-medium">{error}</span>
                             </div>
                           </motion.div>
                         )}
@@ -632,26 +1175,34 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                           <motion.div
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            className="p-4 rounded-2xl bg-amber-500/15 border border-amber-400/40 text-amber-200 text-xs backdrop-blur-md space-y-2"
+                            className="p-4 rounded-2xl text-slate-900 text-xs backdrop-blur-xl space-y-2.5 shadow-sm"
+                            style={{
+                              background: 'rgba(255, 255, 255, 0.65)',
+                              borderRadius: '16px',
+                              border: '1px solid rgba(255, 255, 255, 0.96)',
+                              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+                            }}
                           >
-                            <div className="flex items-center gap-2 font-bold text-amber-300">
-                              <Clock className="h-4 w-4 animate-spin text-amber-400" />
-                              <span>Awaiting Administrator Approval</span>
+                            <div className="flex items-center gap-2 font-bold text-slate-900">
+                              <Clock className="h-4 w-4 animate-spin text-slate-700" />
+                              <span>{isAr ? "طلبك قيد المراجعة والموافقة" : "Awaiting Administrator Approval"}</span>
                             </div>
-                            <div className="space-y-1 text-[11px] text-white/80 bg-black/30 p-2.5 rounded-xl border border-white/10 font-mono">
-                              <div><span className="text-white/50">User:</span> {pendingApprovalInfo.user}</div>
-                              <div><span className="text-white/50">Email:</span> {pendingApprovalInfo.email}</div>
-                              <div><span className="text-white/50">Institution:</span> {pendingApprovalInfo.institution}</div>
+                            <div className="space-y-1 text-[11px] text-slate-700 bg-white/70 p-2.5 rounded-xl border border-slate-200 font-mono">
+                              <div><span className="text-slate-500">User:</span> {pendingApprovalInfo.user}</div>
+                              <div><span className="text-slate-500">Email:</span> {pendingApprovalInfo.email}</div>
+                              <div><span className="text-slate-500">Institution:</span> {pendingApprovalInfo.institution}</div>
                             </div>
-                            <p className="text-[11px] leading-relaxed text-amber-100">
-                              Your request has been dispatched to administrator <strong>Isaac Faleh</strong>. It will appear directly on his admin account for instant approval.
+                            <p className="text-[11px] leading-relaxed text-slate-600">
+                              {isAr
+                                ? "تم إرسال طلبك إلى المشرف إسحاق فالح للموافقة الفورية من لوحة تحكم Moon Studio."
+                                : "Your request has been dispatched to administrator Isaac Faleh for instant approval."}
                             </p>
                             <a
                               href={`mailto:eshak100falah@gmail.com?subject=${encodeURIComponent(`Moon Editor Access Request: ${pendingApprovalInfo.user}`)}&body=${encodeURIComponent(`Hello Isaac,\n\nA new tester has requested access to the Moon BIBFRAME Editor:\n\nUser: ${pendingApprovalInfo.user}\nEmail: ${pendingApprovalInfo.email}\nInstitution: ${pendingApprovalInfo.institution}\nSubmitted At: ${new Date().toLocaleString()}\n\nPlease approve this request from your Admin account in Moon Studio.\n\nThank you!`)}`}
-                              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-500/30 hover:bg-blue-500/50 border border-blue-400/60 text-white text-xs font-bold transition-all shadow-md cursor-pointer"
+                              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-b from-slate-900 to-black hover:from-slate-800 hover:to-slate-950 text-white text-xs font-black transition-all shadow-md cursor-pointer w-full"
                             >
                               <Mail className="h-3.5 w-3.5" />
-                              <span>Send Email Notification to Isaac</span>
+                              <span>{isAr ? "إرسال إشعار للمشرف عبر البريد" : "Send Email Notification to Isaac"}</span>
                             </a>
                           </motion.div>
                         )}
@@ -660,48 +1211,61 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                           <motion.div
                             initial={{ opacity: 0, y: -6 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-200 text-xs backdrop-blur-md flex items-start gap-2"
+                            className="p-3.5 rounded-xl bg-emerald-50/85 border border-emerald-300/80 text-emerald-900 text-xs backdrop-blur-xl flex items-start gap-2.5 shadow-sm"
                           >
-                            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                            <span>{success}</span>
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                            <span className="font-medium">{success}</span>
                           </motion.div>
                         )}
                       </AnimatePresence>
 
-                      <motion.div whileHover={{ scale: loading ? 1 : 1.01 }} whileTap={{ scale: loading ? 1 : 0.98 }} className="pt-2">
+                      {/* Sign Up Submit Button */}
+                      <motion.div whileHover={{ scale: loading ? 1 : 1.015 }} whileTap={{ scale: loading ? 1 : 0.98 }} className="pt-2">
                         <Button
                           type="submit"
-                          className="w-full h-11 text-white font-black text-xs uppercase tracking-wider transition-all cursor-pointer"
+                          disabled={loading}
+                          className="w-full h-12 text-slate-950 font-black text-sm tracking-wider rounded-2xl shadow-none flex items-center justify-center gap-2.5 transition-all cursor-pointer hover:bg-white/70 active:scale-[0.99]"
                           style={{
-                            background: 'rgba(255, 255, 255, 0.28)',
+                            /* From https://css.glass */
+                            background: 'rgba(255, 255, 255, 0.47)',
                             borderRadius: '16px',
                             boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
-                            backdropFilter: 'blur(13.4px)',
-                            WebkitBackdropFilter: 'blur(13.4px)',
-                            border: '1px solid rgba(255, 255, 255, 0.88)',
-                            color: '#ffffff',
+                            backdropFilter: 'blur(20px)',
+                            WebkitBackdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(255, 255, 255, 0.96)',
                           }}
-                          disabled={loading}
                         >
-                          {loading ? 'Submitting Request...' : (
-                            <span className="flex items-center justify-center gap-2">
-                              <span>{isAr ? "إرسال طلب الانضمام كفاحص" : "SUBMIT TESTER REQUEST"}</span>
-                              <img src={moonLogoWhite} alt="Moon" className="w-4 h-4 object-contain drop-shadow" />
-                            </span>
+                          {loading ? (
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin" />
+                              <span>{isAr ? "جارٍ الإرسال..." : "Submitting..."}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <ShinyText
+                                text={isAr ? "إرسال طلب الانضمام" : "Submit Access Request"}
+                                color="#020617"
+                                shineColor="#64748b"
+                                speed={3}
+                                className="font-black text-slate-950 text-sm tracking-wider"
+                              />
+                              <ArrowRight className={`w-4 h-4 ${isAr ? 'rotate-180' : ''}`} />
+                            </div>
                           )}
                         </Button>
                       </motion.div>
-                    </form>
-                  )}
-                </Tabs>
+                    </motion.form>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
 
-                {/* Footer notes */}
-                <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-white/40 uppercase tracking-wider">
-                  <span>BIBFRAME 3.0.1</span>
-                  
-                </div>
-              </CardContent>
-            </Card>
+                  <div className="mt-5 pt-3.5 border-t border-slate-900/10 flex items-center justify-between text-[10.5px] text-slate-500 tracking-wider">
+                    <span className="font-semibold text-slate-700">BIBFRAME 3.0.1</span>
+                    <span className="text-[10.5px] text-slate-800 font-mono font-bold">MOON ENGINE</span>
+                  </div>
+                </CardContent>
+              </GlassSurface>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -764,6 +1328,19 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
           </form>
         )}
       />
+    {/* ===== 3D INTERACTIVE LANYARD PASS OVERLAY (On Login & Signup) ===== */}
+      <AnimatePresence>
+        {lanyardPass && (
+          <LanyardPassOverlay
+            user={lanyardPass.user}
+            role={lanyardPass.role}
+            institution={lanyardPass.institution}
+            type={lanyardPass.type}
+            isAr={isAr}
+            onProceed={handleProceedFromLanyard}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
