@@ -7,7 +7,9 @@
  *
  * KV layout:
  *   moon:account:<username lowercased>  -> StoredAccount
- *   moon:session:<token>                -> Session
+ *   moon:session:h:<sha256 of token>    -> Session (older sessions: moon:session:<token>)
+ *   moon:invite:<sha256 of code>        -> InviteCode (made by the Super Admin; see signInSafety.tsx)
+ *   moon:tries:<scope>:<hash>           -> wrong sign-in tries (see signInSafety.tsx)
  *   moon:lastseen:<username lowercased> -> { username, at } (last activity, for the Super Admin)
  *
  * The Super Admin is not stored as an account; its password comes from the
@@ -15,6 +17,11 @@
  */
 import { Hono } from "npm:hono";
 import * as kv from "./kv_store.tsx";
+import {
+  afterWrongTry, clientAddress, hashPassword, inviteKey, inviteProblem, invitePublic, LIMITS, lockedFor, lockMessage,
+  newInviteCode, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, randomHex, safeEqual, sha256Hex, tryKeys, useInvite, verifyPassword,
+  type InviteCode, type TryScope, type TryState,
+} from "./signInSafety.tsx";
 
 const accountRoutes = new Hono();
 
@@ -25,7 +32,7 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SUPER_ADMIN_USERNAME = "isaac";
 const SUPER_ADMIN_EMAIL = "isaac@moon.local";
 const RESERVED_USERNAMES = new Set([SUPER_ADMIN_USERNAME, "admin", "tester"]);
-const VIP_CODES = new Set(["wolfmoonalqamiisaac", "moon2026", "vip"]);
+const INVITE_PREFIX = "moon:invite:";
 
 // Set MOON_ADMIN_PASSWORD in the Supabase function secrets to change it.
 // Trimmed so a space or line break pasted into the dashboard doesn't lock the admin out.
@@ -45,6 +52,10 @@ interface StoredAccount {
   reviewedBy?: string;
   passwordHash: string;
   salt: string;
+  // How the password is stored (signInSafety.tsx). Missing on accounts saved before PBKDF2: they are
+  // saved the new way the next time their owner signs in.
+  kdf?: string;
+  iterations?: number;
 }
 
 interface Session {
@@ -64,7 +75,7 @@ const SUPER_ADMIN_PUBLIC = {
 };
 
 function toPublic(a: StoredAccount) {
-  const { passwordHash: _h, salt: _s, ...rest } = a;
+  const { passwordHash: _h, salt: _s, kdf: _k, iterations: _i, ...rest } = a;
   return rest;
 }
 
@@ -80,24 +91,29 @@ function parse<T>(value: unknown): T | null {
   return value as T;
 }
 
-async function hashPassword(password: string, salt: string): Promise<string> {
-  const data = new TextEncoder().encode(`${salt}:${password}`);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+const randomToken = randomHex;
+
+// ─── Wrong tries (see signInSafety.tsx for the rules) ────────
+type TryKeys = Record<TryScope, string>;
+
+/** How long this caller is locked out (ms), looking at the given counters; 0 = not locked. */
+async function lockedMs(keys: TryKeys, scopes: TryScope[]): Promise<number> {
+  const now = Date.now();
+  const states = await Promise.all(scopes.map((k) => kv.get(keys[k]).then((v: unknown) => parse<TryState>(v)).catch(() => null)));
+  return Math.max(0, ...states.map((st) => lockedFor(st, now)));
 }
 
-function randomToken(bytes = 32): string {
-  const buf = new Uint8Array(bytes);
-  crypto.getRandomValues(buf);
-  return Array.from(buf).map((b) => b.toString(16).padStart(2, "0")).join("");
+async function countWrongTry(keys: TryKeys, scopes: TryScope[]): Promise<void> {
+  const now = Date.now();
+  await Promise.all(scopes.map(async (k) => {
+    const state = parse<TryState>(await kv.get(keys[k]).catch(() => null));
+    await kv.set(keys[k], afterWrongTry(state, LIMITS[k], now));
+  })).catch((e) => console.error("[ACCOUNTS] Could not count a wrong try:", e));
 }
 
-// Constant-time-ish comparison so password checks don't leak timing.
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+function tooManyTries(c: any, ms: number, extra: Record<string, unknown> = {}) {
+  c.header("Retry-After", String(Math.ceil(ms / 1000)));
+  return c.json({ success: false, ...extra, message: lockMessage(ms) }, 429);
 }
 
 async function getAccount(username: string): Promise<StoredAccount | null> {
@@ -125,7 +141,8 @@ async function createSession(username: string, role: Session["role"]): Promise<s
     role,
     expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
   };
-  await kv.set(SESSION_PREFIX + token, session);
+  // Kept under a hash of the token, so reading the store does not give anyone a working session.
+  await kv.set(SESSION_PREFIX + "h:" + (await sha256Hex(token)), session);
   return token;
 }
 
@@ -133,10 +150,16 @@ async function createSession(username: string, role: Session["role"]): Promise<s
 export async function getSession(c: any): Promise<Session | null> {
   const token = c.req.header("X-Moon-Session");
   if (!token || !/^[0-9a-f]{64}$/.test(token)) return null;
-  const session = parse<Session>(await kv.get(SESSION_PREFIX + token));
+  let key = SESSION_PREFIX + "h:" + (await sha256Hex(token));
+  let session = parse<Session>(await kv.get(key));
+  if (!session) {
+    // A session from before tokens were hashed: still good until it runs out.
+    key = SESSION_PREFIX + token;
+    session = parse<Session>(await kv.get(key));
+  }
   if (!session) return null;
   if (new Date(session.expiresAt).getTime() < Date.now()) {
-    await kv.del(SESSION_PREFIX + token).catch(() => {});
+    await kv.del(key).catch(() => {});
     return null;
   }
   if (session.role !== "admin") {
@@ -222,7 +245,7 @@ accountRoutes.post("/api/accounts/register", async (c) => {
     const email = String(body.email || "").trim();
     const institution = String(body.institution || "").trim();
     const password = String(body.password || "");
-    const inviteCode = String(body.inviteCode || "").trim().toLowerCase().replace(/[\s\-_]/g, "");
+    const inviteCode = String(body.inviteCode || "").trim();
 
     if (!/^[\p{L}\p{N}._-]{2,40}$/u.test(username)) {
       return c.json({ success: false, message: "Username must be 2-40 letters, numbers, dots, dashes or underscores." }, 400);
@@ -233,8 +256,8 @@ accountRoutes.post("/api/accounts/register", async (c) => {
     if (!institution) {
       return c.json({ success: false, message: "Institution or Organization is required." }, 400);
     }
-    if (password.length < 6) {
-      return c.json({ success: false, message: "Password must be at least 6 characters." }, 400);
+    if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
+      return c.json({ success: false, message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.` }, 400);
     }
     if (RESERVED_USERNAMES.has(username.toLowerCase())) {
       return c.json({ success: false, message: "This username is reserved. Please choose another." }, 409);
@@ -248,9 +271,25 @@ accountRoutes.post("/api/accounts/register", async (c) => {
       return c.json({ success: false, message: "A tester with this username or email already exists." }, 409);
     }
 
-    const isVip = VIP_CODES.has(inviteCode);
+    // An invite code approves the account at once. Codes are made by the Super Admin and kept in the
+    // database; wrong codes count as wrong tries for the caller's address, so codes cannot be guessed.
+    let invite: InviteCode | null = null;
+    let inviteStoreKey = "";
+    if (inviteCode) {
+      const keys = await tryKeys("invite", clientAddress(c.req.header("x-forwarded-for")));
+      const locked = await lockedMs(keys, ["address"]);
+      if (locked) return tooManyTries(c, locked);
+      inviteStoreKey = await inviteKey(inviteCode);
+      invite = parse<InviteCode>(await kv.get(inviteStoreKey));
+      const problem = inviteProblem(invite, Date.now());
+      if (problem) {
+        await countWrongTry(keys, ["address"]);
+        return c.json({ success: false, message: `${problem} Leave the code empty to ask for approval instead.` }, 400);
+      }
+    }
+
+    const isVip = !!invite;
     const now = new Date().toISOString();
-    const salt = randomToken(16);
     const account: StoredAccount = {
       username,
       email,
@@ -258,11 +297,11 @@ accountRoutes.post("/api/accounts/register", async (c) => {
       role: "tester",
       status: isVip ? "approved" : "pending",
       registeredAt: now,
-      ...(isVip ? { approvedAt: now, reviewedBy: "invite-code" } : {}),
-      passwordHash: await hashPassword(password, salt),
-      salt,
+      ...(isVip ? { approvedAt: now, reviewedBy: `invite-code:${invite!.id}` } : {}),
+      ...(await hashPassword(password)),
     };
     await kv.set(ACCOUNT_PREFIX + username.toLowerCase(), account);
+    if (invite) await kv.set(inviteStoreKey, useInvite(invite, username));
 
     console.log(`[ACCOUNTS] Registered ${username} (${account.status})`);
     return c.json({ success: true, status: account.status, user: toPublic(account) });
@@ -282,18 +321,36 @@ accountRoutes.post("/api/accounts/login", async (c) => {
       return c.json({ success: false, status: "unknown", message: "Username and password are required." }, 400);
     }
 
-    if (identifier === SUPER_ADMIN_USERNAME || identifier === SUPER_ADMIN_EMAIL) {
-      if (!safeEqual(password, ADMIN_PASSWORD)) {
+    // Wrong tries: this account from this address, this account from anywhere, this address for any account.
+    const isAdminLogin = identifier === SUPER_ADMIN_USERNAME || identifier === SUPER_ADMIN_EMAIL;
+    const scopes: TryScope[] = ["pair", "account", "address"];
+    const tries = await tryKeys(isAdminLogin ? SUPER_ADMIN_USERNAME : identifier, clientAddress(c.req.header("x-forwarded-for")));
+    const locked = await lockedMs(tries, scopes);
+    if (locked) return tooManyTries(c, locked, { status: "unknown" });
+
+    if (isAdminLogin) {
+      if (password.length > PASSWORD_MAX_LENGTH || !safeEqual(password, ADMIN_PASSWORD)) {
+        await countWrongTry(tries, scopes);
         return c.json({ success: false, status: "unknown", message: "Invalid password for Super Admin account." }, 401);
       }
+      await kv.del(tries.pair).catch(() => {});
       const token = await createSession(SUPER_ADMIN_USERNAME, "admin");
       await touchLastSeen(SUPER_ADMIN_USERNAME, true).catch(() => {});
       return c.json({ success: true, status: "approved", token, user: SUPER_ADMIN_PUBLIC });
     }
 
-    const account = await findAccount(identifier);
-    if (!account || !safeEqual(await hashPassword(password, account.salt), account.passwordHash)) {
+    const account = password.length > PASSWORD_MAX_LENGTH ? null : await findAccount(identifier);
+    const check = account ? await verifyPassword(password, account) : { ok: false, upgrade: false };
+    if (!account || !check.ok) {
+      await countWrongTry(tries, scopes);
       return c.json({ success: false, status: "unknown", message: "Invalid username or password." }, 401);
+    }
+    await kv.del(tries.pair).catch(() => {});
+    if (check.upgrade) {
+      // Stored the old way (one round of SHA-256): save it with PBKDF2 now that the password is known to be right.
+      Object.assign(account, await hashPassword(password));
+      await kv.set(ACCOUNT_PREFIX + account.username.toLowerCase(), account)
+        .catch((e) => console.error("[ACCOUNTS] Could not upgrade a stored password:", e));
     }
     if (account.status === "pending") {
       return c.json({
@@ -371,7 +428,10 @@ accountRoutes.delete("/api/accounts/me/avatar", async (c) => {
 
 accountRoutes.post("/api/accounts/logout", async (c) => {
   const token = c.req.header("X-Moon-Session");
-  if (token && /^[0-9a-f]{64}$/.test(token)) await kv.del(SESSION_PREFIX + token).catch(() => {});
+  if (token && /^[0-9a-f]{64}$/.test(token)) {
+    await kv.del(SESSION_PREFIX + "h:" + (await sha256Hex(token))).catch(() => {});
+    await kv.del(SESSION_PREFIX + token).catch(() => {});
+  }
   return c.json({ success: true });
 });
 
@@ -419,6 +479,66 @@ accountRoutes.post("/api/accounts/role", async (c) => {
   await kv.set(ACCOUNT_PREFIX + account.username.toLowerCase(), account);
   console.log(`[ACCOUNTS] ${admin.username} set ${account.username} role -> ${role}`);
   return c.json({ success: true, user: toPublic(account) });
+});
+
+// ─── Admin: invite codes ─────────────────────────────────────
+// A code approves a new account at once. The Super Admin makes one for a person or a group, with a number
+// of uses and an end date. The code is shown once, when it is made; only its hash is kept, with the hash
+// as its place in the store (storeKey), so a code can be cancelled by its short id.
+interface StoredInvite extends InviteCode { storeKey: string }
+
+async function listInvites(): Promise<StoredInvite[]> {
+  const rows = await kv.getByPrefix(INVITE_PREFIX);
+  return rows.map((r: unknown) => parse<StoredInvite>(r)).filter((i: StoredInvite | null): i is StoredInvite => !!i && !!i.id);
+}
+
+accountRoutes.get("/api/accounts/invites", async (c) => {
+  if (!(await isAdminSession(c))) return c.json({ success: false, message: "Super Admin session required." }, 403);
+  const now = Date.now();
+  const invites = (await listInvites()).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map(({ storeKey: _k, ...i }) => invitePublic(i, now));
+  return c.json({ success: true, invites });
+});
+
+accountRoutes.post("/api/accounts/invites", async (c) => {
+  const admin = await isAdminSession(c);
+  if (!admin) return c.json({ success: false, message: "Super Admin session required." }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const label = String(body.label || "").trim().slice(0, 80);
+  const maxUses = Math.floor(Number(body.maxUses) || 1);
+  const days = Math.floor(Number(body.days) || 0);
+  if (!label) return c.json({ success: false, message: "Say who the code is for." }, 400);
+  if (maxUses < 1 || maxUses > 500) return c.json({ success: false, message: "Uses must be between 1 and 500." }, 400);
+  if (days < 0 || days > 365) return c.json({ success: false, message: "Days must be between 0 and 365." }, 400);
+  const code = newInviteCode();
+  const storeKey = await inviteKey(code);
+  const now = Date.now();
+  const invite: StoredInvite = {
+    id: randomToken(4),
+    label,
+    createdBy: admin.username,
+    createdAt: new Date(now).toISOString(),
+    ...(days ? { expiresAt: new Date(now + days * 86_400_000).toISOString() } : {}),
+    maxUses,
+    uses: 0,
+    usedBy: [],
+    storeKey,
+  };
+  await kv.set(storeKey, invite);
+  console.log(`[ACCOUNTS] ${admin.username} made invite code ${invite.id} (${label}, ${maxUses} uses)`);
+  const { storeKey: _k, ...shown } = invite;
+  return c.json({ success: true, code, invite: invitePublic(shown, now) });
+});
+
+accountRoutes.post("/api/accounts/invites/revoke", async (c) => {
+  const admin = await isAdminSession(c);
+  if (!admin) return c.json({ success: false, message: "Super Admin session required." }, 403);
+  const { id } = await c.req.json().catch(() => ({}));
+  const invite = (await listInvites()).find((i) => i.id === id);
+  if (!invite) return c.json({ success: false, message: "Invite code not found." }, 404);
+  await kv.set(invite.storeKey, { ...invite, revoked: true });
+  console.log(`[ACCOUNTS] ${admin.username} cancelled invite code ${invite.id}`);
+  return c.json({ success: true });
 });
 
 accountRoutes.post("/api/accounts/delete", async (c) => {

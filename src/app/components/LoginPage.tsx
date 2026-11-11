@@ -181,8 +181,8 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
       setError('Institution or Organization is required');
       return;
     }
-    if (regPassword.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (regPassword.length < 8) {
+      setError(isAr ? 'كلمة المرور ٨ خانات على الأقل' : 'Password must be at least 8 characters');
       return;
     }
 
@@ -212,7 +212,7 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
         } else {
           setSuccess(
             res.message ||
-              (isAr ? 'تم تفعيل الحساب فورياً بنجاح عبر رمز VIP! يمكنك الآن تسجيل الدخول مباشرة.' : 'Account approved immediately via VIP code! You can now log in.')
+              (isAr ? 'تم اعتماد الحساب برمز الدعوة. يمكنك تسجيل الدخول الآن.' : 'Account approved with your invite code. You can sign in now.')
           );
           setIdentifier(regUsername);
           setPassword(regPassword);
@@ -571,7 +571,7 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                       {/* Password */}
                       <div className="space-y-1">
                         <Label className="text-white/85 text-[11px] font-bold block text-right" htmlFor="regPassword">
-                          {isAr ? "كلمة المرور (٦ خانات على الأقل) *" : "PASSWORD (MIN 6 CHARS) *"}
+                          {isAr ? "كلمة المرور (٨ خانات على الأقل) *" : "PASSWORD (MIN 8 CHARS) *"}
                         </Label>
                         <div className="relative group">
                           <Lock className={`absolute ${isAr ? 'right-3.5' : 'left-3.5'} top-3 h-4 w-4 text-white/40 group-focus-within:text-purple-400 transition-colors`} />
@@ -593,10 +593,10 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <Label className="text-white/85 text-[11px] font-bold" htmlFor="regInviteCode">
-                            {isAr ? "رمز الموافقة الفوري VIP (اختياري)" : "VIP APPROVAL CODE (OPTIONAL)"}
+                            {isAr ? "رمز الدعوة (اختياري)" : "INVITE CODE (OPTIONAL)"}
                           </Label>
                           <span className="text-[10px] text-amber-300 font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30">
-                            {isAr ? "تجاوز قائمة الانتظار للموافقة الفورية" : "Bypasses review queue"}
+                            {isAr ? "يعتمد الحساب فوراً" : "Approves the account at once"}
                           </span>
                         </div>
                         <div className="relative group">
@@ -606,7 +606,7 @@ export function LoginPage({ onLanguageChange, currentLanguage }: LoginPageProps)
                             value={regInviteCode}
                             onChange={(e) => setRegInviteCode(e.target.value)}
                             className={`${isAr ? 'pr-10 pl-4 text-right' : 'pl-10 pr-4 text-left'} h-10 bg-black/40 border border-white/15 text-white placeholder:text-white/30 focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded-xl text-sm`}
-                            placeholder={isAr ? "أدخل الرمز إن كان متوفراً لديك" : "Enter approval code if available"}
+                            placeholder={isAr ? "الرمز الذي أعطاك إياه المشرف، إن وُجد" : "The code the admin gave you, if any"}
                             disabled={loading}
                             dir={isAr ? "rtl" : "ltr"}
                           />

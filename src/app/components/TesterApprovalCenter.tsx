@@ -10,10 +10,11 @@ import {
 import type { AuthUser } from '../contexts/AuthContext';
 import { UserAvatar } from './UserAvatar';
 import { formatLastSeen, sortByPresence } from '../utils/presence';
+import { InviteCodes } from './InviteCodes';
 
 const LIST_REFRESH_MS = 30_000;
 
-type Filter = 'all' | 'pending' | 'approved' | 'rejected';
+type Filter = 'all' | 'pending' | 'approved' | 'rejected' | 'invites';
 
 interface TesterApprovalCenterProps {
   open: boolean;
@@ -126,6 +127,7 @@ export function TesterApprovalCenter({
     { key: 'approved', label: ar ? 'معتمد' : 'Approved' },
     { key: 'rejected', label: ar ? 'مرفوض' : 'Declined' },
     { key: 'all', label: ar ? 'الكل' : 'All' },
+    { key: 'invites', label: ar ? 'رموز الدعوة' : 'Invite codes' },
   ];
 
   const statusLabel = (s: AuthUser['status']) =>
@@ -195,12 +197,12 @@ export function TesterApprovalCenter({
                             : { ...PILL, color: '#334155' }}
                           aria-pressed={active}>
                           {tab.label}
-                          <span className="min-w-5 px-1.5 rounded-full text-[10px] font-black"
+                          {tab.key !== 'invites' && <span className="min-w-5 px-1.5 rounded-full text-[10px] font-black"
                             style={tab.key === 'pending' && counts.pending > 0
                               ? { background: '#0f172a', color: '#ffffff' }
                               : { background: active ? 'rgba(255,255,255,0.22)' : 'rgba(15,23,42,0.08)' }}>
                             {counts[tab.key]}
-                          </span>
+                          </span>}
                         </button>
                       );
                     })}
@@ -211,19 +213,20 @@ export function TesterApprovalCenter({
                       {ar ? 'تحديث' : 'Refresh'}
                     </button>
                   </div>
-                  <div className="relative">
+                  {filter !== 'invites' && <div className="relative">
                     <Search className="absolute top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 start-3" style={{ insetInlineStart: 12 }} />
                     <input value={query} onChange={e => setQuery(e.target.value)}
                       placeholder={ar ? 'ابحث بالاسم أو البريد أو المؤسسة' : 'Search by name, email or institution'}
                       className="w-full h-10 ps-9 pe-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-slate-300"
                       style={{ ...PILL, borderRadius: 16, paddingInlineStart: 36 }} />
-                  </div>
+                  </div>}
                   {error && (
                     <p className="text-xs px-3 py-2" style={{ ...REJECT_PILL, borderRadius: 14, color: '#0f172a' }}>{error}</p>
                   )}
                 </div>
 
-                {/* List */}
+                {/* Invite codes, or the list of accounts */}
+                {filter === 'invites' ? <InviteCodes ar={ar} /> : (
                 <div className="relative flex-1 overflow-y-auto px-6 pb-6 space-y-3">
                   {loading && users.length === 0 ? (
                     <div className="py-16 flex items-center justify-center gap-2 text-slate-500 text-sm">
@@ -320,6 +323,7 @@ export function TesterApprovalCenter({
                     );
                   })}
                 </div>
+                )}
               </>
             )}
           </motion.div>
