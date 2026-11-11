@@ -62,6 +62,8 @@ interface AuthContextType {
   rejectUser: (usernameOrEmail: string) => Promise<AdminActionResult>;
   deleteUser: (usernameOrEmail: string) => Promise<AdminActionResult>;
   setUserRole: (username: string, role: 'tester' | 'cataloger' | 'reviewer') => Promise<AdminActionResult>;
+  /** A server call as the Super Admin (signed in, or unlocked on the login screen); used for invite codes. */
+  adminFetch: (path: string, body?: unknown) => Promise<{ ok: boolean; status: number; data: any }>;
   pendingCount: number;
 }
 
@@ -276,6 +278,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [adminToken, refreshUsers]
   );
 
+  const adminFetch = useCallback(
+    async (path: string, body?: unknown) => {
+      const token = adminToken();
+      if (!token) return { ok: false, status: 403, data: { success: false, message: 'Only the Super Admin can do this.' } };
+      try {
+        return await moonFetch(path, { ...(body !== undefined ? { body } : {}), sessionToken: token });
+      } catch {
+        return { ok: false, status: 0, data: { success: false, message: NETWORK_ERROR } };
+      }
+    },
+    [adminToken]
+  );
+
   const approveUser = useCallback((u: string) => adminAction('approve', u), [adminAction]);
   const rejectUser = useCallback((u: string) => adminAction('reject', u), [adminAction]);
   const deleteUser = useCallback(
@@ -337,7 +352,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!usernameVal) return { success: false, message: 'Username is required.' };
     if (!emailVal || !emailVal.includes('@')) return { success: false, message: 'A valid email address is required.' };
     if (!institutionVal) return { success: false, message: 'Institution or Organization is required.' };
-    if (data.password.length < 6) return { success: false, message: 'Password must be at least 6 characters.' };
+    if (data.password.length < 8) return { success: false, message: 'Password must be at least 8 characters.' };
 
     try {
       const { data: res } = await moonFetch('/api/accounts/register', {
@@ -356,7 +371,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {
           success: true,
           status: 'approved',
-          message: 'Account approved with VIP code! You can now log in immediately.',
+          message: 'Account approved with your invite code. You can sign in now.',
         };
       }
       return {
@@ -400,6 +415,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         rejectUser,
         deleteUser,
         setUserRole,
+        adminFetch,
         pendingCount,
       }}
     >
